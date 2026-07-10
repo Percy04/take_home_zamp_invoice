@@ -1,0 +1,186 @@
+{
+  "currency": "USD",
+  "fixtures": {
+    "duplicate": {
+      "expected": {
+        "allocation_delta": [],
+        "candidate_po": null,
+        "decision": "NEEDS_REVIEW",
+        "execution": "BLOCKED",
+        "ledger_delta": 0,
+        "reason_code": "DUPLICATE",
+        "run_state": "NEEDS_REVIEW"
+      },
+      "file": "data/fixtures/duplicate.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-06-01",
+        "invoice_number": "ACME-2026-000",
+        "lines": [
+          {
+            "amount": "100.00",
+            "description": "Replacement Filter",
+            "quantity": "1",
+            "sku": "FIL-900",
+            "unit_price": "100.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": "PO-0999",
+        "subtotal": "100.00",
+        "tax": "10.00",
+        "total": "110.00",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "215a398cfb3f81afba9715f4cd85b6b975b5e87c1153836910ba3c8a2aa70b00"
+    },
+    "happy": {
+      "expected": {
+        "allocation_delta": [
+          {
+            "po_number": "PO-1001",
+            "quantity": "8",
+            "remaining_ordered_quantity": "2",
+            "remaining_received_quantity": "2",
+            "sku": "WID-100"
+          },
+          {
+            "po_number": "PO-1001",
+            "quantity": "5",
+            "remaining_ordered_quantity": "0",
+            "remaining_received_quantity": "0",
+            "sku": "BOL-200"
+          }
+        ],
+        "candidate_po": null,
+        "decision": "AUTO_CLEARED",
+        "execution": "POSTED",
+        "ledger_delta": 1,
+        "reason_code": null,
+        "run_state": "POSTED"
+      },
+      "file": "data/fixtures/happy.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-01",
+        "invoice_number": "ACME-2026-001",
+        "lines": [
+          {
+            "amount": "800.00",
+            "description": "Industrial Widget",
+            "quantity": "8",
+            "sku": "WID-100",
+            "unit_price": "100.00",
+            "uom": "EA"
+          },
+          {
+            "amount": "100.00",
+            "description": "Mounting Bolt Pack",
+            "quantity": "5",
+            "sku": "BOL-200",
+            "unit_price": "20.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": "PO-1001",
+        "subtotal": "900.00",
+        "tax": "90.00",
+        "total": "990.00",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "a502d37c221ca4084bb0340ba93b335b7ac1ae14421db8f81ab5b9ceaa6f2416"
+    },
+    "missing_po": {
+      "after_confirmation": {
+        "aggregate_price_variance": "2.00",
+        "allocation_delta": [
+          {
+            "po_number": "PO-1002",
+            "quantity": "2",
+            "remaining_ordered_quantity": "0",
+            "remaining_received_quantity": "0",
+            "sku": "SEN-300"
+          }
+        ],
+        "confirmed_po": "PO-1002",
+        "decision": "AUTO_CLEARED",
+        "execution": "POSTED",
+        "ledger_delta": 1,
+        "reason_code": null,
+        "repeated_confirmation_same_ledger_id": true,
+        "run_state": "POSTED",
+        "same_run_id": true,
+        "unit_price_variance_percent": "0.4"
+      },
+      "expected": {
+        "allocation_delta": [],
+        "candidate_po": "PO-1002",
+        "decision": "NEEDS_REVIEW",
+        "execution": "AWAITING_CONFIRMATION",
+        "ledger_delta": 0,
+        "reason_code": "MISSING_PO",
+        "run_state": "AWAITING_PO_CONFIRMATION"
+      },
+      "file": "data/fixtures/missing_po.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-02",
+        "invoice_number": "ACME-2026-002",
+        "lines": [
+          {
+            "amount": "502.00",
+            "description": "Safety Sensor",
+            "quantity": "2",
+            "sku": "SEN-300",
+            "unit_price": "251.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": null,
+        "subtotal": "502.00",
+        "tax": "50.20",
+        "total": "552.20",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "b238ba68ceb0ace9b3dc5704af1babbd779ed15b8b51b826f39712a5acc889bc"
+    },
+    "receipt_capacity": {
+      "expected": {
+        "allocation_delta": [],
+        "candidate_po": null,
+        "decision": "NEEDS_REVIEW",
+        "execution": "BLOCKED",
+        "ledger_delta": 0,
+        "ordered_capacity_passes": true,
+        "po_basis_capacity_passes": true,
+        "reason_code": "RECEIPT_CAPACITY_EXCEEDED",
+        "remaining_received_quantity": "2",
+        "requested_quantity": "3",
+        "run_state": "NEEDS_REVIEW"
+      },
+      "file": "data/fixtures/receipt_capacity.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-03",
+        "invoice_number": "DELTA-2026-010",
+        "lines": [
+          {
+            "amount": "150.00",
+            "description": "Control Valve",
+            "quantity": "3",
+            "sku": "VAL-500",
+            "unit_price": "50.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": "PO-2001",
+        "subtotal": "150.00",
+        "tax": "15.00",
+        "total": "165.00",
+        "vendor": "Delta Components Ltd"
+      },
+      "pdf_sha256": "b74136776c8d83b170d22113a02bacc11f06d82ad4ccd9b9a8b2c7dcc2fcd20d"
+    }
+  },
+  "schema_version": 1
+}
