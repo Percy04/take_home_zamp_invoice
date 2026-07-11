@@ -1,36 +1,41 @@
 # AP Resolution Agent
 
-A resettable Streamlit demo that extracts invoice evidence, applies deterministic
-AP controls, and either posts once to a synthetic ledger or blocks for review.
+A full-stack TypeScript demo that extracts invoice evidence, applies deterministic AP controls, and either posts once to a synthetic ledger or blocks for review.
 
-Phase 0 and 0B freeze the contract and create deterministic fixtures. The application
-pipeline begins in Phase 1; see [BUILD_SPEC.md](BUILD_SPEC.md).
+Phase 0 provides the strict TypeScript workspace, shared Zod contracts, validated server environment, Express health API, and React application shell. The canonical architecture and delivery contract is in [BUILD_SPEC_TYPESCRIPT.md](BUILD_SPEC_TYPESCRIPT.md); [BUILD_SPEC.md](BUILD_SPEC.md) remains the detailed business-rule and fixture contract.
 
 ## Setup
 
-Python 3.12 is required.
+Node.js 24.18.0 and npm 11.12.1 are the committed baseline.
 
 ```powershell
-uv venv --python 3.12 .venv
-.\.venv\Scripts\Activate.ps1
-uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+npm ci
 Copy-Item .env.example .env
 ```
 
-Add Azure credentials to `.env`, then reproduce and validate Phase 0:
+Run the Vite client and Express API in separate terminals:
 
 ```powershell
-python scripts/build_demo_data.py
-python scripts/verify_azure.py
+npm run dev
+npm run dev:server
 ```
 
-The Azure command submits the local happy-path PDF bytes to `prebuilt-invoice`,
-checks fields/items/tables/confidence/source locations, and records the response
-at `tests/recordings/happy_azure.json` for future offline tests.
+## Verification
 
-## Phase 0 artifacts
+```powershell
+npm run typecheck
+npm test
+npm run lint
+npm run build
+$env:NODE_ENV = "production"
+npm start
+```
 
-- `data/fixtures/`: nine deterministic PDFs, including alternate layouts, an image-only scan, bundles, and inclusive tax.
-- `data/seed.sqlite`: immutable source database for future runtime copies.
-- `data/cases.json`: exact expected outcome and accounting deltas per case.
-- `tests/recordings/*_azure.json`: recorded live Azure responses for the baseline and Phase 0B cases.
+The production server exposes the client at `http://localhost:3000` and readiness at `http://localhost:3000/api/health`.
+
+Preserved deterministic assets:
+
+- `data/fixtures/`: nine acceptance and regression invoice PDFs.
+- `data/recordings/`: recorded Azure responses and normalized source catalogues for offline tests.
+- `data/seed.sqlite`: immutable seed database.
+- `data/cases.json`: exact expected outcomes and accounting deltas.
