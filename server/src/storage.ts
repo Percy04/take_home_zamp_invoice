@@ -162,6 +162,12 @@ export class Storage {
       vendors: this.db.prepare("SELECT * FROM vendors WHERE active = 1").all(),
       purchaseOrders: this.db.prepare("SELECT * FROM purchase_orders").all(),
       poLines: this.db.prepare("SELECT * FROM po_lines").all(),
+      postedInvoices: this.db
+        .prepare("SELECT vendor_id, normalized_invoice_number FROM posted_invoices")
+        .all(),
+      bundleDefinitions: this.db
+        .prepare("SELECT * FROM bundle_definitions WHERE active = 1")
+        .all(),
       usedQuantities: this.db
         .prepare(
           `SELECT po_line_id, COALESCE(SUM(CAST(component_quantity AS REAL)), 0) AS quantity
@@ -241,15 +247,17 @@ export class Storage {
       const insertAllocation = this.db.prepare(
         `INSERT INTO allocations
          (id, posted_invoice_id, invoice_line_index, po_line_id, match_type,
-          component_quantity, po_basis_amount, actual_net_amount, evidence_json)
-         VALUES (?, ?, ?, ?, 'DIRECT', ?, ?, ?, '{}')`,
+          bundle_definition_id, component_quantity, po_basis_amount, actual_net_amount, evidence_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')`,
       );
       allocations.forEach((allocation, index) =>
         insertAllocation.run(
           `ALLOC-${id}-${index}`,
           ledgerId,
-          index,
+          allocation.invoiceLineIndex,
           allocation.poLineId,
+          allocation.matchType,
+          allocation.bundleDefinitionId,
           allocation.quantity,
           allocation.poBasisAmount,
           allocation.actualNetAmount,

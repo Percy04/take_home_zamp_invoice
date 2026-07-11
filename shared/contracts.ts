@@ -50,9 +50,13 @@ export const normalizedInvoiceSchema = z.object({
 });
 
 export const allocationSchema = z.object({
+  invoiceLineIndex: z.number().int().nonnegative(),
   poLineId: z.string(),
+  poNumber: z.string(),
   sku: z.string(),
   quantity: z.string(),
+  matchType: z.enum(["DIRECT", "BUNDLE_MASTER", "BUNDLE_CONFIRMED"]),
+  bundleDefinitionId: z.string().nullable(),
   poBasisAmount: z.string(),
   actualNetAmount: z.string(),
   remainingOrderedQuantity: z.string(),

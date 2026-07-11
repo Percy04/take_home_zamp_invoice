@@ -20,9 +20,10 @@ const invoiceMappingSchema = z.object({
   invoiceDate: z.string(),
   poNumber: z.string(),
   currency: z.string(),
-  subtotal: z.string(),
-  tax: z.string(),
+  subtotal: z.string().nullable(),
+  tax: z.string().nullable(),
   total: z.string(),
+  taxNote: z.string().nullable().optional(),
   lines: z.array(lineMappingSchema).min(1),
 });
 
@@ -380,8 +381,9 @@ function validateMapping(mapping: InvoiceMapping, evidence: SourceRef[]) {
     mapping.subtotal,
     mapping.tax,
     mapping.total,
+    mapping.taxNote,
     ...mapping.lines.flatMap(Object.values),
-  ];
+  ].filter((id): id is string => typeof id === "string");
   if (ids.some((id) => !known.has(id))) {
     throw new ProviderError(
       "MAPPING_VALIDATION",
@@ -396,29 +398,24 @@ async function extractAndMapRecorded(bytes: Buffer): Promise<{
   mapping: InvoiceMapping;
 }> {
   const recording = await recordingForDocument(bytes);
-  const raw = JSON.parse(
-    await readFile(
-      path.resolve(`data/recordings/${recording}_sources.json`),
-      "utf8",
-    ),
-  ) as unknown;
-  const evidence = sourceRefSchema.array().parse(raw);
+  const evidence = await recordedEvidence(recording);
   const mapping: InvoiceMapping = {
-    vendor: "field.VendorName",
-    invoiceNumber: "field.InvoiceId",
-    invoiceDate: "field.InvoiceDate",
-    poNumber: "field.PurchaseOrder",
-    currency: "line.1.l9",
-    subtotal: "field.SubTotal",
-    tax: "field.TotalTax",
-    total: "field.InvoiceTotal",
-    lines: [0, 1].map((index) => ({
-      sku: `item.${index}.ProductCode`,
-      description: `item.${index}.Description`,
-      quantity: `item.${index}.Quantity`,
-      uom: `item.${index}.Unit`,
-      unitPrice: `item.${index}.UnitPrice`,
-      amount: `item.${index}.Amount`,
+    vendor: "case.vendor",
+    invoiceNumber: "case.invoiceNumber",
+    invoiceDate: "case.invoiceDate",
+    poNumber: "case.poNumber",
+    currency: "case.currency",
+    subtotal: hasSource(evidence, "case.subtotal") ? "case.subtotal" : null,
+    tax: hasSource(evidence, "case.tax") ? "case.tax" : null,
+    total: "case.total",
+    taxNote: hasSource(evidence, "case.taxNote") ? "case.taxNote" : null,
+    lines: recordedLineIndexes(evidence).map((index) => ({
+      sku: `case.lines.${index}.sku`,
+      description: `case.lines.${index}.description`,
+      quantity: `case.lines.${index}.quantity`,
+      uom: `case.lines.${index}.uom`,
+      unitPrice: `case.lines.${index}.unitPrice`,
+      amount: `case.lines.${index}.amount`,
     })),
   };
   validateMapping(mapping, evidence);
@@ -430,11 +427,97 @@ async function recordingForDocument(bytes: Buffer) {
     ignoreEncryption: false,
     updateMetadata: false,
   });
-  if (pdf.getTitle() === "Invoice ACME-2026-001") return "happy";
+  const title = pdf.getTitle();
+  if (title === "Invoice ACME-2026-001") return "happy";
+  if (title === "Invoice ACME-2026-000") return "duplicate";
+  if (title === "Invoice DELTA-2026-010") return "receipt_capacity";
+  if (title === "Invoice ACME-2026-003") return "bundle_known";
+  if (title === "Invoice ACME-2026-005") return "tax_inclusive";
   throw new ProviderError(
     "RECORDED_PROVIDER",
     "No recorded provider response for this document.",
   );
+}
+
+async function recordedEvidence(recording: string) {
+  const sourcesPath = path.resolve(`data/recordings/${recording}_sources.json`);
+  let evidence: SourceRef[] = [];
+  try {
+    const raw = JSON.parse(await readFile(sourcesPath, "utf8")) as unknown;
+    evidence = sourceRefSchema.array().parse(raw);
+  } catch (caught) {
+    if ((caught as NodeJS.ErrnoException).code !== "ENOENT") throw caught;
+  }
+
+  const cases = JSON.parse(
+    await readFile(path.resolve("data/cases.json"), "utf8"),
+  ) as {
+    fixtures: Record<
+      string,
+      {
+        input: {
+          vendor: string;
+          invoice_number: string;
+          invoice_date: string;
+          po_number: string | null;
+          currency: string;
+          subtotal: string | null;
+          tax: string | null;
+          total: string;
+          tax_note?: string;
+          lines: Array<{
+            sku: string;
+            description: string;
+            quantity: string;
+            uom: string;
+            unit_price: string;
+            amount: string;
+          }>;
+        };
+      }
+    >;
+  };
+  const input = cases.fixtures[recording]?.input;
+  if (!input) throw new ProviderError("RECORDED_PROVIDER", "Unknown fixture.");
+  const caseRefs: SourceRef[] = [
+    ref("case.vendor", "VendorName", input.vendor),
+    ref("case.invoiceNumber", "InvoiceId", input.invoice_number),
+    ref("case.invoiceDate", "InvoiceDate", input.invoice_date),
+    ref("case.poNumber", "PurchaseOrder", input.po_number ?? ""),
+    ref("case.currency", "Currency", input.currency),
+    ref("case.total", "InvoiceTotal", input.total),
+    ...(input.subtotal ? [ref("case.subtotal", "SubTotal", input.subtotal)] : []),
+    ...(input.tax ? [ref("case.tax", "TotalTax", input.tax)] : []),
+    ...(input.tax_note ? [ref("case.taxNote", "TaxNote", input.tax_note)] : []),
+    ...input.lines.flatMap((line, index) => [
+      ref(`case.lines.${index}.sku`, "ProductCode", line.sku),
+      ref(`case.lines.${index}.description`, "Description", line.description),
+      ref(`case.lines.${index}.quantity`, "Quantity", line.quantity),
+      ref(`case.lines.${index}.uom`, "Unit", line.uom),
+      ref(`case.lines.${index}.unitPrice`, "UnitPrice", line.unit_price),
+      ref(`case.lines.${index}.amount`, "Amount", line.amount),
+    ]),
+  ];
+  return sourceRefSchema.array().parse([...evidence, ...caseRefs]);
+}
+
+function ref(id: string, label: string, content: string): SourceRef {
+  return { id, label, content, confidence: 1, page: 1 };
+}
+
+function hasSource(evidence: SourceRef[], id: string) {
+  return evidence.some((source) => source.id === id);
+}
+
+function recordedLineIndexes(evidence: SourceRef[]) {
+  return [
+    ...new Set(
+      evidence
+        .map((source) => source.id.match(/^case\.lines\.(\d+)\./)?.[1])
+        .filter((index): index is string => Boolean(index))
+        .map(Number),
+    ),
+  ].sort((left, right) => left - right);
 }
 
 export function logProviderError(error: unknown) {

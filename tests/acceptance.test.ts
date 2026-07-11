@@ -60,7 +60,10 @@ describe("happy-path vertical slice", () => {
     storage.close();
   });
 
-  it("does not process unsupported recordings as the happy invoice", async () => {
+  it.each([
+    ["duplicate.pdf", "DUPLICATE"],
+    ["receipt_capacity.pdf", "RECEIPT_CAPACITY_EXCEEDED"],
+  ])("blocks %s without posting", async (fixture, reasonCode) => {
     const runtime = mkdtempSync(path.join(tmpdir(), "zamp-phase-1-"));
     temporaryDirectories.push(runtime);
     const storage = new Storage(runtime);
@@ -68,7 +71,7 @@ describe("happy-path vertical slice", () => {
 
     const created = await request(app)
       .post("/api/runs")
-      .attach("invoice", path.resolve("data/fixtures/receipt_capacity.pdf"))
+      .attach("invoice", path.resolve(`data/fixtures/${fixture}`))
       .expect(201);
     const processed = await request(app)
       .post(`/api/runs/${created.body.runId}/process`)
@@ -78,7 +81,7 @@ describe("happy-path vertical slice", () => {
       state: "NEEDS_REVIEW",
       decision: "NEEDS_REVIEW",
       execution: "BLOCKED",
-      reasonCode: "EXTRACTION_FAILED",
+      reasonCode,
       ledgerId: null,
     });
 
@@ -92,6 +95,64 @@ describe("happy-path vertical slice", () => {
         )
         .get(created.body.runId),
     ).toEqual({ count: 0 });
+    database.close();
+    storage.close();
+  });
+
+  it.each([
+    [
+      "tax_inclusive.pdf",
+      {
+        invoice: { subtotal: "500.00", tax: "90.00", total: "590.00" },
+        allocations: [{ matchType: "DIRECT", actualNetAmount: "500.00" }],
+      },
+    ],
+    [
+      "bundle_known.pdf",
+      {
+        invoice: { subtotal: "300.00", tax: "0.00", total: "300.00" },
+        allocations: [
+          { matchType: "BUNDLE_MASTER", bundleDefinitionId: "BUNDLE-ACME-KIT-300" },
+          { matchType: "BUNDLE_MASTER", bundleDefinitionId: "BUNDLE-ACME-KIT-300" },
+        ],
+      },
+    ],
+  ])("posts %s with Phase 2 allocation behavior", async (fixture, expected) => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-phase-2-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+
+    const created = await request(app)
+      .post("/api/runs")
+      .attach("invoice", path.resolve(`data/fixtures/${fixture}`))
+      .expect(201);
+    const processed = await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+    const retried = await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+
+    expect(processed.body).toMatchObject({
+      state: "POSTED",
+      decision: "AUTO_CLEARED",
+      execution: "POSTED",
+      invoice: expected.invoice,
+      allocations: expected.allocations,
+    });
+    expect(retried.body.ledgerId).toBe(processed.body.ledgerId);
+
+    const database = new Database(path.join(runtime, "runtime.sqlite"), {
+      readonly: true,
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM posted_invoices WHERE run_id = ?",
+        )
+        .get(created.body.runId),
+    ).toEqual({ count: 1 });
     database.close();
     storage.close();
   });

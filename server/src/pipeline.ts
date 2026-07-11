@@ -79,6 +79,7 @@ export async function processInvoice(runId: string, storage: Storage) {
 }
 
 function reasonFor(checkCode: string) {
+  if (checkCode === "DUPLICATE") return "DUPLICATE";
   if (["VENDOR_MATCH", "PO_ELIGIBLE"].includes(checkCode))
     return "VENDOR_OR_PO_MISMATCH";
   if (checkCode === "LINE_MATCH") return "LINE_MATCH_FAILED";
