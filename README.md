@@ -2,7 +2,7 @@
 
 A full-stack TypeScript demo that extracts invoice evidence, applies deterministic AP controls, and either posts once to a synthetic ledger or blocks for review.
 
-Phase 0 provides the strict TypeScript workspace, shared Zod contracts, validated server environment, Express health API, and React application shell. The canonical architecture and delivery contract is in [BUILD_SPEC_TYPESCRIPT.md](BUILD_SPEC_TYPESCRIPT.md); [BUILD_SPEC.md](BUILD_SPEC.md) remains the detailed business-rule and fixture contract.
+Phase 1 adds a persisted happy-path slice: PDF intake, Azure evidence extraction, OpenAI source mapping, deterministic direct matching and controls, atomic SQLite posting, durable run URLs, and the processing/result UI. The canonical architecture and delivery contract is in [BUILD_SPEC_TYPESCRIPT.md](BUILD_SPEC_TYPESCRIPT.md); [BUILD_SPEC.md](BUILD_SPEC.md) remains the detailed business-rule and fixture contract.
 
 ## Setup
 
@@ -12,6 +12,8 @@ Node.js 24.18.0 and npm 11.12.1 are the committed baseline.
 npm ci
 Copy-Item .env.example .env
 ```
+
+Fill in the three provider credentials in `.env` for uploaded PDFs. Deterministic tests use the committed happy-path recording and never call providers.
 
 Run the Vite client and Express API in separate terminals:
 

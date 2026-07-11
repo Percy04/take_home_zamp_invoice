@@ -7,6 +7,9 @@ describe("GET /api/health", () => {
     const response = await request(createApp()).get("/api/health");
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ status: "ok", database: "not-initialized" });
+    expect(response.body).toEqual({
+      status: "ok",
+      database: "not-initialized",
+    });
   });
 });

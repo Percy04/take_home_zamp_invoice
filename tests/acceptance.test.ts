@@ -10,7 +10,8 @@ import { Storage } from "../server/src/storage.js";
 const temporaryDirectories: string[] = [];
 
 afterEach(() => {
-  for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true });
+  for (const directory of temporaryDirectories.splice(0))
+    rmSync(directory, { recursive: true });
 });
 
 describe("happy-path vertical slice", () => {
@@ -20,14 +21,19 @@ describe("happy-path vertical slice", () => {
     const storage = new Storage(runtime);
     const app = createApp({ storage });
 
-    const created = await request(app).post("/api/runs").field("fixtureId", "happy").expect(201);
+    const created = await request(app)
+      .post("/api/runs")
+      .attach("invoice", path.resolve("data/fixtures/happy.pdf"))
+      .expect(201);
     const processed = await request(app)
       .post(`/api/runs/${created.body.runId}/process`)
       .expect(200);
     const retried = await request(app)
       .post(`/api/runs/${created.body.runId}/process`)
       .expect(200);
-    const restored = await request(app).get(`/api/runs/${created.body.runId}`).expect(200);
+    const restored = await request(app)
+      .get(`/api/runs/${created.body.runId}`)
+      .expect(200);
 
     expect(processed.body).toMatchObject({
       state: "POSTED",
@@ -39,11 +45,15 @@ describe("happy-path vertical slice", () => {
     expect(retried.body.ledgerId).toBe(processed.body.ledgerId);
     expect(restored.body).toEqual(retried.body);
 
-    const database = new Database(path.join(runtime, "runtime.sqlite"), { readonly: true });
+    const database = new Database(path.join(runtime, "runtime.sqlite"), {
+      readonly: true,
+    });
     expect(
-      database.prepare("SELECT COUNT(*) AS count FROM posted_invoices WHERE run_id = ?").get(
-        created.body.runId,
-      ),
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM posted_invoices WHERE run_id = ?",
+        )
+        .get(created.body.runId),
     ).toEqual({ count: 1 });
     database.close();
     storage.close();

@@ -34,7 +34,11 @@ type RunRow = {
   stage_events_json: string;
 };
 
-type Evaluation = { invoice: NormalizedInvoice; checks: CheckResult[]; allocations: Allocation[] };
+type Evaluation = {
+  invoice: NormalizedInvoice | null;
+  checks: CheckResult[];
+  allocations: Allocation[];
+};
 
 export class Storage {
   readonly runtimeDirectory: string;
@@ -42,12 +46,16 @@ export class Storage {
   private readonly databasePath: string;
   private db: Database.Database;
 
-  constructor(runtimeDirectory: string, seedPath = path.resolve("data/seed.sqlite")) {
+  constructor(
+    runtimeDirectory: string,
+    seedPath = path.resolve("data/seed.sqlite"),
+  ) {
     this.runtimeDirectory = path.resolve(runtimeDirectory);
     this.seedPath = seedPath;
     this.databasePath = path.join(this.runtimeDirectory, "runtime.sqlite");
     mkdirSync(this.runtimeDirectory, { recursive: true });
-    if (!exists(this.databasePath)) copyFileSync(this.seedPath, this.databasePath);
+    if (!exists(this.databasePath))
+      copyFileSync(this.seedPath, this.databasePath);
     this.db = this.open();
   }
 
@@ -58,21 +66,37 @@ export class Storage {
     return db;
   }
 
-  createRun(input: { id: string; filename: string; sha256: string; pdfPath: string }): RunDetail {
+  createRun(input: {
+    id: string;
+    filename: string;
+    sha256: string;
+    pdfPath: string;
+  }): RunDetail {
     const now = new Date().toISOString();
-    const stages: StageEvent[] = [{ stage: "INTAKE", status: "COMPLETED", at: now }];
+    const stages: StageEvent[] = [
+      { stage: "INTAKE", status: "COMPLETED", at: now },
+    ];
     this.db
       .prepare(
         `INSERT INTO runs
          (id, created_at, updated_at, filename, file_sha256, pdf_path, state, stage_events_json)
          VALUES (?, ?, ?, ?, ?, ?, 'PROCESSING', ?)`,
       )
-      .run(input.id, now, now, input.filename, input.sha256, input.pdfPath, JSON.stringify(stages));
+      .run(
+        input.id,
+        now,
+        now,
+        input.filename,
+        input.sha256,
+        input.pdfPath,
+        JSON.stringify(stages),
+      );
     return this.getRun(input.id)!;
   }
 
   getRun(id: string): RunDetail | null {
-    const row = this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as RunRow | undefined;
+    const row = this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as
+      RunRow | undefined;
     if (!row) return null;
     const evaluation = row.evaluation_json
       ? (JSON.parse(row.evaluation_json) as Evaluation)
@@ -92,37 +116,45 @@ export class Storage {
       evidence: row.extraction_json
         ? sourceRefSchema.array().parse(JSON.parse(row.extraction_json))
         : [],
-      invoice: evaluation.invoice ? normalizedInvoiceSchema.parse(evaluation.invoice) : null,
+      invoice: evaluation.invoice
+        ? normalizedInvoiceSchema.parse(evaluation.invoice)
+        : null,
       checks: checkResultSchema.array().parse(evaluation.checks),
       allocations: allocationSchema.array().parse(evaluation.allocations),
     });
   }
 
   getPdfPath(id: string): string | null {
-    const row = this.db.prepare("SELECT pdf_path FROM runs WHERE id = ?").get(id) as
-      | { pdf_path: string | null }
-      | undefined;
+    const row = this.db
+      .prepare("SELECT pdf_path FROM runs WHERE id = ?")
+      .get(id) as { pdf_path: string | null } | undefined;
     return row?.pdf_path ?? null;
   }
 
   addStage(id: string, stage: string, status: StageEvent["status"]) {
-    const row = this.db.prepare("SELECT stage_events_json FROM runs WHERE id = ?").get(id) as {
+    const row = this.db
+      .prepare("SELECT stage_events_json FROM runs WHERE id = ?")
+      .get(id) as {
       stage_events_json: string;
     };
-    const stages = stageEventSchema.array().parse(JSON.parse(row.stage_events_json));
+    const stages = stageEventSchema
+      .array()
+      .parse(JSON.parse(row.stage_events_json));
     stages.push({ stage, status, at: new Date().toISOString() });
     this.db
-      .prepare("UPDATE runs SET stage_events_json = ?, updated_at = ? WHERE id = ?")
+      .prepare(
+        "UPDATE runs SET stage_events_json = ?, updated_at = ? WHERE id = ?",
+      )
       .run(JSON.stringify(stages), new Date().toISOString(), id);
   }
 
   saveEvidence(id: string, evidence: SourceRef[]) {
     sourceRefSchema.array().parse(evidence);
-    this.db.prepare("UPDATE runs SET extraction_json = ?, updated_at = ? WHERE id = ?").run(
-      JSON.stringify(evidence),
-      new Date().toISOString(),
-      id,
-    );
+    this.db
+      .prepare(
+        "UPDATE runs SET extraction_json = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(JSON.stringify(evidence), new Date().toISOString(), id);
   }
 
   getHappyContext() {
@@ -139,11 +171,16 @@ export class Storage {
     };
   }
 
-  post(id: string, invoice: NormalizedInvoice, checks: CheckResult[], allocations: Allocation[]) {
+  post(
+    id: string,
+    invoice: NormalizedInvoice,
+    checks: CheckResult[],
+    allocations: Allocation[],
+  ) {
     const transaction = this.db.transaction(() => {
-      const existing = this.db.prepare("SELECT id FROM posted_invoices WHERE run_id = ?").get(id) as
-        | { id: string }
-        | undefined;
+      const existing = this.db
+        .prepare("SELECT id FROM posted_invoices WHERE run_id = ?")
+        .get(id) as { id: string } | undefined;
       if (existing) return existing.id;
 
       const vendor = this.db
@@ -168,8 +205,13 @@ export class Storage {
           received_quantity: string;
           used_quantity: number;
         };
-        const after = new Decimal(capacity.used_quantity).plus(allocation.quantity);
-        if (after.gt(capacity.ordered_quantity) || after.gt(capacity.received_quantity)) {
+        const after = new Decimal(capacity.used_quantity).plus(
+          allocation.quantity,
+        );
+        if (
+          after.gt(capacity.ordered_quantity) ||
+          after.gt(capacity.received_quantity)
+        ) {
           throw new Error("CAPACITY_CHANGED");
         }
       }
@@ -234,10 +276,34 @@ export class Storage {
     return transaction();
   }
 
+  block(
+    id: string,
+    reasonCode: string,
+    nextAction: string,
+    invoice: NormalizedInvoice | null = null,
+    checks: CheckResult[] = [],
+  ) {
+    this.db
+      .prepare(
+        `UPDATE runs SET state = 'NEEDS_REVIEW', decision = 'NEEDS_REVIEW', execution = 'BLOCKED',
+         primary_reason_code = ?, next_action = ?, evaluation_json = ?, updated_at = ? WHERE id = ?`,
+      )
+      .run(
+        reasonCode,
+        nextAction,
+        JSON.stringify({ invoice, checks, allocations: [] }),
+        new Date().toISOString(),
+        id,
+      );
+  }
+
   reset() {
     this.db.close();
     rmSync(this.databasePath, { force: true });
-    rmSync(path.join(this.runtimeDirectory, "uploads"), { recursive: true, force: true });
+    rmSync(path.join(this.runtimeDirectory, "uploads"), {
+      recursive: true,
+      force: true,
+    });
     copyFileSync(this.seedPath, this.databasePath);
     this.db = this.open();
   }
@@ -248,7 +314,10 @@ export class Storage {
 }
 
 function normalize(value: string) {
-  return value.normalize("NFKC").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return value
+    .normalize("NFKC")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
 }
 
 function exists(file: string) {
