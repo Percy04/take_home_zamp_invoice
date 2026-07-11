@@ -20,7 +20,7 @@ main {
   padding: 2rem;
 }
 
-section {
+section, header {
   width: min(100%, 48rem);
   padding: clamp(2rem, 6vw, 5rem);
   border: 1px solid #ced8cf;
@@ -28,6 +28,99 @@ section {
   background: #fbfcf8;
   box-shadow: 0 1.5rem 5rem rgb(32 55 45 / 10%);
 }
+
+button, a {
+  font: inherit;
+}
+
+button {
+  min-height: 2.75rem;
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-radius: 0.65rem;
+  color: white;
+  background: #24654e;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.secondary {
+  color: #245541;
+  background: #e2eee7;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 3px solid #e7a52d;
+  outline-offset: 3px;
+}
+
+.actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.file-control {
+  display: grid;
+  gap: 0.5rem;
+  font-weight: 700;
+}
+
+input[type="file"] {
+  padding: 0.75rem;
+  border: 1px solid #b9c8bd;
+  border-radius: 0.65rem;
+  background: white;
+}
+
+.privacy, .error {
+  margin: 1rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.error { color: #9b2c2c; }
+
+.run-page {
+  display: block;
+  width: min(100%, 70rem);
+  margin: auto;
+}
+
+.run-page header, .run-page section {
+  width: 100%;
+  margin-bottom: 1rem;
+  padding: clamp(1.25rem, 4vw, 2.5rem);
+}
+
+.run-page header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.run-page header h1 { font-size: clamp(2rem, 5vw, 3.5rem); }
+.run-page h2 { margin-top: 0; }
+.decision.success { border-color: #4e997b; background: #e8f3ed; }
+.decision.processing { background: #fff8e8; }
+
+.timeline, .checks { margin: 0; padding: 0; list-style: none; }
+.timeline li { display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid #e2e7e1; }
+.timeline span { color: #52665d; font-size: 0.8rem; font-weight: 750; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1rem; }
+.facts div { padding: 1rem; background: #f1f4ef; border-radius: 0.75rem; }
+.facts dt { color: #607068; font-size: 0.8rem; }
+.facts dd { margin: 0.35rem 0 0; font-weight: 700; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; text-align: left; }
+th, td { padding: 0.85rem; border-bottom: 1px solid #dbe2dc; white-space: nowrap; }
+.checks li { display: flex; gap: 1rem; padding: 0.75rem 0; }
+.checks li > span { color: #277058; font-weight: 900; }
+.checks p { margin: 0.2rem 0 0; color: #586860; }
 
 .eyebrow {
   margin: 0 0 1.25rem;

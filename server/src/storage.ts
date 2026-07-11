@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import Decimal from "decimal.js";
+import { Decimal } from "decimal.js";
 import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import {

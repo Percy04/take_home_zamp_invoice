@@ -10,6 +10,7 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: /invoice decisions you can trace/i })).toBeVisible();
-    expect(screen.getByRole("note")).toHaveTextContent(/foundation ready/i);
+    expect(screen.getByRole("button", { name: /try happy-path fixture/i })).toBeEnabled();
+    expect(screen.getByRole("note")).toHaveTextContent(/synthetic data only/i);
   });
 });
