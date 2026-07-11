@@ -34,16 +34,19 @@ type PoLineRow = {
 };
 type UsedRow = { po_line_id: string; quantity: number };
 
+// Convert doc intelligence output ot normalized invoice
 export function normalizeInvoice(
   evidence: SourceRef[],
   mapping: InvoiceMapping,
 ): NormalizedInvoice {
   const byId = new Map(evidence.map((source) => [source.id, source]));
+
   const select = (id: string) => {
     const source = byId.get(id);
     if (!source) throw new Error(`Missing evidence ${id}`);
     return source.content.normalize("NFKC").trim();
   };
+
   const money = (id: string) =>
     new Decimal(select(id).replace(/[$,\s]/g, "")).toFixed(2);
 

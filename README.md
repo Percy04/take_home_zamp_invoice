@@ -2,7 +2,7 @@
 
 A full-stack TypeScript demo that extracts invoice evidence, applies deterministic AP controls, and either posts once to a synthetic ledger or blocks for review.
 
-Phase 1 adds a persisted happy-path slice: PDF intake, Azure evidence extraction, OpenAI source mapping, deterministic direct matching and controls, atomic SQLite posting, durable run URLs, and the processing/result UI. The canonical architecture and delivery contract is in [BUILD_SPEC_TYPESCRIPT.md](BUILD_SPEC_TYPESCRIPT.md); [BUILD_SPEC.md](BUILD_SPEC.md) remains the detailed business-rule and fixture contract.
+Phase 1 adds a persisted happy-path slice: PDF intake, Azure evidence extraction, Gemini source mapping, deterministic direct matching and controls, atomic SQLite posting, durable run URLs, and the processing/result UI. The canonical architecture and delivery contract is in [BUILD_SPEC_TYPESCRIPT.md](BUILD_SPEC_TYPESCRIPT.md); [BUILD_SPEC.md](BUILD_SPEC.md) remains the detailed business-rule and fixture contract.
 
 ## Setup
 
@@ -13,7 +13,7 @@ npm ci
 Copy-Item .env.example .env
 ```
 
-Fill in the three provider credentials in `.env` for uploaded PDFs. Deterministic tests use the committed happy-path recording and never call providers.
+Fill in the Azure and Gemini provider credentials in `.env` for uploaded PDFs. Deterministic tests use the committed happy-path recording and never call providers.
 
 Run the Vite client and Express API in separate terminals:
 
@@ -29,6 +29,7 @@ npm run typecheck
 npm test
 npm run lint
 npm run build
+npm run verify:live -- data/fixtures/happy.pdf
 $env:NODE_ENV = "production"
 npm start
 ```

@@ -4,7 +4,11 @@ import {
   normalizeInvoice,
 } from "./controls.js";
 import { readFile } from "node:fs/promises";
-import { extractAndMap } from "./providers.js";
+import {
+  extractAndMap,
+  logProviderError,
+  providerFailureReason,
+} from "./providers.js";
 import type { Storage } from "./storage.js";
 
 export async function processInvoice(runId: string, storage: Storage) {
@@ -21,10 +25,8 @@ export async function processInvoice(runId: string, storage: Storage) {
   try {
     providerResult = await extractAndMap(await readFile(pdfPath));
   } catch (caught) {
-    const reason =
-      caught instanceof Error && caught.message.includes("OpenAI")
-        ? "MAPPING_FAILED"
-        : "EXTRACTION_FAILED";
+    logProviderError(caught);
+    const reason = providerFailureReason(caught);
     storage.addStage(
       runId,
       reason === "MAPPING_FAILED" ? "MAPPING" : "EXTRACTION",

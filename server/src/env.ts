@@ -10,8 +10,13 @@ const envSchema = z.object({
   PROVIDER_MODE: z.enum(["recorded", "live"]).default("recorded"),
   AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: z.url().optional(),
   AZURE_DOCUMENT_INTELLIGENCE_KEY: z.string().min(1).optional(),
-  OPENAI_API_KEY: z.string().min(1).optional(),
-  OPENAI_MODEL: z.string().min(1).default("gpt-5.4-mini"),
+  GEMINI_API_KEY: z.string().min(1).optional(),
+  GEMINI_MODEL: z.string().min(1).default("gemini-3.5-flash"),
 });
 
-export const env = envSchema.parse(process.env);
+const source =
+  process.env.NODE_ENV === "test"
+    ? { ...process.env, PROVIDER_MODE: "recorded" }
+    : process.env;
+
+export const env = envSchema.parse(source);
