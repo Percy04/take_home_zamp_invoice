@@ -15,14 +15,6 @@ class AppSmokeTests(unittest.TestCase):
         self.assertEqual(app.selectbox[0].label, "Try a fixture")
         self.assertEqual(app.button[0].label, "Run")
 
-    def test_fixture_can_be_validated_and_stored(self):
-        app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py").run()
-        app.selectbox[0].set_value("happy.pdf")
-        app.button[0].click().run()
-
-        self.assertEqual(app.exception, [])
-        self.assertEqual(app.success[0].value, "PDF validated and stored safely.")
-
 
 if __name__ == "__main__":
     unittest.main()

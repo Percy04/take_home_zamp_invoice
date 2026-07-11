@@ -6,7 +6,15 @@ from uuid import uuid4
 import streamlit as st
 
 from storage import initialize_runtime_database
-from pipeline import PDFValidationError, validate_and_store_pdf
+from pipeline import (
+    ExtractionError,
+    MappingError,
+    PDFValidationError,
+    build_source_catalogue,
+    extract_invoice,
+    map_invoice,
+    validate_and_store_pdf,
+)
 
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "data" / "fixtures"
@@ -40,14 +48,25 @@ with process_tab:
         with st.status("Validating PDF", expanded=True) as status:
             try:
                 validate_and_store_pdf(content, str(uuid4()))
+                st.write("PDF validated")
+                status.update(label="Extracting invoice evidence")
+                extraction = extract_invoice(content)
+                sources = build_source_catalogue(extraction)
+                st.write(f"Extracted {len(sources)} evidence references")
+                status.update(label="Mapping invoice fields")
+                mapping = map_invoice(sources)
             except PDFValidationError as error:
                 status.update(label=str(error), state="error")
                 st.error(
                     f"{error.decision} / {error.execution} / {error.reason_code} — {error}"
                 )
+            except (ExtractionError, MappingError) as error:
+                status.update(label="Invoice processing stopped", state="error")
+                st.error(f"NEEDS_REVIEW / BLOCKED / {error.reason_code} — {error}")
             else:
-                status.update(label="PDF ready", state="complete")
-                st.success("PDF validated and stored safely.")
+                status.update(label="Invoice mapped", state="complete")
+                st.success("Invoice evidence extracted and mapped.")
+                st.json(mapping.model_dump())
 
 with dashboard_tab:
     st.info("Processed invoice history will appear here.")
