@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
-import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import Decimal from "decimal.js";
+import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import {
   allocationSchema,
@@ -148,6 +149,30 @@ export class Storage {
       const vendor = this.db
         .prepare("SELECT id FROM vendors WHERE normalized_name = ?")
         .get(normalize(invoice.vendor)) as { id: string };
+      const duplicate = this.db
+        .prepare(
+          "SELECT id FROM posted_invoices WHERE vendor_id = ? AND normalized_invoice_number = ?",
+        )
+        .get(vendor.id, normalize(invoice.invoiceNumber));
+      if (duplicate) throw new Error("DUPLICATE");
+      for (const allocation of allocations) {
+        const capacity = this.db
+          .prepare(
+            `SELECT p.ordered_quantity, p.received_quantity,
+             COALESCE(SUM(CAST(a.component_quantity AS REAL)), 0) AS used_quantity
+             FROM po_lines p LEFT JOIN allocations a ON a.po_line_id = p.id
+             WHERE p.id = ? GROUP BY p.id`,
+          )
+          .get(allocation.poLineId) as {
+          ordered_quantity: string;
+          received_quantity: string;
+          used_quantity: number;
+        };
+        const after = new Decimal(capacity.used_quantity).plus(allocation.quantity);
+        if (after.gt(capacity.ordered_quantity) || after.gt(capacity.received_quantity)) {
+          throw new Error("CAPACITY_CHANGED");
+        }
+      }
       const ledgerId = `LEDGER-${id}`;
       const now = new Date().toISOString();
       this.db
@@ -227,10 +252,5 @@ function normalize(value: string) {
 }
 
 function exists(file: string) {
-  try {
-    new Database(file, { readonly: true }).close();
-    return true;
-  } catch {
-    return false;
-  }
+  return existsSync(file);
 }
