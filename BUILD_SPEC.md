@@ -135,7 +135,7 @@ Keep runtime code in three modules:
 Supporting artifacts:
 
 - data/fixtures: the nine generated acceptance and regression PDFs.
-- tests/recordings: recorded Azure responses used only by tests.
+- data/recordings: recorded Azure responses used only by tests.
 - data/seed.sqlite: immutable committed seed database.
 - data/cases.json: expected fixture outcomes and accounting deltas.
 - scripts/build_demo_data.py: deterministic PDF and seed-data generator.
@@ -1109,7 +1109,7 @@ Deliverables:
 - Generate the original data/cases.json expectations, which Phase 0B subsequently extends for the new capabilities.
 - Add scripts/verify_azure.py to submit local PDF bytes to prebuilt-invoice rather than a hard-coded public URL.
 - Verify the happy fixture produces usable fields, line items/tables, confidence, and source locations.
-- Save the happy-fixture Azure response to tests/recordings/happy_azure.json for offline test adapters. The recording is test-only and must never be selected in the live UI by file hash.
+- Save the happy-fixture Azure response to data/recordings/happy_azure.json for offline test adapters. The recording is test-only and must never be selected in the live UI by file hash.
 
 Exit gate:
 
