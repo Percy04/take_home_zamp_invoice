@@ -4,12 +4,14 @@ import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import {
   allocationSchema,
+  bundleCandidateSchema,
   checkResultSchema,
   normalizedInvoiceSchema,
   runDetailSchema,
   sourceRefSchema,
   stageEventSchema,
   type Allocation,
+  type BundleCandidate,
   type CheckResult,
   type NormalizedInvoice,
   type RunDetail,
@@ -31,6 +33,8 @@ type RunRow = {
   ledger_invoice_id: string | null;
   extraction_json: string | null;
   evaluation_json: string | null;
+  candidates_json: string | null;
+  bundle_candidates_json: string | null;
   stage_events_json: string;
 };
 
@@ -121,6 +125,10 @@ export class Storage {
         : null,
       checks: checkResultSchema.array().parse(evaluation.checks),
       allocations: allocationSchema.array().parse(evaluation.allocations),
+      candidatePo: parsePoCandidates(row.candidates_json)[0]?.poNumber ?? null,
+      bundleCandidates: bundleCandidateSchema
+        .array()
+        .parse(JSON.parse(row.bundle_candidates_json ?? "[]")),
     });
   }
 
@@ -175,6 +183,148 @@ export class Storage {
         )
         .all(),
     };
+  }
+
+  getEvaluation(id: string): Evaluation | null {
+    const row = this.db
+      .prepare("SELECT evaluation_json FROM runs WHERE id = ?")
+      .get(id) as { evaluation_json: string | null } | undefined;
+    return row?.evaluation_json
+      ? (JSON.parse(row.evaluation_json) as Evaluation)
+      : null;
+  }
+
+  findPoCandidate(invoice: NormalizedInvoice) {
+    const vendor = this.db
+      .prepare("SELECT id FROM vendors WHERE normalized_name = ?")
+      .get(normalize(invoice.vendor)) as { id: string } | undefined;
+    if (!vendor) return null;
+    const purchaseOrders = this.db
+      .prepare(
+        "SELECT * FROM purchase_orders WHERE vendor_id = ? AND status = 'OPEN' AND currency = ?",
+      )
+      .all(vendor.id, invoice.currency) as Array<{ po_number: string }>;
+    for (const po of purchaseOrders) {
+      const lines = this.db
+        .prepare("SELECT * FROM po_lines WHERE po_number = ?")
+        .all(po.po_number) as Array<{
+        normalized_sku: string;
+        normalized_description: string;
+        uom: string;
+        unit_price: string;
+      }>;
+      const matches = invoice.lines.every((line) =>
+        lines.some((poLine) => {
+          const basis = new Decimal(line.quantity).mul(poLine.unit_price);
+          const variance = new Decimal(line.amount).minus(basis).abs();
+          return (
+            poLine.normalized_sku === normalize(line.sku) &&
+            poLine.normalized_description === normalize(line.description) &&
+            poLine.uom === line.uom &&
+            variance.lte(5)
+          );
+        }),
+      );
+      if (matches) return po.po_number;
+    }
+    return null;
+  }
+
+  findBundleCandidate(invoice: NormalizedInvoice): BundleCandidate | null {
+    if (invoice.lines.length !== 1) return null;
+    const line = invoice.lines[0];
+    const poLines = this.db
+      .prepare("SELECT * FROM po_lines WHERE po_number = ? ORDER BY line_number")
+      .all(invoice.poNumber) as Array<{
+      id: string;
+      sku: string;
+      uom: string;
+      received_quantity: string;
+      unit_price: string;
+    }>;
+    if (poLines.length < 2) return null;
+    const components = poLines.map((poLine) => {
+      const quantity = poLine.received_quantity;
+      return {
+        poLineId: poLine.id,
+        sku: poLine.sku,
+        uom: poLine.uom,
+        quantity,
+        poBasisAmount: new Decimal(quantity).mul(poLine.unit_price).toFixed(2),
+      };
+    });
+    const total = components.reduce(
+      (sum, component) => sum.plus(component.poBasisAmount),
+      new Decimal(0),
+    );
+    if (!total.eq(line.amount)) return null;
+    return {
+      id: "BUNDLE-CANDIDATE-1",
+      invoiceLineIndex: 0,
+      bundleQuantity: line.quantity,
+      totalPoBasisAmount: total.toFixed(2),
+      components,
+    };
+  }
+
+  awaitPoConfirmation(
+    id: string,
+    invoice: NormalizedInvoice,
+    checks: CheckResult[],
+    candidatePo: string,
+    nextAction: string,
+  ) {
+    this.db
+      .prepare(
+        `UPDATE runs SET state = 'AWAITING_PO_CONFIRMATION', decision = 'NEEDS_REVIEW',
+         execution = 'AWAITING_CONFIRMATION', primary_reason_code = 'MISSING_PO',
+         next_action = ?, evaluation_json = ?, candidates_json = ?, updated_at = ? WHERE id = ?`,
+      )
+      .run(
+        nextAction,
+        JSON.stringify({ invoice, checks, allocations: [] }),
+        JSON.stringify([{ poNumber: candidatePo }]),
+        new Date().toISOString(),
+        id,
+      );
+  }
+
+  awaitBundleConfirmation(
+    id: string,
+    invoice: NormalizedInvoice,
+    checks: CheckResult[],
+    candidate: BundleCandidate,
+    nextAction: string,
+  ) {
+    this.db
+      .prepare(
+        `UPDATE runs SET state = 'AWAITING_BUNDLE_CONFIRMATION', decision = 'NEEDS_REVIEW',
+         execution = 'AWAITING_CONFIRMATION', primary_reason_code = 'BUNDLE_MAPPING_REQUIRED',
+         next_action = ?, evaluation_json = ?, bundle_candidates_json = ?, updated_at = ? WHERE id = ?`,
+      )
+      .run(
+        nextAction,
+        JSON.stringify({ invoice, checks, allocations: [] }),
+        JSON.stringify([candidate]),
+        new Date().toISOString(),
+        id,
+      );
+  }
+
+  getPoCandidates(id: string) {
+    const row = this.db
+      .prepare("SELECT candidates_json FROM runs WHERE id = ?")
+      .get(id) as { candidates_json: string | null } | undefined;
+    return parsePoCandidates(row?.candidates_json ?? null);
+  }
+
+  getBundleCandidates(id: string) {
+    const row = this.db
+      .prepare("SELECT bundle_candidates_json FROM runs WHERE id = ?")
+      .get(id) as { bundle_candidates_json: string | null } | undefined;
+    return bundleCandidateSchema
+      .array()
+      .parse(JSON.parse(row?.bundle_candidates_json ?? "[]"));
   }
 
   post(
@@ -319,6 +469,16 @@ export class Storage {
   close() {
     this.db.close();
   }
+}
+
+function parsePoCandidates(value: string | null) {
+  if (!value) return [] as Array<{ poNumber: string }>;
+  const parsed = JSON.parse(value) as unknown;
+  if (!Array.isArray(parsed)) return [];
+  return parsed.flatMap((row) => {
+    const poNumber = (row as { poNumber?: unknown }).poNumber;
+    return typeof poNumber === "string" ? [{ poNumber }] : [];
+  });
 }
 
 function normalize(value: string) {

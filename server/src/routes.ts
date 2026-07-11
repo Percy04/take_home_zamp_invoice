@@ -4,7 +4,7 @@ import path from "node:path";
 import { Router } from "express";
 import multer from "multer";
 import { PDFDocument } from "pdf-lib";
-import { processInvoice } from "./pipeline.js";
+import { confirmBundle, confirmPo, processInvoice } from "./pipeline.js";
 import type { Storage } from "./storage.js";
 
 const maxPdfBytes = 10 * 1024 * 1024;
@@ -82,6 +82,52 @@ export function createApi(storage?: Storage) {
           .status(404)
           .json(error("RUN_NOT_FOUND", "Run not found."));
       response.json(await processInvoice(request.params.runId, storage));
+    } catch (caught) {
+      next(caught);
+    }
+  });
+
+  api.post("/runs/:runId/confirm-po", async (request, response, next) => {
+    try {
+      const run = storage.getRun(request.params.runId);
+      if (!run)
+        return response
+          .status(404)
+          .json(error("RUN_NOT_FOUND", "Run not found."));
+      const poNumber =
+        typeof request.body.poNumber === "string"
+          ? request.body.poNumber
+          : run.candidatePo;
+      if (!poNumber) {
+        return response
+          .status(400)
+          .json(error("INVALID_CONFIRMATION", "No PO candidate was selected."));
+      }
+      response.json(confirmPo(request.params.runId, storage, poNumber));
+    } catch (caught) {
+      next(caught);
+    }
+  });
+
+  api.post("/runs/:runId/confirm-bundle", async (request, response, next) => {
+    try {
+      const run = storage.getRun(request.params.runId);
+      if (!run)
+        return response
+          .status(404)
+          .json(error("RUN_NOT_FOUND", "Run not found."));
+      const candidateId =
+        typeof request.body.candidateId === "string"
+          ? request.body.candidateId
+          : run.bundleCandidates[0]?.id;
+      if (!candidateId) {
+        return response
+          .status(400)
+          .json(
+            error("INVALID_CONFIRMATION", "No bundle candidate was selected."),
+          );
+      }
+      response.json(confirmBundle(request.params.runId, storage, candidateId));
     } catch (caught) {
       next(caught);
     }

@@ -10,6 +10,7 @@ import {
   providerFailureReason,
 } from "./providers.js";
 import type { Storage } from "./storage.js";
+import type { Allocation, CheckResult } from "../../shared/contracts.js";
 
 export async function processInvoice(runId: string, storage: Storage) {
   const current = storage.getRun(runId);
@@ -57,11 +58,38 @@ export async function processInvoice(runId: string, storage: Storage) {
     return storage.getRun(runId)!;
   }
   storage.addStage(runId, "NORMALIZATION", "COMPLETED");
+  if (!invoice.poNumber) {
+    const candidatePo = storage.findPoCandidate(invoice);
+    if (candidatePo) {
+      storage.awaitPoConfirmation(
+        runId,
+        invoice,
+        [{ code: "MISSING_PO", passed: false, detail: "Invoice omitted its PO reference." }],
+        candidatePo,
+        nextActionFor("MISSING_PO"),
+      );
+      return storage.getRun(runId)!;
+    }
+  }
   let evaluation;
   try {
     evaluation = evaluateHappyPath(invoice, storage.getHappyContext());
   } catch (caught) {
     if (!(caught instanceof ControlError)) throw caught;
+    if (caught.code === "LINE_MATCH") {
+      const candidate = storage.findBundleCandidate(invoice);
+      if (candidate) {
+        storage.addStage(runId, "CONTROLS", "COMPLETED");
+        storage.awaitBundleConfirmation(
+          runId,
+          invoice,
+          caught.checks,
+          candidate,
+          nextActionFor("BUNDLE_MAPPING_REQUIRED"),
+        );
+        return storage.getRun(runId)!;
+      }
+    }
     storage.addStage(runId, "CONTROLS", "FAILED");
     storage.block(
       runId,
@@ -92,6 +120,62 @@ export async function processInvoice(runId: string, storage: Storage) {
     );
     return storage.getRun(runId)!;
   }
+  storage.addStage(runId, "POSTING", "COMPLETED");
+  return storage.getRun(runId)!;
+}
+
+export function confirmPo(runId: string, storage: Storage, poNumber: string) {
+  const current = storage.getRun(runId);
+  if (!current) throw new Error("RUN_NOT_FOUND");
+  if (current.state === "POSTED") return current;
+  if (current.state !== "AWAITING_PO_CONFIRMATION")
+    throw new Error("INVALID_RUN_STATE");
+  if (!storage.getPoCandidates(runId).some((row) => row.poNumber === poNumber))
+    throw new Error("INVALID_CONFIRMATION");
+  const invoice = storage.getEvaluation(runId)?.invoice;
+  if (!invoice) throw new Error("RUN_EVALUATION_NOT_FOUND");
+  const confirmedInvoice = { ...invoice, poNumber };
+  const evaluation = evaluateHappyPath(confirmedInvoice, storage.getHappyContext());
+  storage.addStage(runId, "CONFIRMATION", "COMPLETED");
+  storage.post(runId, confirmedInvoice, evaluation.checks, evaluation.allocations);
+  storage.addStage(runId, "POSTING", "COMPLETED");
+  return storage.getRun(runId)!;
+}
+
+export function confirmBundle(
+  runId: string,
+  storage: Storage,
+  candidateId: string,
+) {
+  const current = storage.getRun(runId);
+  if (!current) throw new Error("RUN_NOT_FOUND");
+  if (current.state === "POSTED") return current;
+  if (current.state !== "AWAITING_BUNDLE_CONFIRMATION")
+    throw new Error("INVALID_RUN_STATE");
+  const candidate = storage
+    .getBundleCandidates(runId)
+    .find((row) => row.id === candidateId);
+  if (!candidate) throw new Error("INVALID_CONFIRMATION");
+  const invoice = storage.getEvaluation(runId)?.invoice;
+  if (!invoice) throw new Error("RUN_EVALUATION_NOT_FOUND");
+  const checks: CheckResult[] = [
+    { code: "BUNDLE_MAPPING_CONFIRMED", passed: true, detail: "Reviewer confirmed the stored bundle decomposition." },
+  ];
+  const allocations: Allocation[] = candidate.components.map((component) => ({
+    invoiceLineIndex: candidate.invoiceLineIndex,
+    poLineId: component.poLineId,
+    poNumber: invoice.poNumber,
+    sku: component.sku,
+    quantity: component.quantity,
+    matchType: "BUNDLE_CONFIRMED",
+    bundleDefinitionId: null,
+    poBasisAmount: component.poBasisAmount,
+    actualNetAmount: component.poBasisAmount,
+    remainingOrderedQuantity: "0",
+    remainingReceivedQuantity: "0",
+  }));
+  storage.addStage(runId, "CONFIRMATION", "COMPLETED");
+  storage.post(runId, invoice, checks, allocations);
   storage.addStage(runId, "POSTING", "COMPLETED");
   return storage.getRun(runId)!;
 }

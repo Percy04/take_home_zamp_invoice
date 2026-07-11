@@ -63,6 +63,22 @@ export const allocationSchema = z.object({
   remainingReceivedQuantity: z.string(),
 });
 
+export const bundleCandidateSchema = z.object({
+  id: z.string(),
+  invoiceLineIndex: z.number().int().nonnegative(),
+  bundleQuantity: z.string(),
+  totalPoBasisAmount: z.string(),
+  components: z.array(
+    z.object({
+      poLineId: z.string(),
+      sku: z.string(),
+      uom: z.string(),
+      quantity: z.string(),
+      poBasisAmount: z.string(),
+    }),
+  ),
+});
+
 export const runDetailSchema = z.object({
   runId: z.uuid(),
   filename: z.string(),
@@ -79,6 +95,8 @@ export const runDetailSchema = z.object({
   invoice: normalizedInvoiceSchema.nullable(),
   checks: z.array(checkResultSchema),
   allocations: z.array(allocationSchema),
+  candidatePo: z.string().nullable(),
+  bundleCandidates: z.array(bundleCandidateSchema),
 });
 
 export const apiErrorSchema = z.object({
@@ -94,4 +112,5 @@ export type StageEvent = z.infer<typeof stageEventSchema>;
 export type CheckResult = z.infer<typeof checkResultSchema>;
 export type NormalizedInvoice = z.infer<typeof normalizedInvoiceSchema>;
 export type Allocation = z.infer<typeof allocationSchema>;
+export type BundleCandidate = z.infer<typeof bundleCandidateSchema>;
 export type RunDetail = z.infer<typeof runDetailSchema>;

@@ -157,4 +157,94 @@ describe("happy-path vertical slice", () => {
     database.close();
     storage.close();
   });
+
+  it("awaits and confirms the missing-PO candidate on the same run", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-phase-3-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+
+    const created = await request(app)
+      .post("/api/runs")
+      .attach("invoice", path.resolve("data/fixtures/missing_po.pdf"))
+      .expect(201);
+    const awaiting = await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+    const confirmed = await request(app)
+      .post(`/api/runs/${created.body.runId}/confirm-po`)
+      .send({ poNumber: "PO-1002" })
+      .expect(200);
+    const retried = await request(app)
+      .post(`/api/runs/${created.body.runId}/confirm-po`)
+      .send({ poNumber: "PO-1002" })
+      .expect(200);
+
+    expect(awaiting.body).toMatchObject({
+      state: "AWAITING_PO_CONFIRMATION",
+      execution: "AWAITING_CONFIRMATION",
+      reasonCode: "MISSING_PO",
+      candidatePo: "PO-1002",
+      ledgerId: null,
+    });
+    expect(confirmed.body).toMatchObject({
+      runId: created.body.runId,
+      state: "POSTED",
+      decision: "AUTO_CLEARED",
+      execution: "POSTED",
+      invoice: { poNumber: "PO-1002", subtotal: "502.00" },
+      allocations: [{ poNumber: "PO-1002", matchType: "DIRECT" }],
+    });
+    expect(retried.body.ledgerId).toBe(confirmed.body.ledgerId);
+    storage.close();
+  });
+
+  it("awaits and confirms an unknown bundle decomposition on the same run", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-phase-3-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+
+    const created = await request(app)
+      .post("/api/runs")
+      .attach("invoice", path.resolve("data/fixtures/bundle_unknown.pdf"))
+      .expect(201);
+    const awaiting = await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+    const confirmed = await request(app)
+      .post(`/api/runs/${created.body.runId}/confirm-bundle`)
+      .send({ candidateId: "BUNDLE-CANDIDATE-1" })
+      .expect(200);
+    const retried = await request(app)
+      .post(`/api/runs/${created.body.runId}/confirm-bundle`)
+      .send({ candidateId: "BUNDLE-CANDIDATE-1" })
+      .expect(200);
+
+    expect(awaiting.body).toMatchObject({
+      state: "AWAITING_BUNDLE_CONFIRMATION",
+      execution: "AWAITING_CONFIRMATION",
+      reasonCode: "BUNDLE_MAPPING_REQUIRED",
+      bundleCandidates: [
+        {
+          id: "BUNDLE-CANDIDATE-1",
+          totalPoBasisAmount: "300.00",
+          components: [{ sku: "WID-100" }, { sku: "BOL-200" }],
+        },
+      ],
+      ledgerId: null,
+    });
+    expect(confirmed.body).toMatchObject({
+      runId: created.body.runId,
+      state: "POSTED",
+      decision: "AUTO_CLEARED",
+      execution: "POSTED",
+      allocations: [
+        { matchType: "BUNDLE_CONFIRMED", bundleDefinitionId: null },
+        { matchType: "BUNDLE_CONFIRMED", bundleDefinitionId: null },
+      ],
+    });
+    expect(retried.body.ledgerId).toBe(confirmed.body.ledgerId);
+    storage.close();
+  });
 });

@@ -225,10 +225,11 @@ export function evaluateInvoice(
 
     const quantity = new Decimal(line.quantity);
     const basis = quantity.mul(poLine.unit_price);
+    const variance = new Decimal(line.amount).minus(basis).abs();
     check(
       "PRICE_MATCH",
-      basis.eq(line.amount),
-      `${line.sku} amount equals PO price x quantity.`,
+      variance.lte(5) && variance.div(basis).lte(0.01),
+      `${line.sku} amount is within the allowed PO price variance.`,
     );
     return [
       allocationFor({
