@@ -28,6 +28,9 @@ st.caption("Single-user resettable demo")
 process_tab, dashboard_tab = st.tabs(["Process Invoice", "Dashboard & Review"])
 
 with process_tab:
+    st.caption(
+        "Privacy: invoice PDFs are sent to Azure Document Intelligence; extracted text evidence is sent to OpenAI."
+    )
     fixture_names = [
         "Upload your own PDF",
         *(path.name for path in sorted(FIXTURE_DIR.glob("*.pdf"))),

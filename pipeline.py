@@ -176,14 +176,24 @@ def _source_ref(source_id: str, label: str, value: dict, **coordinates) -> Sourc
 
 
 def build_source_catalogue(payload: dict) -> list[SourceRef]:
-    """Flatten Azure evidence into stable, compact source references."""
+    """Flatten Azure evidence, converting unusable payloads to a safe failure."""
+    try:
+        catalogue = _build_source_catalogue(payload)
+    except ExtractionError:
+        raise
+    except Exception as error:
+        raise ExtractionError("Azure returned unusable invoice evidence.") from error
+    if not catalogue:
+        raise ExtractionError("Azure returned no usable invoice evidence.")
+    return catalogue
+
+
+def _build_source_catalogue(payload: dict) -> list[SourceRef]:
     catalogue: list[SourceRef] = []
     fields = (payload.get("documents") or [{}])[0].get("fields") or {}
 
     def add_field(source_id: str, label: str, value: dict) -> None:
         catalogue.append(_source_ref(source_id, label, value))
-        for child_label, child in (value.get("valueObject") or {}).items():
-            add_field(f"{source_id}.{child_label}", child_label, child)
 
     for label, value in fields.items():
         if label == "Items":

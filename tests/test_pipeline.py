@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from pathlib import Path
 
 from pipeline import (
+    ExtractionError,
     InvoiceLineMapping,
     InvoiceMapping,
     MappingError,
@@ -93,6 +94,33 @@ class ExtractionAndMappingTests(unittest.TestCase):
         self.assertEqual(by_id["item.0.ProductCode"].content, "WID-100")
         self.assertIn("table.0.r0.c0", by_id)
         self.assertTrue(any(source.id.startswith("line.1.l") for source in sources))
+        self.assertTrue(any(source.id.startswith("key_value.") for source in sources))
+        self.assertIn("field.BillingAddress", by_id)
+        self.assertFalse(
+            any(source.id.startswith("field.BillingAddress.") for source in sources)
+        )
+
+    def test_scanned_lines_use_minimum_overlapping_word_confidence(self):
+        payload = extract_invoice(
+            b"unused offline",
+            recording_path=ROOT
+            / "tests"
+            / "recordings"
+            / "happy_layout_c_scanned_azure.json",
+        )
+        lines = [
+            source
+            for source in build_source_catalogue(payload)
+            if source.id.startswith("line.")
+        ]
+        self.assertTrue(lines)
+        self.assertTrue(all(source.confidence is not None for source in lines))
+
+    def test_unusable_extraction_is_a_safe_failure(self):
+        with self.assertRaises(ExtractionError):
+            build_source_catalogue({"documents": [{}]})
+        with self.assertRaises(ExtractionError):
+            build_source_catalogue({"documents": [{"fields": {"Broken": None}}]})
 
     def test_mapping_uses_one_structured_call_and_rejects_unknown_sources(self):
         sources = build_source_catalogue(self.recording)
@@ -118,6 +146,10 @@ class ExtractionAndMappingTests(unittest.TestCase):
         self.assertEqual(responses.calls[0]["max_output_tokens"], 4000)
 
         parsed.vendor_source_id = "field.DoesNotExist"
+        with self.assertRaises(MappingError):
+            map_invoice(sources, SimpleNamespace(responses=responses))
+
+        responses.parse = lambda **kwargs: SimpleNamespace(output_parsed=None)
         with self.assertRaises(MappingError):
             map_invoice(sources, SimpleNamespace(responses=responses))
 
