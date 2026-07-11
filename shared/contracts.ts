@@ -99,6 +99,18 @@ export const runDetailSchema = z.object({
   bundleCandidates: z.array(bundleCandidateSchema),
 });
 
+export const runSummarySchema = z.object({
+  runId: z.uuid(),
+  filename: z.string(),
+  state: runStateSchema,
+  decision: z.enum(["AUTO_CLEARED", "NEEDS_REVIEW"]).nullable(),
+  execution: z.enum(["POSTED", "BLOCKED", "AWAITING_CONFIRMATION"]).nullable(),
+  reasonCode: z.string().nullable(),
+  ledgerId: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+
 export const apiErrorSchema = z.object({
   error: z.object({
     code: z.string().min(1),
@@ -114,3 +126,4 @@ export type NormalizedInvoice = z.infer<typeof normalizedInvoiceSchema>;
 export type Allocation = z.infer<typeof allocationSchema>;
 export type BundleCandidate = z.infer<typeof bundleCandidateSchema>;
 export type RunDetail = z.infer<typeof runDetailSchema>;
+export type RunSummary = z.infer<typeof runSummarySchema>;

@@ -1,4 +1,23 @@
-import { runDetailSchema, type RunDetail } from "../../shared/contracts";
+import {
+  runDetailSchema,
+  runSummarySchema,
+  type RunDetail,
+  type RunSummary,
+} from "../../shared/contracts";
+
+export const fixtureIds = [
+  "happy",
+  "duplicate",
+  "missing_po",
+  "receipt_capacity",
+  "happy_layout_b",
+  "happy_layout_c_scanned",
+  "bundle_known",
+  "bundle_unknown",
+  "tax_inclusive",
+] as const;
+
+export type FixtureId = (typeof fixtureIds)[number];
 
 async function runRequest(url: string, init?: RequestInit): Promise<RunDetail> {
   const response = await fetch(url, init);
@@ -9,11 +28,20 @@ async function runRequest(url: string, init?: RequestInit): Promise<RunDetail> {
   return runDetailSchema.parse(await response.json());
 }
 
-export function createRun(input: File | "happy") {
+export function createRun(input: File | FixtureId) {
   const body = new FormData();
   if (input instanceof File) body.append("invoice", input);
   else body.append("fixtureId", input);
   return runRequest("/api/runs", { method: "POST", body });
+}
+
+export async function listRuns(): Promise<RunSummary[]> {
+  const response = await fetch("/api/runs");
+  if (!response.ok) {
+    const body = (await response.json()) as { error?: { message?: string } };
+    throw new Error(body.error?.message ?? "The request failed.");
+  }
+  return runSummarySchema.array().parse(await response.json());
 }
 
 export function processRun(runId: string) {

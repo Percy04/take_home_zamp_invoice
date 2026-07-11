@@ -13,7 +13,16 @@ import {
   useNavigate,
   useParams,
 } from "react-router-dom";
-import { confirmBundle, confirmPo, createRun, getRun, processRun } from "./api";
+import {
+  confirmBundle,
+  confirmPo,
+  createRun,
+  fixtureIds,
+  getRun,
+  listRuns,
+  processRun,
+  type FixtureId,
+} from "./api";
 
 const queryClient = new QueryClient();
 
@@ -23,7 +32,7 @@ export function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<InvoicePage />} />
-          <Route path="/dashboard" element={<InvoicePage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/runs/:runId" element={<RunPage />} />
         </Routes>
       </BrowserRouter>
@@ -73,7 +82,7 @@ function InvoicePage() {
               <p className="eyebrow">New run</p>
               <h2 id="upload">Invoice intake</h2>
               <p className="muted">
-                Upload a PDF or run the committed happy-path fixture.
+                Upload a PDF or run any committed fixture.
               </p>
             </div>
 
@@ -93,13 +102,19 @@ function InvoicePage() {
               >
                 {create.isPending ? "Uploading..." : "Process PDF"}
               </button>
-              <button
-                className="secondary"
-                disabled={create.isPending}
-                onClick={() => create.mutate("happy")}
-              >
-                Run happy fixture
-              </button>
+            </div>
+
+            <div className="fixture-grid" aria-label="Fixture runs">
+              {fixtureIds.map((fixtureId) => (
+                <button
+                  key={fixtureId}
+                  className="secondary"
+                  disabled={create.isPending}
+                  onClick={() => create.mutate(fixtureId)}
+                >
+                  {fixtureLabel(fixtureId)}
+                </button>
+              ))}
             </div>
 
             {file && <p className="muted selected-file">Selected: {file.name}</p>}
@@ -112,7 +127,7 @@ function InvoicePage() {
                 <p className="eyebrow">Available now</p>
                 <h2 id="capabilities">Run workflow</h2>
               </div>
-              <span className="status-badge neutral">Phase 1</span>
+              <span className="status-badge neutral">Phase 4</span>
             </div>
             <table>
               <thead>
@@ -124,11 +139,11 @@ function InvoicePage() {
               </thead>
               <tbody>
                 <tr>
-                  <td>Happy fixture</td>
+                  <td>Posting paths</td>
                   <td>
                     <span className="status-badge ok">Ready</span>
                   </td>
-                  <td>Posts when controls pass.</td>
+                  <td>Direct, tax-inclusive, and trusted bundle.</td>
                 </tr>
                 <tr>
                   <td>Live providers</td>
@@ -138,16 +153,73 @@ function InvoicePage() {
                   <td>Requires Azure and Gemini env vars.</td>
                 </tr>
                 <tr>
-                  <td>Other fixtures</td>
+                  <td>Reviewer flows</td>
                   <td>
-                    <span className="status-badge neutral">Next phase</span>
+                    <span className="status-badge ok">Ready</span>
                   </td>
-                  <td>Controls are not fully ported yet.</td>
+                  <td>Missing PO and unknown bundle confirmation.</td>
                 </tr>
               </tbody>
             </table>
           </section>
         </div>
+      </main>
+    </ConsoleShell>
+  );
+}
+
+function DashboardPage() {
+  const runs = useQuery({
+    queryKey: ["runs"],
+    queryFn: listRuns,
+  });
+
+  return (
+    <ConsoleShell>
+      <main className="console-main" aria-labelledby="dashboard-title">
+        <div className="page-heading compact">
+          <div>
+            <p className="eyebrow">Run history</p>
+            <h1 id="dashboard-title">Dashboard</h1>
+          </div>
+          <Link className="button-link" to="/">
+            New invoice
+          </Link>
+        </div>
+
+        <section className="surface" aria-label="Recent runs">
+          {runs.isPending && <p className="muted">Loading runs...</p>}
+          {runs.error && <p className="error">{runs.error.message}</p>}
+          {runs.data?.length === 0 && <p className="muted">No runs yet.</p>}
+          {runs.data && runs.data.length > 0 && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Invoice</th>
+                    <th>State</th>
+                    <th>Decision</th>
+                    <th>Reason</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {runs.data.map((run) => (
+                    <tr key={run.runId}>
+                      <td>
+                        <Link to={`/runs/${run.runId}`}>{run.filename}</Link>
+                      </td>
+                      <td>{run.state}</td>
+                      <td>{run.decision ?? "-"}</td>
+                      <td>{run.reasonCode ?? "-"}</td>
+                      <td>{new Date(run.updatedAt).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       </main>
     </ConsoleShell>
   );
@@ -466,6 +538,13 @@ function Fact({ label, value }: { label: string; value: string }) {
       <dd>{value}</dd>
     </div>
   );
+}
+
+function fixtureLabel(fixtureId: FixtureId) {
+  return fixtureId
+    .split("_")
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function StatusPage({ children }: { children: React.ReactNode }) {

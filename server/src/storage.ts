@@ -8,6 +8,7 @@ import {
   checkResultSchema,
   normalizedInvoiceSchema,
   runDetailSchema,
+  runSummarySchema,
   sourceRefSchema,
   stageEventSchema,
   type Allocation,
@@ -15,6 +16,7 @@ import {
   type CheckResult,
   type NormalizedInvoice,
   type RunDetail,
+  type RunSummary,
   type SourceRef,
   type StageEvent,
 } from "../../shared/contracts.js";
@@ -130,6 +132,39 @@ export class Storage {
         .array()
         .parse(JSON.parse(row.bundle_candidates_json ?? "[]")),
     });
+  }
+
+  listRuns(): RunSummary[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, filename, state, decision, execution, primary_reason_code,
+         ledger_invoice_id, created_at, updated_at
+         FROM runs ORDER BY created_at DESC LIMIT 50`,
+      )
+      .all() as Array<{
+      id: string;
+      filename: string;
+      state: RunSummary["state"];
+      decision: RunSummary["decision"];
+      execution: RunSummary["execution"];
+      primary_reason_code: string | null;
+      ledger_invoice_id: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    return runSummarySchema.array().parse(
+      rows.map((row) => ({
+        runId: row.id,
+        filename: row.filename,
+        state: row.state,
+        decision: row.decision,
+        execution: row.execution,
+        reasonCode: row.primary_reason_code,
+        ledgerId: row.ledger_invoice_id,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })),
+    );
   }
 
   getPdfPath(id: string): string | null {

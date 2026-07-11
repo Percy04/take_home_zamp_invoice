@@ -12,6 +12,17 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { files: 1, fileSize: maxPdfBytes },
 });
+const fixtureIds = new Set([
+  "happy",
+  "duplicate",
+  "missing_po",
+  "receipt_capacity",
+  "happy_layout_b",
+  "happy_layout_c_scanned",
+  "bundle_known",
+  "bundle_unknown",
+  "tax_inclusive",
+]);
 
 export function createApi(storage?: Storage) {
   const api = Router();
@@ -24,6 +35,10 @@ export function createApi(storage?: Storage) {
   });
 
   if (!storage) return api;
+
+  api.get("/runs", (_request, response) => {
+    response.json(storage.listRuns());
+  });
 
   api.post(
     "/runs",
@@ -39,12 +54,10 @@ export function createApi(storage?: Storage) {
             .status(400)
             .json(error("INVALID_UPLOAD", "Choose one PDF or fixture."));
         }
-        if (fixtureId && fixtureId !== "happy") {
+        if (fixtureId && !fixtureIds.has(fixtureId)) {
           return response
             .status(400)
-            .json(
-              error("INVALID_FIXTURE", "Only the happy fixture is available."),
-            );
+            .json(error("INVALID_FIXTURE", "Unknown fixture."));
         }
         const bytes = request.file
           ? request.file.buffer
