@@ -8,63 +8,74 @@ export const runStateSchema = z.enum([
   "NEEDS_REVIEW",
 ]);
 
-export const decisionSchema = z.enum(["AUTO_CLEARED", "NEEDS_REVIEW"]);
-export const executionSchema = z.enum(["POSTED", "BLOCKED", "AWAITING_CONFIRMATION"]);
-
 export const sourceRefSchema = z.object({
   id: z.string().min(1),
-  value: z.string(),
-  confidence: z.string().regex(/^\d+(\.\d+)?$/),
-  page: z.number().int().positive(),
+  content: z.string(),
+  confidence: z.number().min(0).max(1).nullable(),
+  page: z.number().int().positive().nullable(),
+  label: z.string().min(1),
 });
 
 export const stageEventSchema = z.object({
   stage: z.string().min(1),
-  status: z.enum(["PENDING", "ACTIVE", "COMPLETED", "FAILED"]),
+  status: z.enum(["ACTIVE", "COMPLETED", "FAILED"]),
   at: z.iso.datetime(),
 });
 
 export const checkResultSchema = z.object({
   code: z.string().min(1),
   passed: z.boolean(),
-  observed: z.string().optional(),
-  expected: z.string().optional(),
+  detail: z.string().min(1),
 });
 
-const runBaseSchema = z.object({
+export const invoiceLineSchema = z.object({
+  sku: z.string(),
+  description: z.string(),
+  quantity: z.string(),
+  uom: z.string(),
+  unitPrice: z.string(),
+  amount: z.string(),
+});
+
+export const normalizedInvoiceSchema = z.object({
+  vendor: z.string(),
+  invoiceNumber: z.string(),
+  invoiceDate: z.iso.date(),
+  poNumber: z.string(),
+  currency: z.literal("USD"),
+  subtotal: z.string(),
+  tax: z.string(),
+  total: z.string(),
+  lines: z.array(invoiceLineSchema).min(1),
+});
+
+export const allocationSchema = z.object({
+  poLineId: z.string(),
+  sku: z.string(),
+  quantity: z.string(),
+  poBasisAmount: z.string(),
+  actualNetAmount: z.string(),
+  remainingOrderedQuantity: z.string(),
+  remainingReceivedQuantity: z.string(),
+});
+
+export const runDetailSchema = z.object({
   runId: z.uuid(),
+  filename: z.string(),
+  state: runStateSchema,
+  decision: z.enum(["AUTO_CLEARED", "NEEDS_REVIEW"]).nullable(),
+  execution: z.enum(["POSTED", "BLOCKED", "AWAITING_CONFIRMATION"]).nullable(),
+  reasonCode: z.string().nullable(),
+  nextAction: z.string().nullable(),
+  ledgerId: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
   stages: z.array(stageEventSchema),
+  evidence: z.array(sourceRefSchema),
+  invoice: normalizedInvoiceSchema.nullable(),
   checks: z.array(checkResultSchema),
+  allocations: z.array(allocationSchema),
 });
-
-export const processResultSchema = z.discriminatedUnion("state", [
-  runBaseSchema.extend({ state: z.literal("PROCESSING") }),
-  runBaseSchema.extend({
-    state: z.literal("POSTED"),
-    decision: z.literal("AUTO_CLEARED"),
-    execution: z.literal("POSTED"),
-    ledgerId: z.string().min(1),
-  }),
-  runBaseSchema.extend({
-    state: z.literal("AWAITING_PO_CONFIRMATION"),
-    decision: z.literal("NEEDS_REVIEW"),
-    execution: z.literal("AWAITING_CONFIRMATION"),
-    poCandidates: z.array(z.string().min(1)).min(1),
-  }),
-  runBaseSchema.extend({
-    state: z.literal("AWAITING_BUNDLE_CONFIRMATION"),
-    decision: z.literal("NEEDS_REVIEW"),
-    execution: z.literal("AWAITING_CONFIRMATION"),
-    bundleCandidates: z.array(z.string().min(1)).min(1),
-  }),
-  runBaseSchema.extend({
-    state: z.literal("NEEDS_REVIEW"),
-    decision: z.literal("NEEDS_REVIEW"),
-    execution: z.literal("BLOCKED"),
-    reasonCode: z.string().min(1),
-    nextAction: z.string().min(1),
-  }),
-]);
 
 export const apiErrorSchema = z.object({
   error: z.object({
@@ -74,6 +85,9 @@ export const apiErrorSchema = z.object({
   }),
 });
 
-export type RunState = z.infer<typeof runStateSchema>;
-export type ProcessResult = z.infer<typeof processResultSchema>;
-export type ApiError = z.infer<typeof apiErrorSchema>;
+export type SourceRef = z.infer<typeof sourceRefSchema>;
+export type StageEvent = z.infer<typeof stageEventSchema>;
+export type CheckResult = z.infer<typeof checkResultSchema>;
+export type NormalizedInvoice = z.infer<typeof normalizedInvoiceSchema>;
+export type Allocation = z.infer<typeof allocationSchema>;
+export type RunDetail = z.infer<typeof runDetailSchema>;
