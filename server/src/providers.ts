@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
+import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
 import { sourceRefSchema, type SourceRef } from "../../shared/contracts.js";
 import { env } from "./env.js";
@@ -52,7 +53,7 @@ export async function extractAndMap(bytes: Buffer): Promise<{
 }> {
   return env.PROVIDER_MODE === "live"
     ? extractAndMapLive(bytes)
-    : extractAndMapRecorded();
+    : extractAndMapRecorded(bytes);
 }
 
 async function extractAndMapLive(bytes: Buffer) {
@@ -186,12 +187,16 @@ function validateMapping(mapping: InvoiceMapping, evidence: SourceRef[]) {
     throw new Error("OpenAI referenced unknown evidence.");
 }
 
-async function extractAndMapRecorded(): Promise<{
+async function extractAndMapRecorded(bytes: Buffer): Promise<{
   evidence: SourceRef[];
   mapping: InvoiceMapping;
 }> {
+  const recording = await recordingForDocument(bytes);
   const raw = JSON.parse(
-    await readFile(path.resolve("data/recordings/happy_sources.json"), "utf8"),
+    await readFile(
+      path.resolve(`data/recordings/${recording}_sources.json`),
+      "utf8",
+    ),
   ) as unknown;
   const evidence = sourceRefSchema.array().parse(raw);
   const mapping: InvoiceMapping = {
@@ -212,5 +217,15 @@ async function extractAndMapRecorded(): Promise<{
       amount: `item.${index}.Amount`,
     })),
   };
+  validateMapping(mapping, evidence);
   return { evidence, mapping };
+}
+
+async function recordingForDocument(bytes: Buffer) {
+  const pdf = await PDFDocument.load(bytes, {
+    ignoreEncryption: false,
+    updateMetadata: false,
+  });
+  if (pdf.getTitle() === "Invoice ACME-2026-001") return "happy";
+  throw new Error("No recorded provider response for this document.");
 }

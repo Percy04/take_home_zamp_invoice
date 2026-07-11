@@ -21,6 +21,7 @@ describe("happy-path vertical slice", () => {
     const storage = new Storage(runtime);
     const app = createApp({ storage });
 
+    await request(app).post("/api/reset").expect(200);
     const created = await request(app)
       .post("/api/runs")
       .attach("invoice", path.resolve("data/fixtures/happy.pdf"))
@@ -55,6 +56,42 @@ describe("happy-path vertical slice", () => {
         )
         .get(created.body.runId),
     ).toEqual({ count: 1 });
+    database.close();
+    storage.close();
+  });
+
+  it("does not process unsupported recordings as the happy invoice", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-phase-1-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+
+    const created = await request(app)
+      .post("/api/runs")
+      .attach("invoice", path.resolve("data/fixtures/receipt_capacity.pdf"))
+      .expect(201);
+    const processed = await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+
+    expect(processed.body).toMatchObject({
+      state: "NEEDS_REVIEW",
+      decision: "NEEDS_REVIEW",
+      execution: "BLOCKED",
+      reasonCode: "EXTRACTION_FAILED",
+      ledgerId: null,
+    });
+
+    const database = new Database(path.join(runtime, "runtime.sqlite"), {
+      readonly: true,
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM posted_invoices WHERE run_id = ?",
+        )
+        .get(created.body.runId),
+    ).toEqual({ count: 0 });
     database.close();
     storage.close();
   });

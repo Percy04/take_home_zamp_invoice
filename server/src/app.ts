@@ -25,27 +25,27 @@ export function createApp(
 
   app.use(
     (
-      caught: unknown,
+      err: unknown,
       _request: express.Request,
       response: express.Response,
-      _next: express.NextFunction,
+      next: express.NextFunction,
     ) => {
-      void _next;
-      if (
-        caught instanceof multer.MulterError &&
-        caught.code === "LIMIT_FILE_SIZE"
-      ) {
+      void next;
+      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
         return response
           .status(413)
           .json(
             error("UPLOAD_TOO_LARGE", "The PDF must be 10 MiB or smaller."),
           );
       }
-      if (caught instanceof IntakeError) {
-        return response.status(400).json(error("INVALID_PDF", caught.message));
+
+      if (err instanceof IntakeError) {
+        return response.status(400).json(error("INVALID_PDF", err.message));
       }
-      console.error(caught);
-      response
+
+      console.error(err);
+
+      return response
         .status(500)
         .json(error("UNEXPECTED_ERROR", "The request could not be completed."));
     },
