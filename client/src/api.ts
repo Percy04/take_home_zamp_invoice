@@ -20,6 +20,22 @@ export function processRun(runId: string) {
   return runRequest(`/api/runs/${runId}/process`, { method: "POST" });
 }
 
+export function confirmPo(runId: string, poNumber: string) {
+  return runRequest(`/api/runs/${runId}/confirm-po`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ poNumber }),
+  });
+}
+
+export function confirmBundle(runId: string, candidateId: string) {
+  return runRequest(`/api/runs/${runId}/confirm-bundle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ candidateId }),
+  });
+}
+
 export function getRun(runId: string) {
   return runRequest(`/api/runs/${runId}`);
 }

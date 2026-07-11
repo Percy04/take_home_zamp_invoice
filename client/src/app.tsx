@@ -13,7 +13,7 @@ import {
   useNavigate,
   useParams,
 } from "react-router-dom";
-import { createRun, getRun, processRun } from "./api";
+import { confirmBundle, confirmPo, createRun, getRun, processRun } from "./api";
 
 const queryClient = new QueryClient();
 
@@ -163,6 +163,14 @@ function RunPage() {
       query.state.data?.state === "PROCESSING" ? 500 : false,
   });
   const refetchRun = run.refetch;
+  const poConfirmation = useMutation({
+    mutationFn: (poNumber: string) => confirmPo(runId, poNumber),
+    onSuccess: (result) => queryClient.setQueryData(["run", runId], result),
+  });
+  const bundleConfirmation = useMutation({
+    mutationFn: (candidateId: string) => confirmBundle(runId, candidateId),
+    onSuccess: (result) => queryClient.setQueryData(["run", runId], result),
+  });
 
   useEffect(() => {
     if (run.data?.state !== "PROCESSING" || processStarted.current) return;
@@ -214,6 +222,54 @@ function RunPage() {
             <p>{detail.nextAction}</p>
           </section>
         )}
+
+        {detail.state === "AWAITING_PO_CONFIRMATION" &&
+          detail.candidatePo && (
+            <section className="surface confirmation-panel" aria-label="PO confirmation">
+              <div>
+                <p className="eyebrow">Reviewer action</p>
+                <h2>Confirm PO {detail.candidatePo}</h2>
+              </div>
+              <button
+                disabled={poConfirmation.isPending}
+                onClick={() => poConfirmation.mutate(detail.candidatePo!)}
+              >
+                {poConfirmation.isPending ? "Confirming..." : "Confirm PO"}
+              </button>
+              {poConfirmation.error && (
+                <p className="error">{poConfirmation.error.message}</p>
+              )}
+            </section>
+          )}
+
+        {detail.state === "AWAITING_BUNDLE_CONFIRMATION" &&
+          detail.bundleCandidates[0] && (
+            <section
+              className="surface confirmation-panel"
+              aria-label="Bundle confirmation"
+            >
+              <div>
+                <p className="eyebrow">Reviewer action</p>
+                <h2>Confirm bundle decomposition</h2>
+                <p className="muted">
+                  {detail.bundleCandidates[0].components
+                    .map((component) => `${component.quantity} ${component.sku}`)
+                    .join(", ")}
+                </p>
+              </div>
+              <button
+                disabled={bundleConfirmation.isPending}
+                onClick={() =>
+                  bundleConfirmation.mutate(detail.bundleCandidates[0]!.id)
+                }
+              >
+                {bundleConfirmation.isPending ? "Confirming..." : "Confirm bundle"}
+              </button>
+              {bundleConfirmation.error && (
+                <p className="error">{bundleConfirmation.error.message}</p>
+              )}
+            </section>
+          )}
 
         <div className="run-grid">
           <section className="surface document-panel" aria-labelledby="document">

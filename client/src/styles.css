@@ -359,6 +359,17 @@ th {
   color: #665139;
 }
 
+.confirmation-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.confirmation-panel h2 {
+  margin: 4px 0 0;
+}
+
 .document-panel {
   min-width: 0;
 }
@@ -519,6 +530,11 @@ th {
   .metric-grid,
   .decision-strip {
     grid-template-columns: 1fr;
+  }
+
+  .confirmation-panel {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   h1 {
