@@ -2,6 +2,8 @@
 
 from io import BytesIO
 from pathlib import Path
+from dataclasses import dataclass
+import hashlib
 
 from pypdf import PdfReader
 
@@ -15,10 +17,20 @@ MAX_PDF_PAGES = 10
 class PDFValidationError(ValueError):
     """The uploaded bytes are not an accepted invoice PDF."""
 
+    decision = "NEEDS_REVIEW"
+    execution = "BLOCKED"
+    reason_code = "DOCUMENT_UNREADABLE"
+
+
+@dataclass(frozen=True)
+class StoredPDF:
+    path: Path
+    sha256: str
+
 
 def validate_and_store_pdf(
     content: bytes, run_id: str, runtime_dir: Path = DEFAULT_RUNTIME_PATH.parent
-) -> Path:
+) -> StoredPDF:
     """Validate PDF bytes fully, then store them under the trusted run ID."""
     if not content:
         raise PDFValidationError("The PDF is empty.")
@@ -50,4 +62,4 @@ def validate_and_store_pdf(
     upload_dir.mkdir(parents=True, exist_ok=True)
     destination = upload_dir / f"{run_id}.pdf"
     destination.write_bytes(content)
-    return destination
+    return StoredPDF(destination, hashlib.sha256(content).hexdigest())

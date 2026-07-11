@@ -42,7 +42,9 @@ with process_tab:
                 validate_and_store_pdf(content, str(uuid4()))
             except PDFValidationError as error:
                 status.update(label=str(error), state="error")
-                st.error(str(error))
+                st.error(
+                    f"{error.decision} / {error.execution} / {error.reason_code} — {error}"
+                )
             else:
                 status.update(label="PDF ready", state="complete")
                 st.success("PDF validated and stored safely.")
