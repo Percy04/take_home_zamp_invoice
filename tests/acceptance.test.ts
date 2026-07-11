@@ -247,4 +247,46 @@ describe("happy-path vertical slice", () => {
     expect(retried.body.ledgerId).toBe(confirmed.body.ledgerId);
     storage.close();
   });
+
+  it.each([
+    ["happy", "POSTED", null],
+    ["duplicate", "NEEDS_REVIEW", "DUPLICATE"],
+    ["missing_po", "POSTED", null],
+    ["receipt_capacity", "NEEDS_REVIEW", "RECEIPT_CAPACITY_EXCEEDED"],
+    ["happy_layout_b", "POSTED", null],
+    ["happy_layout_c_scanned", "POSTED", null],
+    ["bundle_known", "POSTED", null],
+    ["bundle_unknown", "POSTED", null],
+    ["tax_inclusive", "POSTED", null],
+  ])("runs canonical fixture %s", async (fixtureId, finalState, reasonCode) => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-all-fixtures-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+
+    const created = await request(app)
+      .post("/api/runs")
+      .field("fixtureId", fixtureId)
+      .expect(201);
+    let result = await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+
+    if (result.body.state === "AWAITING_PO_CONFIRMATION") {
+      result = await request(app)
+        .post(`/api/runs/${created.body.runId}/confirm-po`)
+        .expect(200);
+    }
+    if (result.body.state === "AWAITING_BUNDLE_CONFIRMATION") {
+      result = await request(app)
+        .post(`/api/runs/${created.body.runId}/confirm-bundle`)
+        .expect(200);
+    }
+
+    expect(result.body).toMatchObject({
+      state: finalState,
+      reasonCode,
+    });
+    storage.close();
+  });
 });

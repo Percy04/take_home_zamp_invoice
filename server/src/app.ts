@@ -43,6 +43,23 @@ export function createApp(
         return response.status(400).json(error("INVALID_PDF", err.message));
       }
 
+      if (err instanceof Error && err.message === "RUN_NOT_FOUND") {
+        return response.status(404).json(error("RUN_NOT_FOUND", "Run not found."));
+      }
+
+      if (
+        err instanceof Error &&
+        [
+          "INVALID_RUN_STATE",
+          "INVALID_CONFIRMATION",
+          "RUN_EVALUATION_NOT_FOUND",
+        ].includes(err.message)
+      ) {
+        return response
+          .status(400)
+          .json(error(err.message, "The requested run action is not valid."));
+      }
+
       console.error(err);
 
       return response

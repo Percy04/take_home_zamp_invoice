@@ -49,3 +49,29 @@ describe("GET /api/runs", () => {
     storage.close();
   });
 });
+
+describe("confirmation errors", () => {
+  it("returns a client error when the run is not awaiting confirmation", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-api-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+
+    const created = await request(app)
+      .post("/api/runs")
+      .field("fixtureId", "happy")
+      .expect(201);
+    const response = await request(app)
+      .post(`/api/runs/${created.body.runId}/confirm-po`)
+      .send({ poNumber: "PO-1001" })
+      .expect(400);
+
+    expect(response.body).toEqual({
+      error: {
+        code: "INVALID_RUN_STATE",
+        message: "The requested run action is not valid.",
+      },
+    });
+    storage.close();
+  });
+});

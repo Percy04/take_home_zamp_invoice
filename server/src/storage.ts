@@ -453,6 +453,7 @@ export class Storage {
         .prepare(
           `UPDATE runs SET state = 'POSTED', decision = 'AUTO_CLEARED', execution = 'POSTED',
            vendor_id = ?, normalized_invoice_number = ?, selected_po_number = ?,
+           primary_reason_code = NULL, next_action = NULL,
            ledger_invoice_id = ?, evaluation_json = ?, updated_at = ? WHERE id = ?`,
         )
         .run(

@@ -108,7 +108,7 @@ export function createApi(storage?: Storage) {
           .status(404)
           .json(error("RUN_NOT_FOUND", "Run not found."));
       const poNumber =
-        typeof request.body.poNumber === "string"
+        typeof request.body?.poNumber === "string"
           ? request.body.poNumber
           : run.candidatePo;
       if (!poNumber) {
@@ -130,7 +130,7 @@ export function createApi(storage?: Storage) {
           .status(404)
           .json(error("RUN_NOT_FOUND", "Run not found."));
       const candidateId =
-        typeof request.body.candidateId === "string"
+        typeof request.body?.candidateId === "string"
           ? request.body.candidateId
           : run.bundleCandidates[0]?.id;
       if (!candidateId) {

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
@@ -428,6 +429,9 @@ async function recordingForDocument(bytes: Buffer) {
     updateMetadata: false,
   });
   const title = pdf.getTitle();
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  if (sha256 === "f00e5c72ed010b3e27369d575c85a148e8677a411d273c7a8ed42c164aca8e93")
+    return "happy_layout_c_scanned";
   if (title === "Invoice ACME-2026-001") return "happy";
   if (title === "Invoice ACME-2026-000") return "duplicate";
   if (title === "Invoice DELTA-2026-010") return "receipt_capacity";
