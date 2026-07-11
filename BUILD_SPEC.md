@@ -1119,9 +1119,11 @@ Exit gate:
 - The happy PDF succeeds through live Azure extraction from local uploaded bytes.
 - Regenerating fixtures does not introduce semantic or seed-data drift.
 
-### Phase 0B — Expanded scan, layout, bundle, and tax baseline
+### Phase 0B — Expanded scan, layout, bundle, and tax baseline (complete)
 
 Goal: extend the completed deterministic baseline before application development begins.
+
+Status: complete and validated on 2026-07-11. All nine fixtures regenerate byte-for-byte, the expanded seed passes SQLite integrity and foreign-key checks, the scanned fixture contains no embedded invoice text, and live Azure recordings exist for the scanned, known-bundle, unknown-bundle, and inclusive-tax cases.
 
 Deliverables:
 

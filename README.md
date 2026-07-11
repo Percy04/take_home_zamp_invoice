@@ -3,7 +3,7 @@
 A resettable Streamlit demo that extracts invoice evidence, applies deterministic
 AP controls, and either posts once to a synthetic ledger or blocks for review.
 
-Phase 0 freezes the contract and creates deterministic fixtures. The application
+Phase 0 and 0B freeze the contract and create deterministic fixtures. The application
 pipeline begins in Phase 1; see [BUILD_SPEC.md](BUILD_SPEC.md).
 
 ## Setup
@@ -30,7 +30,7 @@ at `tests/recordings/happy_azure.json` for future offline tests.
 
 ## Phase 0 artifacts
 
-- `data/fixtures/`: four machine-readable invoice PDFs.
+- `data/fixtures/`: nine deterministic PDFs, including alternate layouts, an image-only scan, bundles, and inclusive tax.
 - `data/seed.sqlite`: immutable source database for future runtime copies.
 - `data/cases.json`: exact expected outcome and accounting deltas per case.
-- `tests/recordings/happy_azure.json`: recorded live Azure response.
+- `tests/recordings/*_azure.json`: recorded live Azure responses for the baseline and Phase 0B cases.

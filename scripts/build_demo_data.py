@@ -9,6 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from pypdf import PdfReader
+from PIL import Image, ImageDraw, ImageFont
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
@@ -113,7 +114,74 @@ FIXTURES = {
         "tax": "15.00",
         "total": "165.00",
     },
+    "bundle_known": {
+        "vendor": "Acme Industrial Supplies LLC",
+        "address": ["123 Foundry Road", "Bengaluru, KA 560001"],
+        "invoice_number": "ACME-2026-003",
+        "invoice_date": "2026-07-04",
+        "po_number": "PO-1004",
+        "currency": "USD",
+        "lines": [
+            {
+                "sku": "KIT-300",
+                "description": "Installation Kit",
+                "quantity": "1",
+                "uom": "KIT",
+                "unit_price": "300.00",
+                "amount": "300.00",
+            }
+        ],
+        "subtotal": "300.00",
+        "tax": "0.00",
+        "total": "300.00",
+    },
+    "bundle_unknown": {
+        "vendor": "Acme Industrial Supplies LLC",
+        "address": ["123 Foundry Road", "Bengaluru, KA 560001"],
+        "invoice_number": "ACME-2026-004",
+        "invoice_date": "2026-07-05",
+        "po_number": "PO-1005",
+        "currency": "USD",
+        "lines": [
+            {
+                "sku": "",
+                "description": "Maintenance Pack",
+                "quantity": "1",
+                "uom": "KIT",
+                "unit_price": "300.00",
+                "amount": "300.00",
+            }
+        ],
+        "subtotal": "300.00",
+        "tax": "0.00",
+        "total": "300.00",
+    },
+    "tax_inclusive": {
+        "vendor": "Acme Industrial Supplies LLC",
+        "address": ["123 Foundry Road", "Bengaluru, KA 560001"],
+        "invoice_number": "ACME-2026-005",
+        "invoice_date": "2026-07-06",
+        "po_number": "PO-1002",
+        "currency": "USD",
+        "lines": [
+            {
+                "sku": "SEN-300",
+                "description": "Safety Sensor",
+                "quantity": "2",
+                "uom": "EA",
+                "unit_price": "295.00",
+                "amount": "590.00",
+            }
+        ],
+        "subtotal": None,
+        "tax": None,
+        "total": "590.00",
+        "tax_note": "All line prices include 18% tax.",
+    },
 }
+
+FIXTURES["happy_layout_b"] = {**FIXTURES["happy"], "layout": "alternate_sidebar"}
+FIXTURES["happy_layout_c_scanned"] = {**FIXTURES["happy"], "layout": "scanned"}
 
 
 def normalize_match_key(value: str) -> str:
@@ -135,15 +203,18 @@ def assert_invoice_math(invoice: dict) -> None:
             line["amount"]
         )
         line_total += Decimal(line["amount"])
-    assert line_total == Decimal(invoice["subtotal"])
-    assert line_total + Decimal(invoice["tax"]) == Decimal(invoice["total"])
+    if invoice["subtotal"] is not None:
+        assert line_total == Decimal(invoice["subtotal"])
+        assert line_total + Decimal(invoice["tax"]) == Decimal(invoice["total"])
+    else:
+        assert line_total == Decimal(invoice["total"])
 
 
 def build_pdf(path: Path, invoice: dict) -> None:
+    if invoice.get("layout") == "scanned":
+        return build_scanned_pdf(path, invoice)
     assert_invoice_math(invoice)
-    document = canvas.Canvas(
-        str(path), pagesize=letter, pageCompression=1, invariant=1
-    )
+    document = canvas.Canvas(str(path), pagesize=letter, pageCompression=1, invariant=1)
     width, height = letter
     document.setTitle(f"Invoice {invoice['invoice_number']}")
     document.setAuthor(invoice["vendor"])
@@ -159,13 +230,21 @@ def build_pdf(path: Path, invoice: dict) -> None:
         document.drawString(54, height - 76 - index * 12, address_line)
 
     label_x, value_x = 340, 440
+    invoice_label = (
+        "Bill No." if invoice.get("layout") == "alternate_sidebar" else "Invoice Number"
+    )
+    po_label = (
+        "Your Reference"
+        if invoice.get("layout") == "alternate_sidebar"
+        else "Purchase Order"
+    )
     details = [
-        ("Invoice Number", invoice["invoice_number"]),
+        (invoice_label, invoice["invoice_number"]),
         ("Invoice Date", invoice["invoice_date"]),
         ("Currency", invoice["currency"]),
     ]
     if invoice["po_number"]:
-        details.append(("Purchase Order", invoice["po_number"]))
+        details.append((po_label, invoice["po_number"]))
     for index, (label, value) in enumerate(details):
         y = height - 84 - index * 16
         document.setFont("Helvetica-Bold", 9)
@@ -199,7 +278,10 @@ def build_pdf(path: Path, invoice: dict) -> None:
         document.drawString(60, y, line["sku"])
         document.drawString(122, y, line["description"])
         document.drawRightString(345, y, line["quantity"])
-        document.drawString(360, y, line["uom"])
+        rendered_uom = (
+            "pcs" if invoice.get("layout") == "alternate_sidebar" else line["uom"]
+        )
+        document.drawString(360, y, rendered_uom)
         document.drawRightString(470, y, money(line["unit_price"]))
         document.drawRightString(width - 60, y, money(line["amount"]))
         document.setStrokeColorRGB(0.82, 0.84, 0.86)
@@ -207,10 +289,9 @@ def build_pdf(path: Path, invoice: dict) -> None:
         y -= 25
 
     totals_y = y - 12
-    for label, value in (
-        ("Subtotal", invoice["subtotal"]),
-        ("Tax", invoice["tax"]),
-    ):
+    for label, value in (("Subtotal", invoice["subtotal"]), ("Tax", invoice["tax"])):
+        if value is None:
+            continue
         document.setFont("Helvetica", 9)
         document.drawRightString(470, totals_y, label)
         document.drawRightString(width - 60, totals_y, money(value))
@@ -219,6 +300,10 @@ def build_pdf(path: Path, invoice: dict) -> None:
     document.drawRightString(470, totals_y, "TOTAL")
     document.drawRightString(width - 60, totals_y, money(invoice["total"]))
 
+    if invoice.get("tax_note"):
+        document.setFont("Helvetica-Bold", 9)
+        document.drawString(54, totals_y - 30, invoice["tax_note"])
+
     document.setFont("Helvetica", 8)
     document.setFillColorRGB(0.35, 0.35, 0.35)
     document.drawCentredString(
@@ -226,6 +311,56 @@ def build_pdf(path: Path, invoice: dict) -> None:
     )
     document.showPage()
     document.save()
+
+
+def build_scanned_pdf(path: Path, invoice: dict) -> None:
+    """Render pixels first so the PDF has no embedded invoice text."""
+    assert_invoice_math(invoice)
+    image = Image.new("RGB", (1275, 1650), "white")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=22)
+    bold = ImageFont.load_default(size=30)
+    rows = [
+        (60, 55, invoice["vendor"], bold),
+        (850, 55, "TAX INVOICE", bold),
+        (60, 145, f"Document ID: {invoice['invoice_number']}", font),
+        (60, 185, f"Date: {invoice['invoice_date']}", font),
+        (60, 225, f"Order Ref: {invoice['po_number']}", font),
+        (60, 265, f"Currency: {invoice['currency']}", font),
+        (60, 390, "SKU", font),
+        (260, 390, "DESCRIPTION", font),
+        (760, 390, "QTY", font),
+        (880, 390, "UNIT PRICE", font),
+        (1080, 390, "AMOUNT", font),
+    ]
+    y = 455
+    for line in invoice["lines"]:
+        rows.extend(
+            [
+                (60, y, line["sku"], font),
+                (260, y, line["description"], font),
+                (760, y, f"{line['quantity']} pcs", font),
+                (880, y, money(line["unit_price"]), font),
+                (1080, y, money(line["amount"]), font),
+            ]
+        )
+        y += 70
+    rows.extend(
+        [
+            (850, y + 80, f"Net: {money(invoice['subtotal'])}", font),
+            (850, y + 125, f"Tax: {money(invoice['tax'])}", font),
+            (850, y + 170, f"Gross: {money(invoice['total'])}", bold),
+        ]
+    )
+    for x, row_y, text, row_font in rows:
+        draw.text((x, row_y), text, fill="black", font=row_font)
+    temp = path.with_suffix(".png")
+    image.save(temp, format="PNG", optimize=False)
+    document = canvas.Canvas(str(path), pagesize=letter, pageCompression=1, invariant=1)
+    document.drawImage(str(temp), 0, 0, width=letter[0], height=letter[1])
+    document.showPage()
+    document.save()
+    temp.unlink()
 
 
 def build_database(path: Path) -> None:
@@ -251,8 +386,27 @@ def build_database(path: Path) -> None:
             normalized_po_number TEXT NOT NULL UNIQUE,
             vendor_id TEXT NOT NULL REFERENCES vendors(id),
             currency TEXT NOT NULL,
+            price_basis TEXT NOT NULL CHECK (price_basis IN ('TAX_EXCLUSIVE', 'TAX_INCLUSIVE')),
             status TEXT NOT NULL CHECK (status IN ('OPEN', 'CLOSED'))
         );
+
+        CREATE TABLE bundle_definitions (
+            id TEXT PRIMARY KEY,
+            vendor_id TEXT NOT NULL REFERENCES vendors(id),
+            normalized_bundle_sku TEXT,
+            normalized_description TEXT,
+            bundle_uom TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            components_json TEXT NOT NULL,
+            active INTEGER NOT NULL CHECK (active IN (0, 1)),
+            CHECK (normalized_bundle_sku IS NOT NULL OR normalized_description IS NOT NULL)
+        );
+        CREATE UNIQUE INDEX active_bundle_sku_version
+            ON bundle_definitions (vendor_id, normalized_bundle_sku, version)
+            WHERE active = 1 AND normalized_bundle_sku IS NOT NULL;
+        CREATE UNIQUE INDEX active_bundle_description_version
+            ON bundle_definitions (vendor_id, normalized_description, version)
+            WHERE active = 1 AND normalized_description IS NOT NULL;
 
         CREATE TABLE po_lines (
             id TEXT PRIMARY KEY,
@@ -277,7 +431,7 @@ def build_database(path: Path) -> None:
             file_sha256 TEXT NOT NULL,
             pdf_path TEXT,
             state TEXT NOT NULL CHECK (
-                state IN ('PROCESSING', 'AWAITING_PO_CONFIRMATION', 'POSTED', 'NEEDS_REVIEW')
+                state IN ('PROCESSING', 'AWAITING_PO_CONFIRMATION', 'AWAITING_BUNDLE_CONFIRMATION', 'POSTED', 'NEEDS_REVIEW')
             ),
             decision TEXT CHECK (decision IN ('AUTO_CLEARED', 'NEEDS_REVIEW')),
             execution TEXT CHECK (execution IN ('POSTED', 'BLOCKED', 'AWAITING_CONFIRMATION')),
@@ -291,6 +445,7 @@ def build_database(path: Path) -> None:
             mapping_json TEXT,
             evaluation_json TEXT,
             candidates_json TEXT,
+            bundle_candidates_json TEXT,
             stage_events_json TEXT NOT NULL DEFAULT '[]'
         );
 
@@ -314,14 +469,18 @@ def build_database(path: Path) -> None:
         CREATE TABLE allocations (
             id TEXT PRIMARY KEY,
             posted_invoice_id TEXT NOT NULL REFERENCES posted_invoices(id),
+            invoice_line_index INTEGER NOT NULL,
             po_line_id TEXT NOT NULL REFERENCES po_lines(id),
-            invoice_quantity TEXT NOT NULL,
+            match_type TEXT NOT NULL CHECK (match_type IN ('DIRECT', 'BUNDLE_MASTER', 'BUNDLE_CONFIRMED')),
+            bundle_definition_id TEXT REFERENCES bundle_definitions(id),
+            component_quantity TEXT NOT NULL,
             po_basis_amount TEXT NOT NULL,
-            actual_line_amount TEXT NOT NULL,
-            UNIQUE (posted_invoice_id, po_line_id)
+            actual_net_amount TEXT NOT NULL,
+            evidence_json TEXT NOT NULL,
+            UNIQUE (posted_invoice_id, invoice_line_index, po_line_id)
         );
 
-        PRAGMA user_version = 1;
+        PRAGMA user_version = 2;
         """
     )
 
@@ -344,13 +503,66 @@ def build_database(path: Path) -> None:
     connection.executemany("INSERT INTO vendors VALUES (?, ?, ?, ?, ?)", vendors)
 
     purchase_orders = [
-        ("PO-0999", normalize_match_key("PO-0999"), "V-ACME", "USD", "CLOSED"),
-        ("PO-1001", normalize_match_key("PO-1001"), "V-ACME", "USD", "OPEN"),
-        ("PO-1002", normalize_match_key("PO-1002"), "V-ACME", "USD", "OPEN"),
-        ("PO-1003", normalize_match_key("PO-1003"), "V-ACME", "USD", "OPEN"),
-        ("PO-2001", normalize_match_key("PO-2001"), "V-DELTA", "USD", "OPEN"),
+        (
+            "PO-0999",
+            normalize_match_key("PO-0999"),
+            "V-ACME",
+            "USD",
+            "TAX_EXCLUSIVE",
+            "CLOSED",
+        ),
+        (
+            "PO-1001",
+            normalize_match_key("PO-1001"),
+            "V-ACME",
+            "USD",
+            "TAX_EXCLUSIVE",
+            "OPEN",
+        ),
+        (
+            "PO-1002",
+            normalize_match_key("PO-1002"),
+            "V-ACME",
+            "USD",
+            "TAX_EXCLUSIVE",
+            "OPEN",
+        ),
+        (
+            "PO-1003",
+            normalize_match_key("PO-1003"),
+            "V-ACME",
+            "USD",
+            "TAX_EXCLUSIVE",
+            "OPEN",
+        ),
+        (
+            "PO-1004",
+            normalize_match_key("PO-1004"),
+            "V-ACME",
+            "USD",
+            "TAX_EXCLUSIVE",
+            "OPEN",
+        ),
+        (
+            "PO-1005",
+            normalize_match_key("PO-1005"),
+            "V-ACME",
+            "USD",
+            "TAX_EXCLUSIVE",
+            "OPEN",
+        ),
+        (
+            "PO-2001",
+            normalize_match_key("PO-2001"),
+            "V-DELTA",
+            "USD",
+            "TAX_EXCLUSIVE",
+            "OPEN",
+        ),
     ]
-    connection.executemany("INSERT INTO purchase_orders VALUES (?, ?, ?, ?, ?)", purchase_orders)
+    connection.executemany(
+        "INSERT INTO purchase_orders VALUES (?, ?, ?, ?, ?, ?)", purchase_orders
+    )
 
     po_lines = [
         (
@@ -419,6 +631,58 @@ def build_database(path: Path) -> None:
             "125.00",
         ),
         (
+            "PO-1004-L1",
+            "PO-1004",
+            1,
+            "WID-100",
+            normalize_match_key("WID-100"),
+            "Industrial Widget",
+            normalize_match_key("Industrial Widget"),
+            "EA",
+            "2",
+            "2",
+            "100.00",
+        ),
+        (
+            "PO-1004-L2",
+            "PO-1004",
+            2,
+            "BOL-200",
+            normalize_match_key("BOL-200"),
+            "Mounting Bolt Pack",
+            normalize_match_key("Mounting Bolt Pack"),
+            "EA",
+            "5",
+            "5",
+            "20.00",
+        ),
+        (
+            "PO-1005-L1",
+            "PO-1005",
+            1,
+            "WID-100",
+            normalize_match_key("WID-100"),
+            "Industrial Widget",
+            normalize_match_key("Industrial Widget"),
+            "EA",
+            "2",
+            "2",
+            "100.00",
+        ),
+        (
+            "PO-1005-L2",
+            "PO-1005",
+            2,
+            "BOL-200",
+            normalize_match_key("BOL-200"),
+            "Mounting Bolt Pack",
+            normalize_match_key("Mounting Bolt Pack"),
+            "EA",
+            "5",
+            "5",
+            "20.00",
+        ),
+        (
             "PO-2001-L1",
             "PO-2001",
             1,
@@ -434,6 +698,25 @@ def build_database(path: Path) -> None:
     ]
     connection.executemany(
         "INSERT INTO po_lines VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", po_lines
+    )
+    connection.execute(
+        "INSERT INTO bundle_definitions VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "BUNDLE-ACME-KIT-300",
+            "V-ACME",
+            normalize_match_key("KIT-300"),
+            normalize_match_key("Installation Kit"),
+            "KIT",
+            1,
+            json.dumps(
+                [
+                    {"sku": "WID-100", "quantity_per_bundle": "2", "uom": "EA"},
+                    {"sku": "BOL-200", "quantity_per_bundle": "5", "uom": "EA"},
+                ],
+                separators=(",", ":"),
+            ),
+            1,
+        ),
     )
 
     posted_invoices = [
@@ -473,23 +756,31 @@ def build_database(path: Path) -> None:
         posted_invoices,
     )
     connection.executemany(
-        "INSERT INTO allocations VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO allocations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             (
                 "ALLOC-SEED-001",
                 "LEDGER-SEED-001",
+                0,
                 "PO-0999-L1",
+                "DIRECT",
+                None,
                 "1",
                 "100.00",
                 "100.00",
+                "{}",
             ),
             (
                 "ALLOC-SEED-002",
                 "LEDGER-SEED-002",
+                0,
                 "PO-2001-L1",
+                "DIRECT",
+                None,
                 "4",
                 "200.00",
                 "200.00",
+                "{}",
             ),
         ],
     )
@@ -509,6 +800,7 @@ def input_manifest(invoice: dict) -> dict:
         "subtotal": invoice["subtotal"],
         "tax": invoice["tax"],
         "total": invoice["total"],
+        **({"tax_note": invoice["tax_note"]} if invoice.get("tax_note") else {}),
     }
 
 
@@ -599,15 +891,232 @@ def build_manifest() -> dict:
             }
         },
     }
+    direct_allocations = [
+        {
+            "po_number": "PO-1001",
+            "po_line_id": "PO-1001-L1",
+            "sku": "WID-100",
+            "match_type": "DIRECT",
+            "component_quantity": "8",
+            "po_basis_amount": "800.00",
+            "actual_net_amount": "800.00",
+            "remaining_ordered_quantity": "2",
+            "remaining_received_quantity": "2",
+        },
+        {
+            "po_number": "PO-1001",
+            "po_line_id": "PO-1001-L2",
+            "sku": "BOL-200",
+            "match_type": "DIRECT",
+            "component_quantity": "5",
+            "po_basis_amount": "100.00",
+            "actual_net_amount": "100.00",
+            "remaining_ordered_quantity": "0",
+            "remaining_received_quantity": "0",
+        },
+    ]
+    normalized_happy = {"subtotal": "900.00", "tax": "90.00", "total": "990.00"}
+    cases["happy"]["expected"].update(
+        normalized=normalized_happy,
+        layout_equivalent_to="happy",
+        allocation_delta=direct_allocations,
+    )
+    for fixture_id in ("happy_layout_b", "happy_layout_c_scanned"):
+        cases[fixture_id] = {
+            "expected": {**cases["happy"]["expected"], "layout_equivalent_to": "happy"}
+        }
+
+    def bundle_allocations(
+        po_number: str, match_type: str, definition_id=None
+    ) -> list[dict]:
+        return [
+            {
+                "po_number": po_number,
+                "po_line_id": f"{po_number}-L1",
+                "sku": "WID-100",
+                "match_type": match_type,
+                "bundle_definition_id": definition_id,
+                "component_quantity": "2",
+                "po_basis_amount": "200.00",
+                "actual_net_amount": "200.00",
+                "remaining_ordered_quantity": "0",
+                "remaining_received_quantity": "0",
+            },
+            {
+                "po_number": po_number,
+                "po_line_id": f"{po_number}-L2",
+                "sku": "BOL-200",
+                "match_type": match_type,
+                "bundle_definition_id": definition_id,
+                "component_quantity": "5",
+                "po_basis_amount": "100.00",
+                "actual_net_amount": "100.00",
+                "remaining_ordered_quantity": "0",
+                "remaining_received_quantity": "0",
+            },
+        ]
+
+    cases["bundle_known"] = {
+        "expected": {
+            "run_state": "POSTED",
+            "decision": "AUTO_CLEARED",
+            "execution": "POSTED",
+            "reason_code": None,
+            "candidate_po": None,
+            "bundle_candidates": [],
+            "normalized": {"subtotal": "300.00", "tax": "0.00", "total": "300.00"},
+            "ledger_delta": 1,
+            "allocation_delta": bundle_allocations(
+                "PO-1004", "BUNDLE_MASTER", "BUNDLE-ACME-KIT-300"
+            ),
+        }
+    }
+    candidate = {
+        "id": "BUNDLE-CANDIDATE-1",
+        "invoice_line_index": 0,
+        "bundle_quantity": "1",
+        "components": [
+            {
+                "po_line_id": "PO-1005-L1",
+                "sku": "WID-100",
+                "quantity": "2",
+                "uom": "EA",
+                "po_basis_amount": "200.00",
+            },
+            {
+                "po_line_id": "PO-1005-L2",
+                "sku": "BOL-200",
+                "quantity": "5",
+                "uom": "EA",
+                "po_basis_amount": "100.00",
+            },
+        ],
+        "total_po_basis_amount": "300.00",
+    }
+    cases["bundle_unknown"] = {
+        "expected": {
+            "run_state": "AWAITING_BUNDLE_CONFIRMATION",
+            "decision": "NEEDS_REVIEW",
+            "execution": "AWAITING_CONFIRMATION",
+            "reason_code": "BUNDLE_MAPPING_REQUIRED",
+            "candidate_po": None,
+            "bundle_candidates": [candidate],
+            "normalized": {"subtotal": "300.00", "tax": "0.00", "total": "300.00"},
+            "ledger_delta": 0,
+            "allocation_delta": [],
+        },
+        "after_confirmation": {
+            "run_state": "POSTED",
+            "same_run_id": True,
+            "repeated_confirmation_same_ledger_id": True,
+            "decision": "AUTO_CLEARED",
+            "execution": "POSTED",
+            "reason_code": None,
+            "ledger_delta": 1,
+            "bundle_definition_created": False,
+            "allocation_delta": bundle_allocations("PO-1005", "BUNDLE_CONFIRMED"),
+        },
+    }
+    cases["tax_inclusive"] = {
+        "expected": {
+            "run_state": "POSTED",
+            "decision": "AUTO_CLEARED",
+            "execution": "POSTED",
+            "reason_code": None,
+            "candidate_po": None,
+            "bundle_candidates": [],
+            "observed": {
+                "subtotal": None,
+                "tax": None,
+                "total": "590.00",
+                "unit_price": "295.00",
+                "line_amount": "590.00",
+                "tax_inclusion": "INCLUSIVE",
+                "tax_rate": "0.18",
+            },
+            "normalized": {
+                "unit_price": "250.00",
+                "line_amount": "500.00",
+                "subtotal": "500.00",
+                "tax": "90.00",
+                "total": "590.00",
+            },
+            "derivations": [
+                {
+                    "field": "normalized.subtotal",
+                    "formula": "590.00 / 1.18",
+                    "source": "explicit tax note",
+                },
+                {
+                    "field": "normalized.tax",
+                    "formula": "590.00 - 500.00",
+                    "source": "gross total and derived net",
+                },
+            ],
+            "ledger_delta": 1,
+            "allocation_delta": [
+                {
+                    "po_number": "PO-1002",
+                    "po_line_id": "PO-1002-L1",
+                    "sku": "SEN-300",
+                    "match_type": "DIRECT",
+                    "component_quantity": "2",
+                    "po_basis_amount": "500.00",
+                    "actual_net_amount": "500.00",
+                    "remaining_ordered_quantity": "0",
+                    "remaining_received_quantity": "0",
+                }
+            ],
+        }
+    }
+
+    for case in cases.values():
+        expected = case["expected"]
+        expected.setdefault("bundle_candidates", [])
+    for fixture_id in ("duplicate", "missing_po", "receipt_capacity"):
+        invoice = FIXTURES[fixture_id]
+        cases[fixture_id]["expected"]["normalized"] = {
+            "subtotal": invoice["subtotal"],
+            "tax": invoice["tax"],
+            "total": invoice["total"],
+        }
+    cases["happy_layout_c_scanned"]["expected"]["source_references"] = [
+        {
+            "path": "ocr.pages[].lines[]",
+            "source_kind": "OCR_LINE",
+            "confidence": "MIN_WORD_CONFIDENCE",
+        }
+    ]
+    cases["tax_inclusive"]["expected"]["source_references"] = [
+        {
+            "path": "tax.inclusion",
+            "source_kind": "DOCUMENT_FIELD",
+            "content": FIXTURES["tax_inclusive"]["tax_note"],
+        },
+        {"path": "tax.rate", "source_kind": "NESTED_TAX_FIELD", "content": "18%"},
+    ]
     for fixture_id, invoice in FIXTURES.items():
         fixture_path = FIXTURE_DIR / f"{fixture_id}.pdf"
         cases[fixture_id]["file"] = f"data/fixtures/{fixture_id}.pdf"
         cases[fixture_id]["pdf_sha256"] = pdf_sha256(fixture_path)
         cases[fixture_id]["input"] = input_manifest(invoice)
-    return {"schema_version": 1, "currency": "USD", "fixtures": cases}
+    return {
+        "schema_version": 2,
+        "currency": "USD",
+        "selection_policy": {"forbidden_inputs": ["filename", "file_sha256"]},
+        "source_reference_contract": {
+            "required": ["path", "source_kind"],
+            "optional_azure_evidence": ["key_value_pairs"],
+        },
+        "fixtures": cases,
+    }
 
 
 def validate(manifest: dict) -> None:
+    assert manifest["selection_policy"]["forbidden_inputs"] == [
+        "filename",
+        "file_sha256",
+    ]
     assert set(manifest["fixtures"]) == set(FIXTURES)
     for fixture_id, case in manifest["fixtures"].items():
         fixture_path = FIXTURE_DIR / f"{fixture_id}.pdf"
@@ -615,9 +1124,11 @@ def validate(manifest: dict) -> None:
         assert 1_000 < fixture_path.stat().st_size <= 10 * 1024 * 1024
         reader = PdfReader(fixture_path)
         assert not reader.is_encrypted and 1 <= len(reader.pages) <= 10
-        assert case["input"]["invoice_number"] in (
-            reader.pages[0].extract_text() or ""
-        )
+        extracted_text = reader.pages[0].extract_text() or ""
+        if FIXTURES[fixture_id].get("layout") == "scanned":
+            assert len(extracted_text.strip()) == 0
+        else:
+            assert case["input"]["invoice_number"] in extracted_text
         assert case["pdf_sha256"] == pdf_sha256(fixture_path)
 
     connection = sqlite3.connect(SEED_PATH)
@@ -627,8 +1138,9 @@ def validate(manifest: dict) -> None:
     assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     expected_counts = {
         "vendors": 2,
-        "purchase_orders": 5,
-        "po_lines": 6,
+        "purchase_orders": 7,
+        "po_lines": 10,
+        "bundle_definitions": 1,
         "runs": 0,
         "posted_invoices": 2,
         "allocations": 2,
@@ -654,7 +1166,7 @@ def validate(manifest: dict) -> None:
     delta_line = connection.execute(
         """
         SELECT pl.ordered_quantity, pl.received_quantity,
-               COALESCE(SUM(a.invoice_quantity), '0') AS allocated_quantity
+               COALESCE(SUM(a.component_quantity), '0') AS allocated_quantity
         FROM po_lines pl
         LEFT JOIN allocations a ON a.po_line_id = pl.id
         WHERE pl.id = 'PO-2001-L1'
@@ -684,26 +1196,41 @@ def validate(manifest: dict) -> None:
         connection.execute(
             "SELECT COUNT(*) FROM purchase_orders WHERE vendor_id = 'V-ACME' AND status = 'OPEN'"
         ).fetchone()[0]
-        == 3
+        == 5
     )
     duplicate_allocation = connection.execute(
         """
-        SELECT a.invoice_quantity, a.po_basis_amount, a.actual_line_amount
+        SELECT a.component_quantity, a.po_basis_amount, a.actual_net_amount
         FROM allocations a
         WHERE a.posted_invoice_id = 'LEDGER-SEED-001'
           AND a.po_line_id = 'PO-0999-L1'
         """
     ).fetchone()
     assert tuple(duplicate_allocation) == ("1", "100.00", "100.00")
+    assert (
+        connection.execute(
+            "SELECT COUNT(*) FROM purchase_orders WHERE price_basis != 'TAX_EXCLUSIVE'"
+        ).fetchone()[0]
+        == 0
+    )
+    bundle = connection.execute(
+        "SELECT * FROM bundle_definitions WHERE id = 'BUNDLE-ACME-KIT-300'"
+    ).fetchone()
+    assert (
+        bundle["bundle_uom"] == "KIT"
+        and bundle["version"] == 1
+        and bundle["active"] == 1
+    )
+    assert json.loads(bundle["components_json"]) == [
+        {"sku": "WID-100", "quantity_per_bundle": "2", "uom": "EA"},
+        {"sku": "BOL-200", "quantity_per_bundle": "5", "uom": "EA"},
+    ]
     connection.close()
 
     fixtures = manifest["fixtures"]
     assert fixtures["happy"]["expected"]["run_state"] == "POSTED"
     assert fixtures["happy"]["expected"]["ledger_delta"] == 1
-    assert (
-        fixtures["missing_po"]["expected"]["run_state"]
-        == "AWAITING_PO_CONFIRMATION"
-    )
+    assert fixtures["missing_po"]["expected"]["run_state"] == "AWAITING_PO_CONFIRMATION"
     assert fixtures["missing_po"]["expected"]["candidate_po"] == "PO-1002"
     assert fixtures["missing_po"]["after_confirmation"]["same_run_id"] is True
     assert (
@@ -713,24 +1240,79 @@ def validate(manifest: dict) -> None:
         is True
     )
     assert (
-        fixtures["receipt_capacity"]["expected"]["remaining_received_quantity"]
-        == "2"
+        fixtures["receipt_capacity"]["expected"]["remaining_received_quantity"] == "2"
     )
     assert fixtures["receipt_capacity"]["expected"]["ordered_capacity_passes"] is True
     assert fixtures["receipt_capacity"]["expected"]["po_basis_capacity_passes"] is True
+    assert (
+        fixtures["happy_layout_b"]["expected"]["normalized"]
+        == fixtures["happy"]["expected"]["normalized"]
+    )
+    assert (
+        fixtures["happy_layout_c_scanned"]["expected"]["allocation_delta"]
+        == fixtures["happy"]["expected"]["allocation_delta"]
+    )
+    assert len(fixtures["bundle_known"]["expected"]["allocation_delta"]) == 2
+    assert len(fixtures["bundle_unknown"]["expected"]["bundle_candidates"]) == 1
+    assert fixtures["bundle_unknown"]["expected"]["ledger_delta"] == 0
+    assert fixtures["tax_inclusive"]["expected"]["normalized"] == {
+        "unit_price": "250.00",
+        "line_amount": "500.00",
+        "subtotal": "500.00",
+        "tax": "90.00",
+        "total": "590.00",
+    }
+    assert (
+        fixtures["tax_inclusive"]["expected"]["source_references"][1]["path"]
+        == "tax.rate"
+    )
+    assert (
+        fixtures["happy_layout_c_scanned"]["expected"]["source_references"][0][
+            "confidence"
+        ]
+        == "MIN_WORD_CONFIDENCE"
+    )
+    equivalent_ids = ("happy", "happy_layout_b", "happy_layout_c_scanned")
+    assert len({fixtures[name]["file"] for name in equivalent_ids}) == 3
+    assert len({fixtures[name]["pdf_sha256"] for name in equivalent_ids}) == 3
+    for name in equivalent_ids[1:]:
+        assert (
+            fixtures[name]["expected"]["decision"]
+            == fixtures["happy"]["expected"]["decision"]
+        )
+        assert (
+            fixtures[name]["expected"]["allocation_delta"]
+            == fixtures["happy"]["expected"]["allocation_delta"]
+        )
 
 
 def main() -> None:
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
-    for fixture_id, invoice in FIXTURES.items():
-        build_pdf(FIXTURE_DIR / f"{fixture_id}.pdf", invoice)
-    build_database(SEED_PATH)
-    manifest = build_manifest()
-    CASES_PATH.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    validate(manifest)
-    print("Built and validated 4 invoice PDFs, data/seed.sqlite, and data/cases.json")
+    artifact_paths = [
+        *(FIXTURE_DIR / f"{fixture_id}.pdf" for fixture_id in FIXTURES),
+        SEED_PATH,
+        CASES_PATH,
+    ]
+
+    def build_all() -> None:
+        for fixture_id, invoice in FIXTURES.items():
+            build_pdf(FIXTURE_DIR / f"{fixture_id}.pdf", invoice)
+        build_database(SEED_PATH)
+        manifest = build_manifest()
+        CASES_PATH.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        validate(manifest)
+
+    build_all()
+    first_hashes = {
+        path: hashlib.sha256(path.read_bytes()).digest() for path in artifact_paths
+    }
+    build_all()
+    assert first_hashes == {
+        path: hashlib.sha256(path.read_bytes()).digest() for path in artifact_paths
+    }, "Phase 0B artifacts drifted across consecutive builds"
+    print("Built and validated 9 invoice PDFs, data/seed.sqlite, and data/cases.json")
 
 
 if __name__ == "__main__":
