@@ -35,7 +35,7 @@ export async function processInvoice(runId: string, storage: Storage) {
     storage.block(
       runId,
       reason,
-      "Check provider configuration or review the document manually.",
+      nextActionFor(reason),
     );
     return storage.getRun(runId)!;
   }
@@ -52,7 +52,7 @@ export async function processInvoice(runId: string, storage: Storage) {
     storage.block(
       runId,
       "MAPPING_FAILED",
-      "Review the extracted invoice evidence manually.",
+      nextActionFor("MAPPING_FAILED"),
     );
     return storage.getRun(runId)!;
   }
@@ -66,14 +66,32 @@ export async function processInvoice(runId: string, storage: Storage) {
     storage.block(
       runId,
       reasonFor(caught.code),
-      "Review the invoice and purchase-order evidence.",
+      nextActionFor(reasonFor(caught.code)),
       invoice,
       caught.checks,
     );
     return storage.getRun(runId)!;
   }
   storage.addStage(runId, "CONTROLS", "COMPLETED");
-  storage.post(runId, invoice, evaluation.checks, evaluation.allocations);
+  try {
+    storage.post(runId, invoice, evaluation.checks, evaluation.allocations);
+  } catch (caught) {
+    storage.addStage(runId, "POSTING", "FAILED");
+    const reason =
+      caught instanceof Error && caught.message === "DUPLICATE"
+        ? "DUPLICATE"
+        : caught instanceof Error && caught.message === "CAPACITY_CHANGED"
+          ? "PO_CAPACITY_EXCEEDED"
+          : "PROCESSING_ERROR";
+    storage.block(
+      runId,
+      reason,
+      nextActionFor(reason),
+      invoice,
+      evaluation.checks,
+    );
+    return storage.getRun(runId)!;
+  }
   storage.addStage(runId, "POSTING", "COMPLETED");
   return storage.getRun(runId)!;
 }
@@ -87,4 +105,41 @@ function reasonFor(checkCode: string) {
   if (checkCode === "RECEIPT_CAPACITY") return "RECEIPT_CAPACITY_EXCEEDED";
   if (checkCode === "ORDERED_CAPACITY") return "PO_CAPACITY_EXCEEDED";
   return "TOTAL_MISMATCH";
+}
+
+function nextActionFor(reasonCode: string) {
+  return (
+    {
+      DOCUMENT_UNREADABLE:
+        "Upload a valid, unencrypted PDF within the size and page limits.",
+      EXTRACTION_FAILED:
+        "Retry once; if it repeats, verify service configuration or use a clearer PDF.",
+      LOW_CONFIDENCE:
+        "Verify the highlighted field in the source document; this demo does not support overrides.",
+      MAPPING_FAILED:
+        "Inspect the extracted evidence and retry; no values were assumed.",
+      MISSING_REQUIRED_FIELD:
+        "Correct the invoice or provide a document containing the highlighted field.",
+      TAX_TREATMENT_UNRESOLVED:
+        "Provide explicit tax treatment and rate evidence or route the invoice for manual tax review.",
+      VENDOR_OR_PO_MISMATCH:
+        "Verify the vendor and PO reference in the source system.",
+      MISSING_PO:
+        "Confirm one of the stored candidates, or correct the invoice when no candidate exists.",
+      BUNDLE_MAPPING_REQUIRED:
+        "Confirm a stored decomposition when offered; otherwise provide trusted bundle master data or an itemized invoice.",
+      LINE_MATCH_FAILED:
+        "Verify SKU, description, and UOM; manual remapping is out of scope.",
+      DUPLICATE: "Review the existing ledger invoice; do not repost.",
+      RECEIPT_CAPACITY_EXCEEDED:
+        "Record or correct the goods receipt before retrying.",
+      PO_CAPACITY_EXCEEDED: "Amend the PO or correct the invoice before retrying.",
+      PRICE_VARIANCE_EXCEEDED:
+        "Review the invoice price against the PO or bundle definition.",
+      TOTAL_MISMATCH: "Correct the invoice arithmetic.",
+      UNSUPPORTED_STRUCTURE: "Route it to the normal manual AP process.",
+      PROCESSING_ERROR:
+        "Retry; if it repeats, inspect application diagnostics without reposting.",
+    }[reasonCode] ?? "Review the invoice and purchase-order evidence."
+  );
 }

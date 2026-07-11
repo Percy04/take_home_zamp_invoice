@@ -61,9 +61,9 @@ describe("happy-path vertical slice", () => {
   });
 
   it.each([
-    ["duplicate.pdf", "DUPLICATE"],
-    ["receipt_capacity.pdf", "RECEIPT_CAPACITY_EXCEEDED"],
-  ])("blocks %s without posting", async (fixture, reasonCode) => {
+    ["duplicate.pdf", "DUPLICATE", /do not repost/i],
+    ["receipt_capacity.pdf", "RECEIPT_CAPACITY_EXCEEDED", /goods receipt/i],
+  ])("blocks %s without posting", async (fixture, reasonCode, nextAction) => {
     const runtime = mkdtempSync(path.join(tmpdir(), "zamp-phase-1-"));
     temporaryDirectories.push(runtime);
     const storage = new Storage(runtime);
@@ -82,6 +82,7 @@ describe("happy-path vertical slice", () => {
       decision: "NEEDS_REVIEW",
       execution: "BLOCKED",
       reasonCode,
+      nextAction: expect.stringMatching(nextAction),
       ledgerId: null,
     });
 
