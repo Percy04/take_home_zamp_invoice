@@ -1,10 +1,21 @@
 import tempfile
 import unittest
 import hashlib
+import json
 from io import BytesIO
+from types import SimpleNamespace
 from pathlib import Path
 
-from pipeline import PDFValidationError, validate_and_store_pdf
+from pipeline import (
+    InvoiceLineMapping,
+    InvoiceMapping,
+    MappingError,
+    PDFValidationError,
+    build_source_catalogue,
+    extract_invoice,
+    map_invoice,
+    validate_and_store_pdf,
+)
 from pypdf import PdfWriter
 
 
@@ -64,6 +75,51 @@ class PDFIntakeTests(unittest.TestCase):
             stored = validate_and_store_pdf(content, "RUN-SCAN", Path(directory))
 
             self.assertTrue(stored.path.exists())
+
+
+class ExtractionAndMappingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.recording_path = ROOT / "tests" / "recordings" / "happy_azure.json"
+        cls.recording = json.loads(cls.recording_path.read_text(encoding="utf-8"))
+
+    def test_recorded_extraction_builds_stable_source_catalogue(self):
+        payload = extract_invoice(b"unused offline", recording_path=self.recording_path)
+        sources = build_source_catalogue(payload)
+        by_id = {source.id: source for source in sources}
+
+        self.assertEqual(payload["modelId"], "prebuilt-invoice")
+        self.assertEqual(by_id["field.InvoiceId"].content, "ACME-2026-001")
+        self.assertEqual(by_id["item.0.ProductCode"].content, "WID-100")
+        self.assertIn("table.0.r0.c0", by_id)
+        self.assertTrue(any(source.id.startswith("line.1.l") for source in sources))
+
+    def test_mapping_uses_one_structured_call_and_rejects_unknown_sources(self):
+        sources = build_source_catalogue(self.recording)
+        known_id = sources[0].id
+        parsed = InvoiceMapping(
+            vendor_source_id=known_id,
+            lines=[InvoiceLineMapping(description_source_id=known_id)],
+        )
+
+        class FakeResponses:
+            def __init__(self):
+                self.calls = []
+
+            def parse(self, **kwargs):
+                self.calls.append(kwargs)
+                return SimpleNamespace(output_parsed=parsed)
+
+        responses = FakeResponses()
+        result = map_invoice(sources, SimpleNamespace(responses=responses))
+        self.assertEqual(result, parsed)
+        self.assertEqual(len(responses.calls), 1)
+        self.assertIs(responses.calls[0]["text_format"], InvoiceMapping)
+        self.assertEqual(responses.calls[0]["max_output_tokens"], 4000)
+
+        parsed.vendor_source_id = "field.DoesNotExist"
+        with self.assertRaises(MappingError):
+            map_invoice(sources, SimpleNamespace(responses=responses))
 
 
 if __name__ == "__main__":
