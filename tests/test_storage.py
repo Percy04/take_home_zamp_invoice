@@ -1,6 +1,7 @@
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from storage import initialize_runtime_database
@@ -12,7 +13,7 @@ class RuntimeDatabaseTests(unittest.TestCase):
             runtime_path = Path(directory) / "runtime.db"
 
             initialized = initialize_runtime_database(runtime_path)
-            with sqlite3.connect(initialized) as connection:
+            with closing(sqlite3.connect(initialized)) as connection:
                 self.assertEqual(connection.execute("PRAGMA integrity_check").fetchone()[0], "ok")
                 connection.execute(
                     "INSERT INTO runs (id, created_at, updated_at, filename, file_sha256, state, stage_events_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -21,7 +22,7 @@ class RuntimeDatabaseTests(unittest.TestCase):
                 connection.commit()
 
             initialize_runtime_database(runtime_path)
-            with sqlite3.connect(runtime_path) as connection:
+            with closing(sqlite3.connect(runtime_path)) as connection:
                 self.assertEqual(connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0], 1)
 
 
