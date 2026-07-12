@@ -79,8 +79,14 @@ const invoiceMappingJsonSchema = {
       type: ["string", "null"],
       description: "Source ID for purchase order number.",
     },
-    currency: { type: ["string", "null"], description: "Source ID for currency." },
-    subtotal: { type: ["string", "null"], description: "Source ID for subtotal." },
+    currency: {
+      type: ["string", "null"],
+      description: "Source ID for currency.",
+    },
+    subtotal: {
+      type: ["string", "null"],
+      description: "Source ID for subtotal.",
+    },
     tax: { type: ["string", "null"], description: "Source ID for tax amount." },
     total: { type: "string", description: "Source ID for invoice total." },
     lines: {
@@ -106,7 +112,9 @@ type AzureField = {
   content?: string;
   confidence?: number;
   boundingRegions?: Array<{ pageNumber?: number }>;
+  spans?: Array<{ offset: number; length: number }>;
   valueArray?: Array<{ valueObject?: Record<string, AzureField> }>;
+  valueObject?: Record<string, AzureField>;
 };
 type AzureResult = {
   status?: string;
@@ -114,7 +122,33 @@ type AzureResult = {
     documents?: Array<{ fields?: Record<string, AzureField> }>;
     pages?: Array<{
       pageNumber: number;
-      lines?: Array<{ content?: string }>;
+      lines?: Array<{
+        content?: string;
+        spans?: Array<{ offset: number; length: number }>;
+      }>;
+      words?: Array<{
+        confidence: number;
+        span: { offset: number; length: number };
+      }>;
+    }>;
+    tables?: Array<{
+      cells: Array<{
+        content: string;
+        rowIndex: number;
+        columnIndex: number;
+        boundingRegions?: Array<{ pageNumber?: number }>;
+      }>;
+    }>;
+    keyValuePairs?: Array<{
+      confidence: number;
+      key: {
+        content: string;
+        boundingRegions?: Array<{ pageNumber?: number }>;
+      };
+      value?: {
+        content: string;
+        boundingRegions?: Array<{ pageNumber?: number }>;
+      };
     }>;
   };
 };
@@ -188,21 +222,32 @@ export async function extractAndMapLive(bytes: Buffer) {
       .post({
         contentType: "application/json",
         body: { base64Source: bytes.toString("base64") },
+        queryParameters: { features: ["keyValuePairs"] },
         abortSignal: AbortSignal.timeout(60_000),
       });
     if (isUnexpected(initial))
-      throw new ProviderError("AZURE_ANALYZE", "Azure analyze request failed.", {
-        status: initial.status,
-      });
+      throw new ProviderError(
+        "AZURE_ANALYZE",
+        "Azure analyze request failed.",
+        {
+          status: initial.status,
+        },
+      );
     const poller = getLongRunningPoller(client, initial);
-    result = (await withTimeout(
-      poller.pollUntilDone(),
-      60_000,
-      "Azure extraction timed out.",
-    )).body as unknown as AzureResult;
+    result = (
+      await withTimeout(
+        poller.pollUntilDone(),
+        60_000,
+        "Azure extraction timed out.",
+      )
+    ).body as unknown as AzureResult;
   } catch (caught) {
     if (caught instanceof ProviderError) throw caught;
-    throw providerError("AZURE_ANALYZE", "Azure analyze request failed.", caught);
+    throw providerError(
+      "AZURE_ANALYZE",
+      "Azure analyze request failed.",
+      caught,
+    );
   }
   if (result.status !== "succeeded")
     throw new ProviderError("AZURE_RESULT", "Azure extraction failed.", {
@@ -219,9 +264,7 @@ export async function mapEvidenceWithRetry(
   provider = env.MAPPING_PROVIDER,
 ) {
   return withOneMappingRetry(() =>
-    provider === "openai"
-        ? mapWithOpenAI(evidence)
-        : mapWithGemini(evidence),
+    provider === "openai" ? mapWithOpenAI(evidence) : mapWithGemini(evidence),
   );
 }
 
@@ -265,10 +308,15 @@ async function mapWithOpenAI(evidence: SourceRef[]) {
     return invoiceMappingSchema.parse(response.output_parsed);
   } catch (caught) {
     if (caught instanceof ProviderError) throw caught;
-    throw providerError("OPENAI_MAPPING", "OpenAI mapping request failed.", caught, {
-      model: env.OPENAI_MODEL,
-      evidenceCount: evidence.length,
-    });
+    throw providerError(
+      "OPENAI_MAPPING",
+      "OpenAI mapping request failed.",
+      caught,
+      {
+        model: env.OPENAI_MODEL,
+        evidenceCount: evidence.length,
+      },
+    );
   }
 }
 
@@ -307,20 +355,29 @@ async function mapWithGemini(evidence: SourceRef[]) {
       },
     );
   } catch (caught) {
-    throw providerError("GEMINI_MAPPING", "Gemini mapping request failed.", caught, {
-      model: env.GEMINI_MODEL,
-      evidenceCount: evidence.length,
-    });
+    throw providerError(
+      "GEMINI_MAPPING",
+      "Gemini mapping request failed.",
+      caught,
+      {
+        model: env.GEMINI_MODEL,
+        evidenceCount: evidence.length,
+      },
+    );
   }
 
   if (!response.ok) {
-    throw new ProviderError("GEMINI_MAPPING", "Gemini mapping request failed.", {
-      model: env.GEMINI_MODEL,
-      status: response.status,
-      statusText: response.statusText,
-      error: await safeResponseError(response),
-      evidenceCount: evidence.length,
-    });
+    throw new ProviderError(
+      "GEMINI_MAPPING",
+      "Gemini mapping request failed.",
+      {
+        model: env.GEMINI_MODEL,
+        status: response.status,
+        statusText: response.statusText,
+        error: await safeResponseError(response),
+        evidenceCount: evidence.length,
+      },
+    );
   }
 
   const body = (await response.json()) as unknown;
@@ -335,11 +392,16 @@ async function mapWithGemini(evidence: SourceRef[]) {
   try {
     return invoiceMappingSchema.parse(JSON.parse(output));
   } catch (caught) {
-    throw providerError("GEMINI_MAPPING", "Gemini returned malformed mapping.", caught, {
-      model: env.GEMINI_MODEL,
-      evidenceCount: evidence.length,
-      malformed: true,
-    });
+    throw providerError(
+      "GEMINI_MAPPING",
+      "Gemini returned malformed mapping.",
+      caught,
+      {
+        model: env.GEMINI_MODEL,
+        evidenceCount: evidence.length,
+        malformed: true,
+      },
+    );
   }
 }
 
@@ -347,7 +409,12 @@ export function buildSourceCatalogue(payload: AzureResult): SourceRef[] {
   const result = payload.analyzeResult;
   const fields = result?.documents?.[0]?.fields ?? {};
   const evidence: SourceRef[] = [];
-  const add = (id: string, label: string, field: AzureField) => {
+  const add = (
+    id: string,
+    label: string,
+    field: AzureField,
+    sourceKind: SourceRef["sourceKind"],
+  ) => {
     if (!field.content) return;
     evidence.push({
       id,
@@ -355,6 +422,7 @@ export function buildSourceCatalogue(payload: AzureResult): SourceRef[] {
       confidence: field.confidence ?? null,
       page: field.boundingRegions?.[0]?.pageNumber ?? null,
       label,
+      sourceKind,
     });
   };
   for (const [label, field] of Object.entries(fields)) {
@@ -363,24 +431,74 @@ export function buildSourceCatalogue(payload: AzureResult): SourceRef[] {
         for (const [childLabel, child] of Object.entries(
           item.valueObject ?? {},
         )) {
-          add(`item.${index}.${childLabel}`, childLabel, child);
+          add(`item.${index}.${childLabel}`, childLabel, child, "ITEM");
+        }
+      }
+    } else if (/tax/i.test(label) && field.valueArray?.length) {
+      for (const [index, item] of field.valueArray.entries()) {
+        for (const [childLabel, child] of Object.entries(
+          item.valueObject ?? {},
+        )) {
+          add(`tax.${index}.${childLabel}`, childLabel, child, "TAX");
         }
       }
     } else {
-      add(`field.${label}`, label, field);
+      add(`field.${label}`, label, field, "FIELD");
     }
   }
+
+  for (const [tableIndex, table] of (result?.tables ?? []).entries()) {
+    for (const cell of table.cells) {
+      if (!cell.content) continue;
+      evidence.push({
+        id: `table.${tableIndex}.r${cell.rowIndex}.c${cell.columnIndex}`,
+        content: cell.content,
+        confidence: null,
+        page: cell.boundingRegions?.[0]?.pageNumber ?? null,
+        label: "Table cell",
+        sourceKind: "TABLE",
+        tableIndex,
+        row: cell.rowIndex,
+        column: cell.columnIndex,
+      });
+    }
+  }
+
   for (const page of result?.pages ?? []) {
     for (const [index, line] of (page.lines ?? []).entries()) {
       if (line.content) {
+        const overlappingWords = (page.words ?? []).filter((word) =>
+          line.spans?.some((span) => spansOverlap(span, word.span)),
+        );
         evidence.push({
           id: `line.${page.pageNumber}.l${index}`,
           content: line.content,
-          confidence: null,
+          confidence: overlappingWords.length
+            ? Math.min(...overlappingWords.map((word) => word.confidence))
+            : null,
           page: page.pageNumber,
           label: "OCR line",
+          sourceKind: "OCR_LINE",
+          lineIndex: index,
         });
       }
+    }
+  }
+
+  for (const [index, pair] of (result?.keyValuePairs ?? []).entries()) {
+    for (const [part, element] of [
+      ["key", pair.key],
+      ["value", pair.value],
+    ] as const) {
+      if (!element?.content) continue;
+      evidence.push({
+        id: `key_value.${index}.${part}`,
+        content: element.content,
+        confidence: pair.confidence,
+        page: element.boundingRegions?.[0]?.pageNumber ?? null,
+        label: part === "key" ? "Key-value key" : "Key-value value",
+        sourceKind: "KEY_VALUE",
+      });
     }
   }
   if (!evidence.length) {
@@ -390,6 +508,16 @@ export function buildSourceCatalogue(payload: AzureResult): SourceRef[] {
     );
   }
   return sourceRefSchema.array().parse(evidence);
+}
+
+function spansOverlap(
+  left: { offset: number; length: number },
+  right: { offset: number; length: number },
+) {
+  return (
+    left.offset < right.offset + right.length &&
+    right.offset < left.offset + left.length
+  );
 }
 
 function validateMapping(mapping: InvoiceMapping, evidence: SourceRef[]) {
@@ -450,8 +578,7 @@ async function recordingForDocument(bytes: Buffer) {
     updateMetadata: false,
   });
   const title = pdf.getTitle();
-  if (!title || title === "untitled")
-    return "happy_layout_c_scanned";
+  if (!title || title === "untitled") return "happy_layout_c_scanned";
   if (title === "Invoice ACME-2026-001") return "happy";
   if (title === "Invoice ACME-2026-000") return "duplicate";
   if (title === "Invoice DELTA-2026-010") return "receipt_capacity";
@@ -512,7 +639,9 @@ async function recordedEvidence(recording: string) {
     ref("case.poNumber", "PurchaseOrder", input.po_number ?? ""),
     ref("case.currency", "Currency", input.currency),
     ref("case.total", "InvoiceTotal", input.total),
-    ...(input.subtotal ? [ref("case.subtotal", "SubTotal", input.subtotal)] : []),
+    ...(input.subtotal
+      ? [ref("case.subtotal", "SubTotal", input.subtotal)]
+      : []),
     ...(input.tax ? [ref("case.tax", "TotalTax", input.tax)] : []),
     ...(input.tax_note ? [ref("case.taxNote", "TaxNote", input.tax_note)] : []),
     ...input.lines.flatMap((line, index) => [
@@ -556,7 +685,9 @@ export function logProviderError(error: unknown) {
 
 export function providerFailureReason(error: unknown) {
   return error instanceof ProviderError &&
-    ["OPENAI_MAPPING", "GEMINI_MAPPING", "MAPPING_VALIDATION"].includes(error.stage)
+    ["OPENAI_MAPPING", "GEMINI_MAPPING", "MAPPING_VALIDATION"].includes(
+      error.stage,
+    )
     ? "MAPPING_FAILED"
     : "EXTRACTION_FAILED";
 }
