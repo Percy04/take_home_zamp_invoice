@@ -10,10 +10,14 @@ describe("App", () => {
     render(<App />);
 
     expect(
-      screen.getByRole("heading", { name: /ap operations console/i }),
+      screen.getByRole("heading", { name: /upload an invoice/i }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: /^happy$/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /bundle unknown/i })).toBeEnabled();
-    expect(screen.getByRole("note")).toHaveTextContent(/synthetic data only/i);
+    expect(
+      screen.getByRole("button", { name: /bundle unknown/i }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /upload and process/i }),
+    ).toBeDisabled();
   });
 });

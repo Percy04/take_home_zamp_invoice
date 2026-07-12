@@ -55,45 +55,31 @@ function InvoicePage() {
 
   return (
     <ConsoleShell>
-      <main className="console-main" aria-labelledby="page-title">
-        <div className="page-heading">
+      <main className="console-main intake-layout" aria-labelledby="page-title">
+        <div className="page-heading compact">
           <div>
-            <p className="eyebrow">AP Resolution Agent</p>
-            <h1 id="page-title">AP operations console</h1>
+            <p className="eyebrow">Invoice intake</p>
+            <h1 id="page-title">Upload an invoice</h1>
             <p className="summary">
-              Process a synthetic invoice, review the control trail, and confirm
-              whether the demo ledger changed.
-            </p>
-          </div>
-          <div className="mode-panel" role="note">
-            <span className="label">Current scope</span>
-            <strong>Complete demo workflow</strong>
-            <p>
-              Use synthetic data only. In live mode the PDF goes to Azure;
-              compact extracted evidence—not the PDF—goes to the configured
-              OpenAI or Gemini mapper.
+              Add a PDF to extract its details, match it to a purchase order,
+              and run accounting controls.
             </p>
           </div>
         </div>
 
-        <div className="metric-grid" aria-label="Implementation status">
-          <Metric label="Decision engine" value="Direct PO" />
-          <Metric label="Persistence" value="SQLite" />
-          <Metric label="Posting" value="Once per run" />
-        </div>
-
-        <div className="workspace-grid">
+        <div className="workspace-grid intake-grid">
           <section className="surface upload-surface" aria-labelledby="upload">
             <div>
-              <p className="eyebrow">New run</p>
-              <h2 id="upload">Invoice intake</h2>
-              <p className="muted">
-                Upload a PDF or run any committed fixture.
-              </p>
+              <h2 id="upload">Invoice document</h2>
+              <p className="muted">PDF files up to 10 MiB.</p>
             </div>
 
-            <label className="file-control">
-              <span>Invoice PDF</span>
+            <label className="file-control upload-dropzone">
+              <span className="upload-icon" aria-hidden="true">
+                ↑
+              </span>
+              <strong>{file ? file.name : "Choose an invoice PDF"}</strong>
+              <span>Click to browse from your device</span>
               <input
                 type="file"
                 accept="application/pdf,.pdf"
@@ -122,71 +108,68 @@ function InvoicePage() {
                 disabled={!file || create.isPending}
                 onClick={() => file && create.mutate(file)}
               >
-                {create.isPending ? "Uploading..." : "Process PDF"}
+                {create.isPending
+                  ? "Processing invoice..."
+                  : "Upload and process"}
               </button>
             </div>
-
-            <div className="fixture-grid" aria-label="Fixture runs">
-              {fixtureIds.map((fixtureId) => (
-                <button
-                  key={fixtureId}
-                  className="secondary"
-                  disabled={create.isPending}
-                  onClick={() => create.mutate(fixtureId)}
-                >
-                  {fixtureLabel(fixtureId)}
-                </button>
-              ))}
-            </div>
-
-            {file && (
-              <p className="muted selected-file">Selected: {file.name}</p>
-            )}
             {fileError && <p className="error">{fileError}</p>}
             {create.error && <p className="error">{create.error.message}</p>}
           </section>
 
-          <section className="surface" aria-labelledby="capabilities">
-            <div className="section-head">
-              <div>
-                <p className="eyebrow">Available now</p>
-                <h2 id="capabilities">Run workflow</h2>
+          <aside className="intake-side">
+            <section className="surface" aria-labelledby="workflow">
+              <p className="eyebrow">Automated workflow</p>
+              <h2 id="workflow">What happens next</h2>
+              <ol className="workflow-list">
+                <li>
+                  <span>1</span>
+                  <div>
+                    <strong>Extract</strong>
+                    <p>Read invoice fields and line items.</p>
+                  </div>
+                </li>
+                <li>
+                  <span>2</span>
+                  <div>
+                    <strong>Match</strong>
+                    <p>Compare against the purchase order.</p>
+                  </div>
+                </li>
+                <li>
+                  <span>3</span>
+                  <div>
+                    <strong>Review</strong>
+                    <p>Post automatically or flag exceptions.</p>
+                  </div>
+                </li>
+              </ol>
+            </section>
+
+            <section
+              className="surface demo-panel"
+              aria-labelledby="demo-invoices"
+            >
+              <div className="section-head">
+                <div>
+                  <p className="eyebrow">Demo workspace</p>
+                  <h2 id="demo-invoices">Try a sample invoice</h2>
+                </div>
               </div>
-              <span className="status-badge neutral">Phase 4</span>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Area</th>
-                  <th>Status</th>
-                  <th>Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Posting paths</td>
-                  <td>
-                    <span className="status-badge ok">Ready</span>
-                  </td>
-                  <td>Direct, tax-inclusive, and trusted bundle.</td>
-                </tr>
-                <tr>
-                  <td>Live providers</td>
-                  <td>
-                    <span className="status-badge warn">Config needed</span>
-                  </td>
-                  <td>Requires Azure plus OpenAI or Gemini env vars.</td>
-                </tr>
-                <tr>
-                  <td>Reviewer flows</td>
-                  <td>
-                    <span className="status-badge ok">Ready</span>
-                  </td>
-                  <td>Missing PO and unknown bundle confirmation.</td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
+              <div className="fixture-grid" aria-label="Fixture runs">
+                {fixtureIds.map((fixtureId) => (
+                  <button
+                    key={fixtureId}
+                    className="secondary"
+                    disabled={create.isPending}
+                    onClick={() => create.mutate(fixtureId)}
+                  >
+                    {fixtureLabel(fixtureId)}
+                  </button>
+                ))}
+              </div>
+            </section>
+          </aside>
         </div>
       </main>
     </ConsoleShell>
@@ -205,19 +188,19 @@ function DashboardPage() {
 
   return (
     <ConsoleShell>
-      <main className="console-main" aria-labelledby="dashboard-title">
+      <main
+        className="console-main dashboard-layout"
+        aria-labelledby="dashboard-title"
+      >
         <div className="page-heading compact">
           <div>
-            <p className="eyebrow">Run history</p>
-            <h1 id="dashboard-title">Operations dashboard</h1>
+            <p className="eyebrow">Accounts payable</p>
+            <h1 id="dashboard-title">Invoices</h1>
             <p className="summary">
-              Monitor invoice outcomes and quickly find runs that need
+              Review processing outcomes and resolve invoices that need
               attention.
             </p>
           </div>
-          <Link className="button-link" to="/">
-            <span aria-hidden="true">+</span> New invoice
-          </Link>
         </div>
 
         {runs.data && (
@@ -226,16 +209,16 @@ function DashboardPage() {
             aria-label="Dashboard metrics"
           >
             <Metric
-              label="Total runs"
+              label="All invoices"
               value={String(runs.data.metrics.totalRuns)}
             />
             <Metric
-              label="Posted successfully"
+              label="Posted"
               value={String(runs.data.metrics.postedCount)}
               tone="ok"
             />
             <Metric
-              label="Needs attention"
+              label="Needs review"
               value={String(runs.data.metrics.reviewCount)}
               tone="warn"
             />
@@ -252,15 +235,15 @@ function DashboardPage() {
         >
           <div className="table-toolbar">
             <div>
-              <h2 id="recent-runs-title">Recent runs</h2>
+              <h2 id="recent-runs-title">Invoice activity</h2>
               <p className="muted">
                 {runs.data
-                  ? `${runs.data.items.length} ${runs.data.items.length === 1 ? "result" : "results"} on this page`
+                  ? `${runs.data.items.length} ${runs.data.items.length === 1 ? "invoice" : "invoices"}`
                   : "Loading invoice history..."}
               </p>
             </div>
             <label>
-              <span>Filter by status</span>
+              <span>Status</span>
               <select
                 value={state}
                 onChange={(event) => {
@@ -298,10 +281,11 @@ function DashboardPage() {
                 <thead>
                   <tr>
                     <th>Invoice</th>
-                    <th>State</th>
-                    <th>Decision</th>
-                    <th>Reason</th>
+                    <th>Status</th>
+                    <th>Outcome</th>
+                    <th>Issue</th>
                     <th>Updated</th>
+                    <th className="sr-only">Open</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -333,6 +317,14 @@ function DashboardPage() {
                         )}
                       </td>
                       <td className="date-cell">{formatDate(run.updatedAt)}</td>
+                      <td className="row-action">
+                        <Link
+                          to={`/runs/${run.runId}`}
+                          aria-label={`Open ${run.filename}`}
+                        >
+                          <span aria-hidden="true">→</span>
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -418,27 +410,37 @@ function RunPage() {
   return (
     <ConsoleShell>
       <main className="console-main run-layout">
-        <div className="page-heading compact">
+        <div className="invoice-header">
           <div>
-            <p className="eyebrow">Invoice run</p>
-            <h1>{detail.invoice?.invoiceNumber ?? detail.filename}</h1>
-            <p className="summary">
-              {detail.filename} - {detail.runId}
+            <p className="breadcrumb">
+              <Link to="/dashboard">Invoices</Link>
+              <span>/</span>
+              {detail.invoice?.invoiceNumber ?? detail.filename}
             </p>
+            <h1>{detail.invoice?.invoiceNumber ?? detail.filename}</h1>
+            <p className="summary">{detail.filename}</p>
           </div>
-          <Link className="button-link" to="/">
-            New invoice
-          </Link>
+          <div className="invoice-header-actions">
+            <span className={`status-badge ${stateTone(detail.state)}`}>
+              {formatLabel(detail.state)}
+            </span>
+          </div>
         </div>
 
-        <section className="decision-strip" aria-label="Run decision">
+        <section
+          className="decision-strip run-summary-bar"
+          aria-label="Run decision"
+        >
           <Metric
             label="Decision"
-            value={detail.decision ?? "Processing"}
+            value={formatLabel(detail.decision ?? "PROCESSING")}
             tone={isPosted ? "ok" : detail.reasonCode ? "bad" : "warn"}
           />
-          <Metric label="State" value={detail.state} />
-          <Metric label="Execution" value={detail.execution ?? "Pending"} />
+          <Metric label="State" value={formatLabel(detail.state)} />
+          <Metric
+            label="Execution"
+            value={formatLabel(detail.execution ?? "PENDING")}
+          />
           <Metric label="Ledger" value={detail.ledgerId ?? "No mutation"} />
         </section>
 
@@ -503,7 +505,7 @@ function RunPage() {
             </section>
           )}
 
-        <div className="run-grid">
+        <div className="run-grid review-workspace">
           <section
             className="surface document-panel"
             aria-labelledby="document"
@@ -526,64 +528,102 @@ function RunPage() {
           </section>
 
           <aside className="side-stack">
-            <section className="surface" aria-labelledby="stages">
+            {detail.invoice && (
+              <section
+                className="surface review-panel"
+                aria-labelledby="normalized"
+              >
+                <div className="review-panel-head">
+                  <div>
+                    <p className="eyebrow">Invoice review</p>
+                    <h2 id="normalized">{detail.invoice.vendor}</h2>
+                    <strong className="invoice-total">
+                      ${detail.invoice.total}
+                    </strong>
+                  </div>
+                  <span className={`status-badge ${stateTone(detail.state)}`}>
+                    {isPosted ? "Ready" : formatLabel(detail.state)}
+                  </span>
+                </div>
+                <div
+                  className="review-tabs"
+                  role="tablist"
+                  aria-label="Invoice details"
+                >
+                  <button type="button" role="tab" aria-selected="true">
+                    Overview
+                  </button>
+                  <span role="tab" aria-selected="false">
+                    Line items
+                  </span>
+                  <span role="tab" aria-selected="false">
+                    Audit trail
+                  </span>
+                </div>
+                <h3 className="fact-group-title">Invoice details</h3>
+                <dl className="facts">
+                  <Fact label="Vendor" value={detail.invoice.vendor} />
+                  <Fact
+                    label="Invoice #"
+                    value={detail.invoice.invoiceNumber}
+                  />
+                </dl>
+                <h3 className="fact-group-title">Purchase order match</h3>
+                <dl className="facts">
+                  <Fact label="PO number" value={detail.invoice.poNumber} />
+                  <Fact
+                    label="Match status"
+                    value={
+                      detail.allocations.length > 0
+                        ? `${detail.allocations.length} line items matched`
+                        : "Pending validation"
+                    }
+                  />
+                </dl>
+                <h3 className="fact-group-title">Payment summary</h3>
+                <dl className="facts payment-facts">
+                  <Fact
+                    label="Subtotal"
+                    value={`$${detail.invoice.subtotal}`}
+                  />
+                  <Fact label="Tax" value={`$${detail.invoice.tax}`} />
+                  <Fact label="Total" value={`$${detail.invoice.total}`} />
+                </dl>
+                <div className="validation-summary">
+                  <span>
+                    <strong>
+                      {detail.checks.filter((check) => check.passed).length}
+                    </strong>
+                    checks passed
+                  </span>
+                  <span>
+                    <strong>{detail.evidence.length}</strong>
+                    evidence fields
+                  </span>
+                </div>
+              </section>
+            )}
+
+            <section
+              className="surface pipeline-panel"
+              aria-labelledby="stages"
+            >
               <div className="section-head">
                 <div>
-                  <p className="eyebrow">Pipeline</p>
-                  <h2 id="stages">Stages</h2>
+                  <p className="eyebrow">Workflow</p>
+                  <h2 id="stages">Processing activity</h2>
                 </div>
               </div>
               <ol className="timeline">
                 {detail.stages.map((stage, index) => (
                   <li key={`${stage.stage}-${index}`}>
                     <span className={`dot ${stage.status.toLowerCase()}`} />
-                    <strong>{stage.stage}</strong>
-                    <span>{stage.status}</span>
+                    <strong>{formatLabel(stage.stage)}</strong>
+                    <span>{formatLabel(stage.status)}</span>
                   </li>
                 ))}
               </ol>
             </section>
-
-            {detail.invoice && (
-              <section className="surface" aria-labelledby="normalized">
-                <div className="section-head">
-                  <div>
-                    <p className="eyebrow">Invoice evidence</p>
-                    <h2 id="normalized">Observed and normalized</h2>
-                  </div>
-                </div>
-                <dl className="facts">
-                  <Fact label="Vendor" value={detail.invoice.vendor} />
-                  <Fact label="PO" value={detail.invoice.poNumber} />
-                  <Fact
-                    label="Subtotal"
-                    value={`$${detail.invoice.subtotal}`}
-                  />
-                  <Fact
-                    label="Observed subtotal"
-                    value={
-                      detail.invoice.observedSubtotal
-                        ? `$${detail.invoice.observedSubtotal}`
-                        : "Not stated"
-                    }
-                  />
-                  <Fact label="Tax" value={`$${detail.invoice.tax}`} />
-                  <Fact
-                    label="Observed tax"
-                    value={
-                      detail.invoice.observedTax
-                        ? `$${detail.invoice.observedTax}`
-                        : "Derived / zero"
-                    }
-                  />
-                  <Fact label="Total" value={`$${detail.invoice.total}`} />
-                  <Fact
-                    label="Tax treatment"
-                    value={detail.invoice.taxTreatment}
-                  />
-                </dl>
-              </section>
-            )}
           </aside>
         </div>
 
@@ -725,21 +765,30 @@ function RunPage() {
 function ConsoleShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-shell">
-      <header className="app-topbar">
+      <aside className="app-sidebar">
         <Link className="brand" to="/">
           <span className="brand-mark" aria-hidden="true">
             AP
           </span>
-          <span>Resolution Agent</span>
+          <span>AP Resolution</span>
         </Link>
         <nav aria-label="Primary">
           <NavLink to="/" end>
-            Console
+            <span className="nav-icon" aria-hidden="true">
+              +
+            </span>
+            New invoice
           </NavLink>
-          <NavLink to="/dashboard">Dashboard</NavLink>
+          <NavLink to="/dashboard">
+            <span className="nav-icon" aria-hidden="true">
+              ▦
+            </span>
+            Invoices
+          </NavLink>
         </nav>
-      </header>
-      {children}
+        <p className="sidebar-note">Accounts payable workspace</p>
+      </aside>
+      <div className="app-content">{children}</div>
     </div>
   );
 }
