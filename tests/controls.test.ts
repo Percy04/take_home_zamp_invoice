@@ -133,6 +133,45 @@ describe("deterministic normalization", () => {
     );
   });
 
+  it("normalizes common date and decimal formats without guessing ambiguous dates", () => {
+    const evidence = inclusiveEvidence().map((item) => ({ ...item }));
+    evidence.find((item) => item.id === "date")!.content = "06 Jul 2026";
+    evidence.find((item) => item.id === "total")!.content = "$590,00";
+    evidence.find((item) => item.id === "unitPrice")!.content = "$295,00";
+    evidence.find((item) => item.id === "amount")!.content = "$590,00";
+
+    expect(normalizeInvoice(evidence, mapping)).toMatchObject({
+      invoiceDate: "2026-07-06",
+      total: "590.00",
+      lines: [{ observedUnitPrice: "295.00" }],
+    });
+
+    evidence.find((item) => item.id === "date")!.content = "06/07/2026";
+    expect(() => normalizeInvoice(evidence, mapping)).toThrowError(
+      expect.objectContaining<Partial<NormalizationError>>({
+        reasonCode: "AMBIGUOUS_DATE",
+      }),
+    );
+  });
+
+  it("routes negative values and credit notes to review", () => {
+    const negative = inclusiveEvidence();
+    negative.find((item) => item.id === "total")!.content = "($590.00)";
+    expect(() => normalizeInvoice(negative, mapping)).toThrowError(
+      expect.objectContaining<Partial<NormalizationError>>({
+        reasonCode: "UNSUPPORTED_STRUCTURE",
+      }),
+    );
+
+    const credit = inclusiveEvidence();
+    credit.push(source("creditNote", "Credit note", "OCR line"));
+    expect(() => normalizeInvoice(credit, mapping)).toThrowError(
+      expect.objectContaining<Partial<NormalizationError>>({
+        reasonCode: "UNSUPPORTED_STRUCTURE",
+      }),
+    );
+  });
+
   it("normalizes unambiguous line-specific mixed tax", () => {
     const mixedMapping: InvoiceMapping = {
       ...mapping,

@@ -139,6 +139,14 @@ export function normalizeInvoice(
     const value = parseMoney(source.content, true);
     if (value && !value.isZero()) failNormalization("UNSUPPORTED_STRUCTURE");
   }
+  if (
+    evidence.some((source) =>
+      /CREDIT\s*(?:NOTE|MEMO)|REVERSE[\s-]?CHARGE|COMPOUND\s+TAX/i.test(
+        `${source.label} ${source.content}`,
+      ),
+    )
+  )
+    failNormalization("UNSUPPORTED_STRUCTURE");
 
   const vendor = select(mapping.vendor, true, "vendor");
   const invoiceNumber = select(mapping.invoiceNumber, true, "invoiceNumber");
@@ -152,6 +160,8 @@ export function normalizeInvoice(
     poNumber.split(/[,;/\n]|\s+AND\s+/i).filter(Boolean).length > 1
   )
     failNormalization("UNSUPPORTED_STRUCTURE");
+  if (!mapping.lines.length)
+    failNormalization("MISSING_REQUIRED_FIELD", "lines");
 
   const observedLines = mapping.lines.map((line, index) => {
     const sourceIds: Record<string, string> = {};
@@ -222,22 +232,18 @@ export function normalizeInvoice(
   const taxNote = select(mapping.taxNote, false, "taxNote");
   if (unsupportedTax.test(taxNote)) failNormalization("UNSUPPORTED_STRUCTURE");
 
-  const explicitCurrency = select(
-    mapping.currency,
-    false,
-    "currency",
-  ).toUpperCase();
+  const explicitCurrency = select(mapping.currency, false, "currency");
   const moneyText = selected
     .filter((source) => /AMOUNT|PRICE|TOTAL|TAX|SUBTOTAL/i.test(source.label))
     .map((source) => source.content)
     .join(" ");
   const currency = explicitCurrency
-    ? explicitCurrency.replace(/\s/g, "")
-    : /\$/.test(moneyText) &&
+    ? parseCurrency(explicitCurrency)
+    : /\$|\b(?:USD|US\s+DOLLARS?)\b/i.test(moneyText) &&
         !/[€£¥]|\b(?:EUR|GBP|JPY|CAD|AUD)\b/i.test(moneyText)
       ? "USD"
       : "";
-  if (currency && currency !== "USD")
+  if (!currency && /[€£¥]|\b(?:EUR|GBP|JPY|CAD|AUD)\b/i.test(moneyText))
     failNormalization("UNSUPPORTED_STRUCTURE");
   if (!currency) failNormalization("MISSING_REQUIRED_FIELD", "currency");
 
@@ -978,36 +984,48 @@ function reserve(map: Map<string, Decimal>, id: string, quantity: Decimal) {
 function requiredMoney(value: string, field?: string) {
   const parsed = parseMoney(value, false, field);
   if (!parsed) failNormalization("MISSING_REQUIRED_FIELD", field);
+  if (parsed.isNegative()) failNormalization("UNSUPPORTED_STRUCTURE");
   return parsed;
 }
 
 function optionalMoney(value: string, field?: string) {
-  return value ? parseMoney(value, false, field) : null;
+  const parsed = value ? parseMoney(value, false, field) : null;
+  if (parsed?.isNegative()) failNormalization("UNSUPPORTED_STRUCTURE");
+  return parsed;
 }
 
 function parseMoney(value: string, allowUnparseable: boolean, field?: string) {
-  const normalized = value.normalize("NFKC").trim();
+  let normalized = value.normalize("NFKC").replace(/\s/g, "").trim();
   if (!normalized) return null;
-  if (/^\(.*\)$/.test(normalized) || /-/.test(normalized))
+  const negative =
+    /^\(.*\)$/.test(normalized) ||
+    /^-/.test(normalized) ||
+    /-$/.test(normalized);
+  normalized = normalized
+    .replace(/^\((.*)\)$/, "$1")
+    .replace(/^-|-$|^(?:USD|US\$|\$)/i, "")
+    .replace(/(?:USD|US\$|\$)$/i, "");
+  if (/[€£¥]|\b(?:EUR|GBP|JPY|CAD|AUD)\b/i.test(normalized)) {
+    if (allowUnparseable) return null;
     failNormalization("UNSUPPORTED_STRUCTURE");
-  const stripped = normalized
-    .replace(/^USD\s*/i, "")
-    .replace(/^\$\s*/, "")
-    .replace(/,/g, "")
-    .trim();
-  if (!/^\d+(?:\.\d+)?$/.test(stripped)) {
+  }
+  const stripped = canonicalNumber(normalized);
+  if (!stripped) {
     if (allowUnparseable) return null;
     failNormalization("MISSING_REQUIRED_FIELD", field);
   }
-  return new Decimal(stripped);
+  const parsed = new Decimal(stripped);
+  return negative ? parsed.negated() : parsed;
 }
 
 function parseQuantity(value: string, field?: string) {
-  const stripped = value.replace(/,/g, "").trim();
-  if (!/^\d+(?:\.\d+)?$/.test(stripped))
-    failNormalization("MISSING_REQUIRED_FIELD", field);
+  let normalized = value.normalize("NFKC").replace(/\s/g, "").trim();
+  const negative = /^-/.test(normalized) || /-$/.test(normalized);
+  normalized = normalized.replace(/^-|-$|^\((.*)\)$/, "$1");
+  const stripped = canonicalNumber(normalized);
+  if (!stripped) failNormalization("MISSING_REQUIRED_FIELD", field);
   const quantity = new Decimal(stripped);
-  if (quantity.lte(0)) failNormalization("UNSUPPORTED_STRUCTURE");
+  if (negative || quantity.lte(0)) failNormalization("UNSUPPORTED_STRUCTURE");
   return quantity;
 }
 
@@ -1020,35 +1038,37 @@ function parseUom(value: string, field?: string) {
 }
 
 function parseDate(value: string, field?: string) {
-  const normalized = value.trim();
+  const normalized = value.normalize("NFKC").trim().replace(/\s+/g, " ");
   let year: number;
   let month: number;
   let day: number;
-  let match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  let match = normalized.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
   if (match) [, year, month, day] = match.map(Number);
-  else if ((match = normalized.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/)))
-    [, month, day, year] = match.map(Number);
-  else {
-    const parsed = normalized.match(/^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$/);
-    if (!parsed) failNormalization("MISSING_REQUIRED_FIELD", field);
-    const monthIndex = [
-      "JANUARY",
-      "FEBRUARY",
-      "MARCH",
-      "APRIL",
-      "MAY",
-      "JUNE",
-      "JULY",
-      "AUGUST",
-      "SEPTEMBER",
-      "OCTOBER",
-      "NOVEMBER",
-      "DECEMBER",
-    ].findIndex((name) => name.startsWith(parsed[1]!.toUpperCase()));
-    if (monthIndex < 0) failNormalization("MISSING_REQUIRED_FIELD", field);
-    year = Number(parsed[3]);
-    month = monthIndex + 1;
-    day = Number(parsed[2]);
+  else if (
+    (match = normalized.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/))
+  ) {
+    const [, first, second, parsedYear] = match.map(Number);
+    year = parsedYear!;
+    if (first! > 12 && second! <= 12) [day, month] = [first!, second!];
+    else if (second! > 12 && first! <= 12) [month, day] = [first!, second!];
+    else if (first === second) [month, day] = [first!, second!];
+    else failNormalization("AMBIGUOUS_DATE", field);
+  } else {
+    const dayFirst = normalized.match(
+      /^(\d{1,2})(?:st|nd|rd|th)?[\s.-]+([A-Za-z]{3,9})[\s,.-]+(\d{4})$/i,
+    );
+    const monthFirst = normalized.match(
+      /^([A-Za-z]{3,9})[\s.-]+(\d{1,2})(?:st|nd|rd|th)?[,]?[\s.-]+(\d{4})$/i,
+    );
+    if (dayFirst) {
+      day = Number(dayFirst[1]);
+      month = monthNumber(dayFirst[2]!);
+      year = Number(dayFirst[3]);
+    } else if (monthFirst) {
+      month = monthNumber(monthFirst[1]!);
+      day = Number(monthFirst[2]);
+      year = Number(monthFirst[3]);
+    } else failNormalization("MISSING_REQUIRED_FIELD", field);
   }
   const date = new Date(Date.UTC(year!, month! - 1, day!));
   if (
@@ -1058,6 +1078,58 @@ function parseDate(value: string, field?: string) {
   )
     failNormalization("MISSING_REQUIRED_FIELD", field);
   return `${String(year!).padStart(4, "0")}-${String(month!).padStart(2, "0")}-${String(day!).padStart(2, "0")}`;
+}
+
+function canonicalNumber(value: string) {
+  if (!/^[\d.,]+$/.test(value)) return null;
+  const commas = [...value.matchAll(/,/g)].map((match) => match.index!);
+  const dots = [...value.matchAll(/\./g)].map((match) => match.index!);
+  if (commas.length && dots.length) {
+    const decimal = commas.at(-1)! > dots.at(-1)! ? "," : ".";
+    const thousands = decimal === "," ? /\./g : /,/g;
+    return value.replace(thousands, "").replace(decimal, ".");
+  }
+  const separator = commas.length ? "," : dots.length ? "." : null;
+  if (!separator) return value;
+  const parts = value.split(separator);
+  if (parts.length === 2) {
+    const fraction = parts[1]!;
+    return fraction.length === 3 ? parts.join("") : parts.join(".");
+  }
+  const fraction = parts.at(-1)!;
+  return fraction.length === 3
+    ? parts.join("")
+    : `${parts.slice(0, -1).join("")}.${fraction}`;
+}
+
+function parseCurrency(value: string) {
+  const normalized = value.toUpperCase().replace(/[^A-Z$]/g, "");
+  if (["USD", "US$", "$", "USDOLLAR", "USDOLLARS"].includes(normalized))
+    return "USD";
+  failNormalization("UNSUPPORTED_STRUCTURE");
+}
+
+function monthNumber(value: string) {
+  const names = [
+    "JANUARY",
+    "FEBRUARY",
+    "MARCH",
+    "APRIL",
+    "MAY",
+    "JUNE",
+    "JULY",
+    "AUGUST",
+    "SEPTEMBER",
+    "OCTOBER",
+    "NOVEMBER",
+    "DECEMBER",
+  ];
+  const normalized = value.toUpperCase();
+  const month = names.findIndex(
+    (name) => name === normalized || name.slice(0, 3) === normalized,
+  );
+  if (month < 0) failNormalization("MISSING_REQUIRED_FIELD", "invoiceDate");
+  return month + 1;
 }
 
 function parseTaxRate(value: string) {
@@ -1071,7 +1143,7 @@ function parseTaxRate(value: string) {
 }
 
 function claimsTaxInclusion(value: string) {
-  return /INCLUD(?:E|ES|ED|ING).*?(?:TAX|VAT|GST)|(?:TAX|VAT|GST).*?INCLUD/i.test(
+  return /(?:INCLUD(?:E|ES|ED|ING)|INCL\.?).*?(?:TAX|VAT|GST)|(?:TAX|VAT|GST).*?(?:INCLUD|INCL\.?)/i.test(
     value,
   );
 }
