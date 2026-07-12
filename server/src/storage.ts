@@ -386,7 +386,10 @@ export class Storage {
     };
   }
 
-  findPoCandidates(invoice: NormalizedInvoice): PoCandidate[] {
+  findPoCandidates(
+    invoice: NormalizedInvoice,
+    includeUnresolved = false,
+  ): PoCandidate[] {
     const vendor = this.db
       .prepare("SELECT id FROM vendors WHERE normalized_name = ?")
       .get(normalize(invoice.vendor)) as { id: string } | undefined;
@@ -428,23 +431,63 @@ export class Storage {
             });
           } catch {
             allLinesResolvable = false;
-            const lines = context.poLines as Array<{
+            const poLines = context.poLines as Array<{
+              id: string;
               po_number: string;
+              sku: string | null;
+              description: string;
               normalized_sku: string | null;
               normalized_description: string;
               uom: string;
+              unit_price: string;
+              ordered_quantity: string;
+              received_quantity: string;
             }>;
-            matchedLineCount = invoice.lines.filter((line) =>
-              lines.some(
-                (poLine) =>
-                  poLine.po_number === po.po_number &&
-                  poLine.uom === line.uom &&
+            const priorAllocations = context.priorAllocations as Array<{
+              po_line_id: string;
+              component_quantity: string;
+            }>;
+            lines = invoice.lines.flatMap((line, invoiceLineIndex) => {
+              const poLine = poLines.find(
+                (candidate) =>
+                  candidate.po_number === po.po_number &&
+                  candidate.uom === line.uom &&
                   (line.sku
-                    ? poLine.normalized_sku === normalize(line.sku)
-                    : poLine.normalized_description ===
+                    ? candidate.normalized_sku === normalize(line.sku)
+                    : candidate.normalized_description ===
                       normalize(line.description)),
-              ),
-            ).length;
+              );
+              if (!poLine) return [];
+              const consumed = priorAllocations
+                .filter((allocation) => allocation.po_line_id === poLine.id)
+                .reduce(
+                  (total, allocation) =>
+                    total.plus(allocation.component_quantity),
+                  new Decimal(0),
+                );
+              return [
+                {
+                  invoiceLineIndex,
+                  invoiceSku: line.sku,
+                  invoiceDescription: line.description,
+                  requestedQuantity: line.quantity,
+                  uom: line.uom,
+                  poLineId: poLine.id,
+                  poSku: poLine.sku ?? "",
+                  poDescription: poLine.description,
+                  poUnitPrice: poLine.unit_price,
+                  availableOrderedQuantity: new Decimal(poLine.ordered_quantity)
+                    .minus(consumed)
+                    .toString(),
+                  availableReceivedQuantity: new Decimal(
+                    poLine.received_quantity,
+                  )
+                    .minus(consumed)
+                    .toString(),
+                },
+              ];
+            });
+            matchedLineCount = lines.length;
           }
           const poLines = this.db
             .prepare("SELECT * FROM po_lines WHERE po_number = ?")
@@ -479,7 +522,11 @@ export class Storage {
             lines,
           };
         })
-        .filter((candidate) => candidate.allLinesResolvable)
+        .filter((candidate) =>
+          includeUnresolved
+            ? candidate.matchedLineCount > 0
+            : candidate.allLinesResolvable,
+        )
         .sort(
           (left, right) =>
             Number(right.allLinesResolvable) -
@@ -685,13 +732,15 @@ export class Storage {
     evidence: {
       invoicePreview?: InvoicePreview | null;
       duplicateMatch?: DuplicateMatch | null;
+      poCandidates?: PoCandidate[];
+      bundleCandidates?: BundleCandidate[];
     } = {},
   ) {
     this.db
       .prepare(
         `UPDATE runs SET state = 'NEEDS_REVIEW', decision = 'NEEDS_REVIEW', execution = 'BLOCKED',
          primary_reason_code = ?, next_action = ?, evaluation_json = ?,
-         candidates_json = '[]', bundle_candidates_json = '[]', updated_at = ? WHERE id = ?`,
+         candidates_json = ?, bundle_candidates_json = ?, updated_at = ? WHERE id = ?`,
       )
       .run(
         reasonCode,
@@ -703,6 +752,8 @@ export class Storage {
           invoicePreview: evidence.invoicePreview ?? null,
           duplicateMatch: evidence.duplicateMatch ?? null,
         }),
+        JSON.stringify(evidence.poCandidates ?? []),
+        JSON.stringify(evidence.bundleCandidates ?? []),
         new Date().toISOString(),
         id,
       );

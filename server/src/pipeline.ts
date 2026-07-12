@@ -152,12 +152,18 @@ export async function processInvoice(runId: string, storage: Storage) {
       }
     }
     storage.addStage(runId, "CONTROLS", "FAILED");
+    const poCandidates = invoice.poNumber
+      ? storage
+          .findPoCandidates(invoice, true)
+          .filter((candidate) => candidate.poNumber === invoice.poNumber)
+      : [];
     storage.block(
       runId,
       reasonFor(caught.code),
       nextActionFor(reasonFor(caught.code)),
       invoice,
       caught.checks,
+      { poCandidates },
     );
     return storage.getRun(runId)!;
   }
@@ -285,6 +291,24 @@ export function confirmBundle(
   storage.addStage(runId, "CONFIRMATION", "COMPLETED");
   storage.post(runId, invoice, evaluation.checks, evaluation.allocations);
   storage.addStage(runId, "POSTING", "COMPLETED");
+  return storage.getRun(runId)!;
+}
+
+export function rejectBundle(runId: string, storage: Storage) {
+  const current = storage.getRun(runId);
+  if (!current) throw new Error("RUN_NOT_FOUND");
+  if (current.state !== "AWAITING_BUNDLE_CONFIRMATION")
+    throw new Error("INVALID_RUN_STATE");
+  const evaluation = storage.getEvaluation(runId);
+  if (!evaluation?.invoice) throw new Error("RUN_EVALUATION_NOT_FOUND");
+  storage.block(
+    runId,
+    "BUNDLE_MAPPING_REQUIRED",
+    "The proposed decomposition was rejected. Route this invoice for manual AP review.",
+    evaluation.invoice,
+    evaluation.checks,
+    { bundleCandidates: storage.getBundleCandidates(runId) },
+  );
   return storage.getRun(runId)!;
 }
 

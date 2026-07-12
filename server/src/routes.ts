@@ -12,6 +12,7 @@ import {
   confirmBundle,
   confirmPo,
   processInvoice,
+  rejectBundle,
   rejectPo,
 } from "./pipeline.js";
 import type { Storage } from "./storage.js";
@@ -274,6 +275,33 @@ export function createApi(storage?: Storage) {
             .status(404)
             .json(error("RUN_NOT_FOUND", "Run not found."));
         response.json(confirmBundle(runId, storage, body.data.candidateId));
+      } catch (caught) {
+        next(caught);
+      }
+    },
+  );
+
+  api.post(
+    "/runs/:runId/reject-bundle",
+    writeLimit,
+    (request, response, next) => {
+      try {
+        const runId = validRunId(request.params.runId);
+        if (!runId)
+          return response
+            .status(400)
+            .json(error("INVALID_RUN_ID", "Run ID is invalid."));
+        if (!emptyBody(request.body))
+          return response
+            .status(400)
+            .json(
+              error(
+                "INVALID_BODY",
+                "This action accepts no request body.",
+                runId,
+              ),
+            );
+        response.json(rejectBundle(runId, storage));
       } catch (caught) {
         next(caught);
       }

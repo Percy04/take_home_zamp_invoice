@@ -421,6 +421,32 @@ describe("happy-path vertical slice", () => {
     storage.close();
   });
 
+  it("keeps bundle evidence when a reviewer rejects a proposed decomposition", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-reject-bundle-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+    const created = await request(app)
+      .post("/api/runs")
+      .field("fixtureId", "bundle_unknown")
+      .expect(201);
+    await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+
+    const rejected = await request(app)
+      .post(`/api/runs/${created.body.runId}/reject-bundle`)
+      .expect(200);
+
+    expect(rejected.body).toMatchObject({
+      state: "NEEDS_REVIEW",
+      execution: "BLOCKED",
+      reasonCode: "BUNDLE_MAPPING_REQUIRED",
+      bundleCandidates: [{ id: "BUNDLE-CANDIDATE-1" }],
+    });
+    storage.close();
+  });
+
   it.each([
     ["happy", "POSTED", null],
     ["duplicate", "NEEDS_REVIEW", "DUPLICATE"],
