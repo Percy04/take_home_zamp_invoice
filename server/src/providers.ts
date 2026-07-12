@@ -281,7 +281,6 @@ export async function extractAndMapLive(bytes: Buffer) {
     });
   const evidence = buildSourceCatalogue(result);
   const mapping = await mapEvidenceWithRetry(evidence);
-  validateMapping(mapping, evidence);
   return { evidence, mapping };
 }
 
@@ -289,9 +288,14 @@ export async function mapEvidenceWithRetry(
   evidence: SourceRef[],
   provider = env.MAPPING_PROVIDER,
 ) {
-  return withOneMappingRetry(() =>
-    provider === "openai" ? mapWithOpenAI(evidence) : mapWithGemini(evidence),
-  );
+  return withOneMappingRetry(async () => {
+    const mapping =
+      provider === "openai"
+        ? await mapWithOpenAI(evidence)
+        : await mapWithGemini(evidence);
+    validateMapping(mapping, evidence);
+    return mapping;
+  });
 }
 
 export async function withOneMappingRetry<T>(operation: () => Promise<T>) {
@@ -319,7 +323,7 @@ async function mapWithOpenAI(evidence: SourceRef[]) {
         {
           role: "system",
           content:
-            "Map invoice fields only by selecting provided source IDs. Return IDs exactly as provided. When equivalent sources contain the same observed value, select the highest-confidence source and prefer confidence of at least 0.75. Associate explicit tax-inclusion, tax-rate, and tax-amount evidence with the relevant line when the document does so. Never infer, rewrite, calculate, or decide values.",
+            "Map invoice fields only by selecting provided source IDs. Return IDs exactly as provided, return null when optional evidence is absent, and never construct a new ID. When equivalent sources contain the same observed value, select the highest-confidence source and prefer confidence of at least 0.75. Associate explicit tax-inclusion, tax-rate, and tax-amount evidence with the relevant line when the document does so. Never infer, rewrite, calculate, or decide values.",
         },
         { role: "user", content: JSON.stringify(evidence) },
       ],
@@ -364,7 +368,7 @@ async function mapWithGemini(evidence: SourceRef[]) {
                   "Map invoice fields only by selecting provided source IDs. " +
                   "Prefer the highest-confidence equivalent source and confidence of at least 0.75. " +
                   "Associate explicit tax evidence with its relevant line. " +
-                  "Return IDs exactly as provided. Never infer or rewrite values.",
+                  "Return IDs exactly as provided, use null when optional evidence is absent, and never construct IDs. Never infer or rewrite values.",
               },
             ],
           },
@@ -548,7 +552,10 @@ function spansOverlap(
   );
 }
 
-function validateMapping(mapping: InvoiceMapping, evidence: SourceRef[]) {
+export function validateMapping(
+  mapping: InvoiceMapping,
+  evidence: SourceRef[],
+) {
   const known = new Set(evidence.map((source) => source.id));
   const ids = [
     mapping.vendor,
@@ -562,11 +569,16 @@ function validateMapping(mapping: InvoiceMapping, evidence: SourceRef[]) {
     mapping.taxNote,
     ...mapping.lines.flatMap(Object.values),
   ].filter((id): id is string => typeof id === "string");
-  if (ids.some((id) => !known.has(id))) {
+  const unknownIds = [...new Set(ids.filter((id) => !known.has(id)))];
+  if (unknownIds.length) {
     throw new ProviderError(
       "MAPPING_VALIDATION",
-      "Gemini referenced unknown evidence.",
-      { evidenceCount: evidence.length },
+      "Mapper referenced unknown evidence.",
+      {
+        evidenceCount: evidence.length,
+        unknownIds: unknownIds.slice(0, 10).join(", "),
+        malformed: true,
+      },
     );
   }
 }
