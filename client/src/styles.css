@@ -465,6 +465,19 @@ input[type="file"] {
   color: #66736c !important;
 }
 
+.amount-cell {
+  color: #263a31 !important;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.status-cell > span:last-child:not(.status-badge) {
+  display: block;
+  margin-top: 5px;
+  color: #7b4b47;
+  font-size: 12px;
+}
+
 .empty-state,
 .table-message {
   padding: 48px 24px;

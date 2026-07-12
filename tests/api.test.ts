@@ -37,6 +37,9 @@ describe("GET /api/runs", () => {
       .post("/api/runs")
       .field("fixtureId", "happy")
       .expect(201);
+    await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
     const listed = await request(app).get("/api/runs").expect(200);
 
     expect(listed.body).toMatchObject({
@@ -44,7 +47,11 @@ describe("GET /api/runs", () => {
         {
           runId: created.body.runId,
           filename: "happy.pdf",
-          state: "PROCESSING",
+          invoiceNumber: "ACME-2026-001",
+          vendor: "Acme Industrial Supplies LLC",
+          total: "990.00",
+          currency: "USD",
+          state: "POSTED",
         },
       ],
       nextCursor: null,
@@ -98,7 +105,10 @@ describe("API hardening", () => {
       .set("Idempotency-Key", "same-upload")
       .field("fixtureId", "duplicate")
       .expect(200);
-    await request(app).post("/api/runs").field("fixtureId", "duplicate").expect(201);
+    await request(app)
+      .post("/api/runs")
+      .field("fixtureId", "duplicate")
+      .expect(201);
 
     expect(retried.body.runId).toBe(first.body.runId);
     const page = await request(app)
@@ -128,7 +138,9 @@ describe("API hardening", () => {
       .post(`/api/runs/${created.body.runId}/confirm-po`)
       .send({ poNumber: "PO-1001", approve: true })
       .expect(400);
-    expect(response.headers["content-security-policy"]).toContain("default-src 'self'");
+    expect(response.headers["content-security-policy"]).toContain(
+      "default-src 'self'",
+    );
     expect(response.headers["x-correlation-id"]).toEqual(expect.any(String));
     expect(response.body.error.code).toBe("INVALID_CONFIRMATION");
     storage.close();

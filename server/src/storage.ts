@@ -22,10 +22,7 @@ import {
   type SourceRef,
   type StageEvent,
 } from "../../shared/contracts.js";
-import {
-  buildUnknownBundleCandidates,
-  evaluateInvoice,
-} from "./controls.js";
+import { buildUnknownBundleCandidates, evaluateInvoice } from "./controls.js";
 
 type RunRow = {
   id: string;
@@ -155,11 +152,13 @@ export class Storage {
     });
   }
 
-  listRuns(input: {
-    state?: RunSummary["state"];
-    limit?: number;
-    cursor?: string;
-  } = {}) {
+  listRuns(
+    input: {
+      state?: RunSummary["state"];
+      limit?: number;
+      cursor?: string;
+    } = {},
+  ) {
     const limit = input.limit ?? 25;
     const cursor = input.cursor ? decodeCursor(input.cursor) : null;
     const conditions: string[] = [];
@@ -176,7 +175,11 @@ export class Storage {
     const rows = this.db
       .prepare(
         `SELECT id, filename, state, decision, execution, primary_reason_code,
-         ledger_invoice_id, created_at, updated_at
+         ledger_invoice_id, created_at, updated_at,
+         json_extract(evaluation_json, '$.invoice.vendor') AS vendor,
+         json_extract(evaluation_json, '$.invoice.invoiceNumber') AS invoice_number,
+         json_extract(evaluation_json, '$.invoice.total') AS total,
+         json_extract(evaluation_json, '$.invoice.currency') AS currency
          FROM runs ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
       )
       .all(...parameters, limit + 1) as Array<{
@@ -187,6 +190,10 @@ export class Storage {
       execution: RunSummary["execution"];
       primary_reason_code: string | null;
       ledger_invoice_id: string | null;
+      vendor: string | null;
+      invoice_number: string | null;
+      total: string | null;
+      currency: "USD" | null;
       created_at: string;
       updated_at: string;
     }>;
@@ -196,6 +203,10 @@ export class Storage {
       page.map((row) => ({
         runId: row.id,
         filename: row.filename,
+        vendor: row.vendor,
+        invoiceNumber: row.invoice_number,
+        total: row.total,
+        currency: row.currency,
         state: row.state,
         decision: row.decision,
         execution: row.execution,
@@ -289,7 +300,9 @@ export class Storage {
       purchaseOrders: this.db.prepare("SELECT * FROM purchase_orders").all(),
       poLines: this.db.prepare("SELECT * FROM po_lines").all(),
       postedInvoices: this.db
-        .prepare("SELECT vendor_id, normalized_invoice_number FROM posted_invoices")
+        .prepare(
+          "SELECT vendor_id, normalized_invoice_number FROM posted_invoices",
+        )
         .all(),
       bundleDefinitions: this.db
         .prepare("SELECT * FROM bundle_definitions WHERE active = 1")
@@ -347,16 +360,17 @@ export class Storage {
                   poLine.uom === line.uom &&
                   (line.sku
                     ? poLine.normalized_sku === normalize(line.sku)
-                    : poLine.normalized_description === normalize(line.description)),
+                    : poLine.normalized_description ===
+                      normalize(line.description)),
               ),
             ).length;
           }
           const poLines = this.db
             .prepare("SELECT * FROM po_lines WHERE po_number = ?")
             .all(po.po_number) as Array<{
-              ordered_quantity: string;
-              unit_price: string;
-            }>;
+            ordered_quantity: string;
+            unit_price: string;
+          }>;
           const totalBasis = poLines.reduce(
             (sum, line) =>
               sum.plus(new Decimal(line.ordered_quantity).mul(line.unit_price)),
@@ -377,14 +391,20 @@ export class Storage {
             allLinesResolvable,
             matchedLineCount,
             remainingPoBasisValue: remaining.toFixed(2),
-            subtotalDifference: remaining.minus(invoice.subtotal).abs().toFixed(2),
+            subtotalDifference: remaining
+              .minus(invoice.subtotal)
+              .abs()
+              .toFixed(2),
           };
         })
         .sort(
           (left, right) =>
-            Number(right.allLinesResolvable) - Number(left.allLinesResolvable) ||
+            Number(right.allLinesResolvable) -
+              Number(left.allLinesResolvable) ||
             right.matchedLineCount - left.matchedLineCount ||
-            new Decimal(left.subtotalDifference).comparedTo(right.subtotalDifference) ||
+            new Decimal(left.subtotalDifference).comparedTo(
+              right.subtotalDifference,
+            ) ||
             normalize(left.poNumber).localeCompare(normalize(right.poNumber)),
         )
         .slice(0, 3),
@@ -482,8 +502,8 @@ export class Storage {
         .get(vendor.id, normalize(invoice.invoiceNumber));
       if (duplicate) throw new Error("DUPLICATE");
       for (const allocation of allocations) {
-          const capacity = this.db
-            .prepare(
+        const capacity = this.db
+          .prepare(
             "SELECT ordered_quantity, received_quantity FROM po_lines WHERE id = ?",
           )
           .get(allocation.poLineId) as {
@@ -491,10 +511,15 @@ export class Storage {
           received_quantity: string;
         };
         const prior = this.db
-          .prepare("SELECT component_quantity FROM allocations WHERE po_line_id = ?")
+          .prepare(
+            "SELECT component_quantity FROM allocations WHERE po_line_id = ?",
+          )
           .all(allocation.poLineId) as Array<{ component_quantity: string }>;
         const after = prior
-          .reduce((sum, row) => sum.plus(row.component_quantity), new Decimal(0))
+          .reduce(
+            (sum, row) => sum.plus(row.component_quantity),
+            new Decimal(0),
+          )
           .plus(allocation.quantity);
         if (
           after.gt(capacity.ordered_quantity) ||
@@ -616,7 +641,9 @@ function encodeCursor(cursor: { createdAt: string; id: string }) {
 
 function decodeCursor(value: string) {
   try {
-    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
+    const parsed = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8"),
+    ) as {
       createdAt?: unknown;
       id?: unknown;
     };

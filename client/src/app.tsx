@@ -281,9 +281,8 @@ function DashboardPage() {
                 <thead>
                   <tr>
                     <th>Invoice</th>
+                    <th>Amount</th>
                     <th>Status</th>
-                    <th>Outcome</th>
-                    <th>Issue</th>
                     <th>Updated</th>
                     <th className="sr-only">Open</th>
                   </tr>
@@ -292,29 +291,23 @@ function DashboardPage() {
                   {runs.data.items.map((run) => (
                     <tr key={run.runId}>
                       <td className="invoice-cell">
-                        <Link to={`/runs/${run.runId}`}>{run.filename}</Link>
-                        <span>{run.runId.slice(0, 8)}</span>
+                        <Link to={`/runs/${run.runId}`}>
+                          {run.invoiceNumber ?? run.filename}
+                        </Link>
+                        <span>{run.vendor ?? run.filename}</span>
                       </td>
-                      <td>
+                      <td className="amount-cell">
+                        {run.total ? `$${run.total}` : "—"}
+                      </td>
+                      <td className="status-cell">
                         <span
                           className={`status-badge ${stateTone(run.state)}`}
                         >
                           {formatLabel(run.state)}
                         </span>
-                      </td>
-                      <td>
-                        {run.decision ? (
-                          formatLabel(run.decision)
-                        ) : (
-                          <span className="not-available">—</span>
-                        )}
-                      </td>
-                      <td>
                         {run.reasonCode ? (
-                          formatLabel(run.reasonCode)
-                        ) : (
-                          <span className="not-available">—</span>
-                        )}
+                          <span>{formatReason(run.reasonCode)}</span>
+                        ) : null}
                       </td>
                       <td className="date-cell">{formatDate(run.updatedAt)}</td>
                       <td className="row-action">
@@ -832,6 +825,19 @@ function formatLabel(value: string) {
     .split("_")
     .map((part) => part[0].toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatReason(value: string) {
+  return (
+    {
+      DUPLICATE: "Duplicate invoice",
+      RECEIPT_CAPACITY_EXCEEDED: "Receipt quantity insufficient",
+      MAPPING_FAILED: "Invoice details could not be read",
+      EXTRACTION_FAILED: "Document could not be read",
+      MISSING_PO: "PO confirmation required",
+      BUNDLE_MAPPING_REQUIRED: "Bundle confirmation required",
+    }[value] ?? formatLabel(value)
+  );
 }
 
 function stateTone(state: string): "neutral" | "ok" | "warn" | "bad" {

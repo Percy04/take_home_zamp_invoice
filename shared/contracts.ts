@@ -192,6 +192,10 @@ export const runDetailSchema = z
 export const runSummarySchema = z.object({
   runId: z.uuid(),
   filename: z.string(),
+  vendor: z.string().nullable(),
+  invoiceNumber: z.string().nullable(),
+  total: z.string().nullable(),
+  currency: z.literal("USD").nullable(),
   state: runStateSchema,
   decision: z.enum(["AUTO_CLEARED", "NEEDS_REVIEW"]).nullable(),
   execution: z.enum(["POSTED", "BLOCKED", "AWAITING_CONFIRMATION"]).nullable(),
