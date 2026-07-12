@@ -19,5 +19,11 @@ describe("App", () => {
     expect(
       screen.getByRole("button", { name: /upload and process/i }),
     ).toBeDisabled();
+    expect(screen.getByRole("note")).toHaveTextContent(
+      /pdf is sent to azure document intelligence/i,
+    );
+    expect(
+      screen.getByRole("button", { name: /reset workspace/i }),
+    ).toBeEnabled();
   });
 });

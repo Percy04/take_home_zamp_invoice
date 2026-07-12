@@ -44,11 +44,13 @@ export function createRun(input: File | FixtureId) {
   });
 }
 
-export async function listRuns(filters: {
-  state?: string;
-  cursor?: string;
-  limit?: number;
-} = {}): Promise<RunList> {
+export async function listRuns(
+  filters: {
+    state?: string;
+    cursor?: string;
+    limit?: number;
+  } = {},
+): Promise<RunList> {
   const query = new URLSearchParams();
   if (filters.state) query.set("state", filters.state);
   if (filters.cursor) query.set("cursor", filters.cursor);
@@ -88,6 +90,19 @@ export function confirmBundle(runId: string, candidateId: string) {
 
 export function getRun(runId: string) {
   return runRequest(`/api/runs/${runId}`);
+}
+
+export async function resetWorkspace() {
+  const response = await fetch("/api/reset", { method: "POST" });
+  if (!response.ok) {
+    const body = (await response.json()) as {
+      error?: { message?: string; code?: string };
+    };
+    throw new ApiRequestError(
+      body.error?.message ?? "The workspace could not be reset.",
+      body.error?.code,
+    );
+  }
 }
 
 export class ApiRequestError extends Error {

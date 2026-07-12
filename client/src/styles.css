@@ -775,11 +775,38 @@ select {
   font-weight: 500;
 }
 
-.sidebar-note {
+.sidebar-footer {
+  display: grid;
+  gap: 9px;
   margin: auto 8px 0;
+}
+
+.sidebar-footer p {
+  margin: 0;
   color: #8a9690;
   font-size: 11px;
   line-height: 1.4;
+}
+
+button.reset-workspace {
+  min-height: 34px;
+  justify-content: flex-start;
+  border: 1px solid #dce3de;
+  padding: 0 9px;
+  color: #5e6b64;
+  background: white;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+button.reset-workspace:hover {
+  color: #8a302a;
+  border-color: #e5b7b3;
+  background: #fff7f6;
+}
+
+.sidebar-footer .error {
+  font-size: 10px;
 }
 
 .app-content {
@@ -1405,6 +1432,22 @@ select {
   justify-content: flex-end;
 }
 
+.privacy-note {
+  border-top: 1px solid #e7ece9;
+  padding-top: 16px;
+}
+
+.privacy-note strong {
+  font-size: 12px;
+}
+
+.privacy-note p {
+  margin: 5px 0 0;
+  color: #69766f;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .intake-side {
   display: grid;
   gap: 16px;
@@ -1570,7 +1613,7 @@ select {
   }
 
   .app-sidebar .nav-icon,
-  .sidebar-note {
+  .sidebar-footer {
     display: none;
   }
 

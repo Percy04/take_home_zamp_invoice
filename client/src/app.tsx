@@ -24,6 +24,7 @@ import {
   getRun,
   listRuns,
   processRun,
+  resetWorkspace,
   type FixtureId,
 } from "./api";
 import type { RunDetail, SourceRef } from "../../shared/contracts";
@@ -113,6 +114,15 @@ function InvoicePage() {
                   ? "Processing invoice..."
                   : "Upload and process"}
               </button>
+            </div>
+            <div className="privacy-note" role="note">
+              <strong>How your document is processed</strong>
+              <p>
+                The PDF is sent to Azure Document Intelligence. Only the
+                extracted invoice evidence is sent to the configured AI mapping
+                provider. The uploaded document and result are stored in this
+                workspace.
+              </p>
             </div>
             {fileError && <p className="error">{fileError}</p>}
             {create.error && <p className="error">{create.error.message}</p>}
@@ -751,6 +761,14 @@ function RunPage() {
 }
 
 function ConsoleShell({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
+  const reset = useMutation({
+    mutationFn: resetWorkspace,
+    onSuccess: () => {
+      queryClient.clear();
+      navigate("/");
+    },
+  });
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
@@ -774,7 +792,25 @@ function ConsoleShell({ children }: { children: React.ReactNode }) {
             Invoices
           </NavLink>
         </nav>
-        <p className="sidebar-note">Accounts payable workspace</p>
+        <div className="sidebar-footer">
+          <p>Workspace data is stored on this server.</p>
+          <button
+            type="button"
+            className="reset-workspace"
+            disabled={reset.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Reset all runs, uploaded documents, and ledger changes in this workspace?",
+                )
+              )
+                reset.mutate();
+            }}
+          >
+            {reset.isPending ? "Resetting…" : "Reset workspace"}
+          </button>
+          {reset.error && <span className="error">{reset.error.message}</span>}
+        </div>
       </aside>
       <div className="app-content">{children}</div>
     </div>
