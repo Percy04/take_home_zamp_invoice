@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { NormalizationError, normalizeInvoice } from "../server/src/controls.js";
+import {
+  NormalizationError,
+  normalizeInvoice,
+} from "../server/src/controls.js";
 import {
   ProviderError,
   withOneMappingRetry,
@@ -74,7 +77,26 @@ describe("deterministic normalization", () => {
           observedAmount: "590.00",
           unitPrice: "250.00",
           amount: "500.00",
+          sourceIds: {
+            observedAmount: "amount",
+            observedUnitPrice: "unitPrice",
+          },
+          derivations: [
+            {
+              field: "amount",
+              sourceIds: ["amount", "taxNote"],
+            },
+          ],
         },
+      ],
+      fieldSources: {
+        vendor: "vendor",
+        observedTotal: "total",
+        taxNote: "taxNote",
+      },
+      derivations: [
+        { field: "subtotal" },
+        { field: "tax", sourceIds: ["total", "taxNote"] },
       ],
     });
   });

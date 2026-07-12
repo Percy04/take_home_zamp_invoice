@@ -14,6 +14,21 @@ export const sourceRefSchema = z.object({
   confidence: z.number().min(0).max(1).nullable(),
   page: z.number().int().positive().nullable(),
   label: z.string().min(1),
+  sourceKind: z
+    .enum([
+      "FIELD",
+      "ITEM",
+      "TAX",
+      "TABLE",
+      "OCR_LINE",
+      "KEY_VALUE",
+      "RECORDED",
+    ])
+    .optional(),
+  tableIndex: z.number().int().nonnegative().nullable().optional(),
+  row: z.number().int().nonnegative().nullable().optional(),
+  column: z.number().int().nonnegative().nullable().optional(),
+  lineIndex: z.number().int().nonnegative().nullable().optional(),
 });
 
 export const stageEventSchema = z.object({
@@ -26,6 +41,25 @@ export const checkResultSchema = z.object({
   code: z.string().min(1),
   passed: z.boolean(),
   detail: z.string().min(1),
+  category: z
+    .enum([
+      "IDENTITY",
+      "DUPLICATE",
+      "PURCHASE_ORDER",
+      "MATCHING",
+      "AMOUNTS",
+      "CAPACITY",
+    ])
+    .optional(),
+  expected: z.string().nullable().optional(),
+  actual: z.string().nullable().optional(),
+  sourceIds: z.array(z.string().min(1)).optional(),
+});
+
+export const derivationSchema = z.object({
+  field: z.string().min(1),
+  formula: z.string().min(1),
+  sourceIds: z.array(z.string().min(1)).default([]),
 });
 
 export const invoiceLineSchema = z.object({
@@ -37,6 +71,8 @@ export const invoiceLineSchema = z.object({
   observedAmount: z.string(),
   unitPrice: z.string(),
   amount: z.string(),
+  sourceIds: z.record(z.string(), z.string()).default({}),
+  derivations: z.array(derivationSchema).default([]),
 });
 
 export const normalizedInvoiceSchema = z.object({
@@ -54,6 +90,8 @@ export const normalizedInvoiceSchema = z.object({
   tax: z.string(),
   total: z.string(),
   lines: z.array(invoiceLineSchema).min(1),
+  fieldSources: z.record(z.string(), z.string()).default({}),
+  derivations: z.array(derivationSchema).default([]),
 });
 
 export const allocationSchema = z.object({
@@ -68,6 +106,9 @@ export const allocationSchema = z.object({
   actualNetAmount: z.string(),
   remainingOrderedQuantity: z.string(),
   remainingReceivedQuantity: z.string(),
+  matchReason: z.string().optional(),
+  priceVariance: z.string().nullable().optional(),
+  sourceIds: z.array(z.string().min(1)).optional(),
 });
 
 export const bundleCandidateSchema = z.object({
@@ -96,23 +137,25 @@ export const poCandidateSchema = z.object({
 
 export const runDetailSchema = z
   .object({
-  runId: z.uuid(),
-  filename: z.string(),
-  state: runStateSchema,
-  decision: z.enum(["AUTO_CLEARED", "NEEDS_REVIEW"]).nullable(),
-  execution: z.enum(["POSTED", "BLOCKED", "AWAITING_CONFIRMATION"]).nullable(),
-  reasonCode: z.string().nullable(),
-  nextAction: z.string().nullable(),
-  ledgerId: z.string().nullable(),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
-  stages: z.array(stageEventSchema),
-  evidence: z.array(sourceRefSchema),
-  invoice: normalizedInvoiceSchema.nullable(),
-  checks: z.array(checkResultSchema),
-  allocations: z.array(allocationSchema),
-  candidatePo: z.string().nullable(),
-  poCandidates: z.array(poCandidateSchema),
+    runId: z.uuid(),
+    filename: z.string(),
+    state: runStateSchema,
+    decision: z.enum(["AUTO_CLEARED", "NEEDS_REVIEW"]).nullable(),
+    execution: z
+      .enum(["POSTED", "BLOCKED", "AWAITING_CONFIRMATION"])
+      .nullable(),
+    reasonCode: z.string().nullable(),
+    nextAction: z.string().nullable(),
+    ledgerId: z.string().nullable(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+    stages: z.array(stageEventSchema),
+    evidence: z.array(sourceRefSchema),
+    invoice: normalizedInvoiceSchema.nullable(),
+    checks: z.array(checkResultSchema),
+    allocations: z.array(allocationSchema),
+    candidatePo: z.string().nullable(),
+    poCandidates: z.array(poCandidateSchema),
     bundleCandidates: z.array(bundleCandidateSchema),
   })
   .superRefine((run, context) => {
@@ -127,15 +170,18 @@ export const runDetailSchema = z
     )
       context.addIssue({
         code: "custom",
-        message: "Awaiting-PO runs require a candidate and confirmation execution.",
+        message:
+          "Awaiting-PO runs require a candidate and confirmation execution.",
       });
     if (
       run.state === "AWAITING_BUNDLE_CONFIRMATION" &&
-      (!run.bundleCandidates.length || run.execution !== "AWAITING_CONFIRMATION")
+      (!run.bundleCandidates.length ||
+        run.execution !== "AWAITING_CONFIRMATION")
     )
       context.addIssue({
         code: "custom",
-        message: "Awaiting-bundle runs require candidates and confirmation execution.",
+        message:
+          "Awaiting-bundle runs require candidates and confirmation execution.",
       });
   });
 

@@ -78,7 +78,13 @@ export function normalizeInvoice(
 ): NormalizedInvoice {
   const byId = new Map(evidence.map((source) => [source.id, source]));
   const selected: SourceRef[] = [];
-  const select = (id: string | null | undefined, required = false) => {
+  const fieldSources: Record<string, string> = {};
+  const select = (
+    id: string | null | undefined,
+    required = false,
+    field?: string,
+    sources = fieldSources,
+  ) => {
     if (!id) {
       if (required) failNormalization("MISSING_REQUIRED_FIELD");
       return "";
@@ -86,6 +92,7 @@ export function normalizeInvoice(
     const source = byId.get(id);
     if (!source) failNormalization("MAPPING_FAILED");
     selected.push(source);
+    if (field) sources[field] = id;
     if (source.confidence !== null && source.confidence < 0.75)
       failNormalization("LOW_CONFIDENCE");
     const value = source.content.normalize("NFKC").trim();
@@ -99,21 +106,38 @@ export function normalizeInvoice(
     if (value && !value.isZero()) failNormalization("UNSUPPORTED_STRUCTURE");
   }
 
-  const vendor = select(mapping.vendor, true);
-  const invoiceNumber = select(mapping.invoiceNumber, true);
-  const invoiceDate = parseDate(select(mapping.invoiceDate, true));
-  const poNumber = select(mapping.poNumber);
-  if (poNumber && poNumber.split(/[,;/\n]|\s+AND\s+/i).filter(Boolean).length > 1)
+  const vendor = select(mapping.vendor, true, "vendor");
+  const invoiceNumber = select(mapping.invoiceNumber, true, "invoiceNumber");
+  const invoiceDate = parseDate(
+    select(mapping.invoiceDate, true, "invoiceDate"),
+  );
+  const poNumber = select(mapping.poNumber, false, "poNumber");
+  if (
+    poNumber &&
+    poNumber.split(/[,;/\n]|\s+AND\s+/i).filter(Boolean).length > 1
+  )
     failNormalization("UNSUPPORTED_STRUCTURE");
 
   const observedLines = mapping.lines.map((line) => {
-    const sku = select(line.sku);
-    const description = select(line.description);
+    const sourceIds: Record<string, string> = {};
+    const sku = select(line.sku, false, "sku", sourceIds);
+    const description = select(
+      line.description,
+      false,
+      "description",
+      sourceIds,
+    );
     if (!sku && !description) failNormalization("MISSING_REQUIRED_FIELD");
-    const quantity = parseQuantity(select(line.quantity, true));
-    const uom = parseUom(select(line.uom, true));
-    const observedUnitPrice = requiredMoney(select(line.unitPrice, true));
-    const observedAmount = requiredMoney(select(line.amount, true));
+    const quantity = parseQuantity(
+      select(line.quantity, true, "quantity", sourceIds),
+    );
+    const uom = parseUom(select(line.uom, true, "uom", sourceIds));
+    const observedUnitPrice = requiredMoney(
+      select(line.unitPrice, true, "observedUnitPrice", sourceIds),
+    );
+    const observedAmount = requiredMoney(
+      select(line.amount, true, "observedAmount", sourceIds),
+    );
     if (quantity.mul(observedUnitPrice).minus(observedAmount).abs().gt("0.01"))
       failNormalization("TOTAL_MISMATCH");
     return {
@@ -123,31 +147,43 @@ export function normalizeInvoice(
       uom,
       observedUnitPrice,
       observedAmount,
+      sourceIds,
     };
   });
 
-  const observedSubtotal = optionalMoney(select(mapping.subtotal));
-  const observedTax = optionalMoney(select(mapping.tax));
-  const observedTotal = requiredMoney(select(mapping.total, true));
-  const taxNote = select(mapping.taxNote);
+  const observedSubtotal = optionalMoney(
+    select(mapping.subtotal, false, "observedSubtotal"),
+  );
+  const observedTax = optionalMoney(select(mapping.tax, false, "observedTax"));
+  const observedTotal = requiredMoney(
+    select(mapping.total, true, "observedTotal"),
+  );
+  const taxNote = select(mapping.taxNote, false, "taxNote");
   if (unsupportedTax.test(taxNote)) failNormalization("UNSUPPORTED_STRUCTURE");
 
-  const explicitCurrency = select(mapping.currency).toUpperCase();
+  const explicitCurrency = select(
+    mapping.currency,
+    false,
+    "currency",
+  ).toUpperCase();
   const moneyText = selected
     .filter((source) => /AMOUNT|PRICE|TOTAL|TAX|SUBTOTAL/i.test(source.label))
     .map((source) => source.content)
     .join(" ");
   const currency = explicitCurrency
     ? explicitCurrency.replace(/\s/g, "")
-    : /\$/.test(moneyText) && !/[€£¥]|\b(?:EUR|GBP|JPY|CAD|AUD)\b/i.test(moneyText)
+    : /\$/.test(moneyText) &&
+        !/[€£¥]|\b(?:EUR|GBP|JPY|CAD|AUD)\b/i.test(moneyText)
       ? "USD"
       : "";
-  if (currency && currency !== "USD") failNormalization("UNSUPPORTED_STRUCTURE");
+  if (currency && currency !== "USD")
+    failNormalization("UNSUPPORTED_STRUCTURE");
   if (!currency) failNormalization("MISSING_REQUIRED_FIELD");
 
-  const inclusionClaim = /INCLUD(?:E|ES|ED|ING).*?(?:TAX|VAT|GST)|(?:TAX|VAT|GST).*?INCLUD/i.test(
-    taxNote,
-  );
+  const inclusionClaim =
+    /INCLUD(?:E|ES|ED|ING).*?(?:TAX|VAT|GST)|(?:TAX|VAT|GST).*?INCLUD/i.test(
+      taxNote,
+    );
   const rate = parseTaxRate(taxNote);
   if ((inclusionClaim && !rate) || (rate && !inclusionClaim))
     failNormalization("TAX_TREATMENT_UNRESOLVED");
@@ -168,13 +204,29 @@ export function normalizeInvoice(
       observedAmount: money(line.observedAmount),
       unitPrice,
       amount,
+      sourceIds: line.sourceIds,
+      derivations: rate
+        ? [
+            {
+              field: "amount",
+              formula: `${money(line.observedAmount)} / (1 + ${rate.toString()})`,
+              sourceIds: [
+                line.sourceIds.observedAmount,
+                fieldSources.taxNote,
+              ].filter((id): id is string => Boolean(id)),
+            },
+          ]
+        : [],
     };
   });
   const goodsSubtotal = lines.reduce(
     (sum, line) => sum.plus(line.amount),
     new Decimal(0),
   );
-  if (observedSubtotal && observedSubtotal.minus(goodsSubtotal).abs().gt("0.01"))
+  if (
+    observedSubtotal &&
+    observedSubtotal.minus(goodsSubtotal).abs().gt("0.01")
+  )
     failNormalization("TOTAL_MISMATCH");
 
   let taxTreatment: NormalizedInvoice["taxTreatment"];
@@ -212,6 +264,24 @@ export function normalizeInvoice(
     tax: money(normalizedTax),
     total: money(observedTotal),
     lines,
+    fieldSources,
+    derivations: rate
+      ? [
+          {
+            field: "subtotal",
+            formula: "Sum of normalized net line amounts",
+            sourceIds: lines.flatMap((line) => [line.sourceIds.observedAmount]),
+          },
+          {
+            field: "tax",
+            formula: `${money(observedTotal)} - ${money(goodsSubtotal)}`,
+            sourceIds: [
+              fieldSources.observedTotal,
+              fieldSources.taxNote,
+            ].filter((id): id is string => Boolean(id)),
+          },
+        ]
+      : [],
   });
 }
 
@@ -238,7 +308,11 @@ export function evaluateInvoice(
     ];
     return names.some((name) => normalize(name) === normalize(invoice.vendor));
   });
-  check("VENDOR_MATCH", vendorMatches.length === 1, "Vendor resolves to one active master record.");
+  check(
+    "VENDOR_MATCH",
+    vendorMatches.length === 1,
+    "Vendor resolves to one active master record.",
+  );
   const vendor = vendorMatches[0]!;
   check(
     "DUPLICATE",
@@ -344,8 +418,14 @@ export function evaluateInvoice(
           row.normalized_sku === normalize(component.sku) &&
           row.uom === "EA",
       );
-      check("LINE_MATCH", componentLines.length === 1, `${component.sku} resolves to one PO component.`);
-      const quantity = new Decimal(line.quantity).mul(component.quantity_per_bundle);
+      check(
+        "LINE_MATCH",
+        componentLines.length === 1,
+        `${component.sku} resolves to one PO component.`,
+      );
+      const quantity = new Decimal(line.quantity).mul(
+        component.quantity_per_bundle,
+      );
       const allocation = allocationFor({
         invoiceLineIndex,
         line,
@@ -373,7 +453,9 @@ export function evaluateInvoice(
 
   check(
     "PRICE_MATCH",
-    directVariances.reduce((sum, value) => sum.plus(value), new Decimal(0)).lte(5),
+    directVariances
+      .reduce((sum, value) => sum.plus(value), new Decimal(0))
+      .lte(5),
     "Aggregate direct-line price variance is at most $5.00.",
   );
   checkCapacities(allocations, checks);
@@ -383,8 +465,20 @@ export function evaluateInvoice(
     (total, line) => total.plus(line.amount),
     new Decimal(0),
   );
-  check("SUBTOTAL_MATCH", lineTotal.minus(invoice.subtotal).abs().lte("0.01"), "Normalized line amounts equal the subtotal.");
-  check("TOTAL_MATCH", new Decimal(invoice.subtotal).plus(invoice.tax).minus(invoice.total).abs().lte("0.01"), "Subtotal plus tax equals total.");
+  check(
+    "SUBTOTAL_MATCH",
+    lineTotal.minus(invoice.subtotal).abs().lte("0.01"),
+    "Normalized line amounts equal the subtotal.",
+  );
+  check(
+    "TOTAL_MATCH",
+    new Decimal(invoice.subtotal)
+      .plus(invoice.tax)
+      .minus(invoice.total)
+      .abs()
+      .lte("0.01"),
+    "Subtotal plus tax equals total.",
+  );
   return { checks, allocations };
 }
 
@@ -404,7 +498,12 @@ export function evaluateConfirmedBundle(
       (name) => normalize(name) === normalize(invoice.vendor),
     ),
   );
-  if (!vendor) throw new ControlError("VENDOR_MATCH", "Vendor no longer resolves.", checks);
+  if (!vendor)
+    throw new ControlError(
+      "VENDOR_MATCH",
+      "Vendor no longer resolves.",
+      checks,
+    );
   if (
     postedInvoices.some(
       (row) =>
@@ -421,17 +520,28 @@ export function evaluateConfirmedBundle(
       row.currency === "USD" &&
       row.price_basis === "TAX_EXCLUSIVE",
   );
-  if (!po) throw new ControlError("PO_ELIGIBLE", "PO is no longer eligible.", checks);
+  if (!po)
+    throw new ControlError("PO_ELIGIBLE", "PO is no longer eligible.", checks);
 
   const used = usedQuantities(priorAllocations);
   const reserved = new Map<string, Decimal>();
   const line = invoice.lines[candidate.invoiceLineIndex];
-  if (!line) throw new ControlError("LINE_MATCH", "Candidate line no longer exists.", checks);
+  if (!line)
+    throw new ControlError(
+      "LINE_MATCH",
+      "Candidate line no longer exists.",
+      checks,
+    );
   const allocations = candidate.components.map((component) => {
     const poLine = poLines.find(
       (row) => row.id === component.poLineId && row.po_number === po.po_number,
     );
-    if (!poLine) throw new ControlError("LINE_MATCH", "Candidate component no longer exists.", checks);
+    if (!poLine)
+      throw new ControlError(
+        "LINE_MATCH",
+        "Candidate component no longer exists.",
+        checks,
+      );
     const quantity = new Decimal(component.quantity);
     const allocation = allocationFor({
       invoiceLineIndex: candidate.invoiceLineIndex,
@@ -451,8 +561,16 @@ export function evaluateConfirmedBundle(
     new Decimal(0),
   );
   if (basis.minus(line.amount).abs().gt("0.01"))
-    throw new ControlError("PRICE_MATCH", "Confirmed bundle amount no longer matches.", checks);
-  checks.push({ code: "BUNDLE_MAPPING_CONFIRMED", passed: true, detail: "Reviewer confirmed a stored bundle decomposition." });
+    throw new ControlError(
+      "PRICE_MATCH",
+      "Confirmed bundle amount no longer matches.",
+      checks,
+    );
+  checks.push({
+    code: "BUNDLE_MAPPING_CONFIRMED",
+    passed: true,
+    detail: "Reviewer confirmed a stored bundle decomposition.",
+  });
   checkCapacities(allocations, checks);
   checkPoValueCapacity(po, poLines, priorAllocations, allocations, checks);
   return { checks, allocations };
@@ -468,7 +586,11 @@ export function buildUnknownBundleCandidates(
     (line) => line.po_number === invoice.poNumber && line.uom === "EA",
   );
   if (poLines.length > 10)
-    throw new ControlError("UNSUPPORTED_STRUCTURE", "Bundle search exceeds ten eligible PO lines.", []);
+    throw new ControlError(
+      "UNSUPPORTED_STRUCTURE",
+      "Bundle search exceeds ten eligible PO lines.",
+      [],
+    );
   const used = usedQuantities(priorAllocationsInput as PriorAllocationRow[]);
   const target = new Decimal(invoice.lines[0]!.amount);
   const choices = poLines
@@ -500,21 +622,29 @@ export function buildUnknownBundleCandidates(
       for (let quantity = 1; quantity <= choice.max; quantity += 1) {
         const amount = choice.price.mul(quantity);
         if (total.plus(amount).gt(target.plus("0.01"))) break;
-        visit(index + 1, [...components, {
-          poLineId: choice.line.id,
-          sku: choice.line.sku ?? "",
-          uom: "EA",
-          quantity: String(quantity),
-          poBasisAmount: money(amount),
-        }], total.plus(amount));
+        visit(
+          index + 1,
+          [
+            ...components,
+            {
+              poLineId: choice.line.id,
+              sku: choice.line.sku ?? "",
+              uom: "EA",
+              quantity: String(quantity),
+              poBasisAmount: money(amount),
+            },
+          ],
+          total.plus(amount),
+        );
       }
     }
   };
   visit(0, [], new Decimal(0));
   return found
-    .sort((left, right) =>
-      left.length - right.length ||
-      candidateKey(left).localeCompare(candidateKey(right)),
+    .sort(
+      (left, right) =>
+        left.length - right.length ||
+        candidateKey(left).localeCompare(candidateKey(right)),
     )
     .slice(0, 3)
     .map((components, index) => ({
@@ -522,7 +652,10 @@ export function buildUnknownBundleCandidates(
       invoiceLineIndex: 0,
       bundleQuantity: invoice.lines[0]!.quantity,
       totalPoBasisAmount: money(
-        components.reduce((sum, component) => sum.plus(component.poBasisAmount), new Decimal(0)),
+        components.reduce(
+          (sum, component) => sum.plus(component.poBasisAmount),
+          new Decimal(0),
+        ),
       ),
       components,
     }));
@@ -573,6 +706,8 @@ function allocationFor(input: {
   const receivedRemaining = new Decimal(input.poLine.received_quantity)
     .minus(consumed)
     .minus(input.quantity);
+  const actualNetAmount =
+    input.matchType === "DIRECT" ? input.line.amount : money(basis);
   return {
     invoiceLineIndex: input.invoiceLineIndex,
     poLineId: input.poLine.id,
@@ -582,20 +717,49 @@ function allocationFor(input: {
     matchType: input.matchType,
     bundleDefinitionId: input.bundleDefinitionId,
     poBasisAmount: money(basis),
-    actualNetAmount:
-      input.matchType === "DIRECT" ? input.line.amount : money(basis),
+    actualNetAmount,
     remainingOrderedQuantity: orderedRemaining.toString(),
     remainingReceivedQuantity: receivedRemaining.toString(),
+    matchReason:
+      input.matchType === "DIRECT"
+        ? "Matched invoice line to PO line by exact SKU, description, and UOM."
+        : input.matchType === "BUNDLE_MASTER"
+          ? "Expanded from a trusted vendor bundle definition."
+          : "Expanded from the reviewer-confirmed bundle decomposition.",
+    priceVariance: money(new Decimal(actualNetAmount).minus(basis)),
+    sourceIds: Object.values(input.line.sourceIds),
   };
 }
 
 function checkCapacities(allocations: Allocation[], checks: CheckResult[]) {
-  const receiptPasses = allocations.every((row) => new Decimal(row.remainingReceivedQuantity).gte(0));
-  checks.push({ code: "RECEIPT_CAPACITY", passed: receiptPasses, detail: "Allocated quantities fit remaining receipts." });
-  if (!receiptPasses) throw new ControlError("RECEIPT_CAPACITY", "Quantity exceeds received capacity.", checks);
-  const orderPasses = allocations.every((row) => new Decimal(row.remainingOrderedQuantity).gte(0));
-  checks.push({ code: "ORDERED_CAPACITY", passed: orderPasses, detail: "Allocated quantities fit remaining ordered capacity." });
-  if (!orderPasses) throw new ControlError("ORDERED_CAPACITY", "Quantity exceeds ordered capacity.", checks);
+  const receiptPasses = allocations.every((row) =>
+    new Decimal(row.remainingReceivedQuantity).gte(0),
+  );
+  checks.push({
+    code: "RECEIPT_CAPACITY",
+    passed: receiptPasses,
+    detail: "Allocated quantities fit remaining receipts.",
+  });
+  if (!receiptPasses)
+    throw new ControlError(
+      "RECEIPT_CAPACITY",
+      "Quantity exceeds received capacity.",
+      checks,
+    );
+  const orderPasses = allocations.every((row) =>
+    new Decimal(row.remainingOrderedQuantity).gte(0),
+  );
+  checks.push({
+    code: "ORDERED_CAPACITY",
+    passed: orderPasses,
+    detail: "Allocated quantities fit remaining ordered capacity.",
+  });
+  if (!orderPasses)
+    throw new ControlError(
+      "ORDERED_CAPACITY",
+      "Quantity exceeds ordered capacity.",
+      checks,
+    );
 }
 
 function checkPoValueCapacity(
@@ -607,15 +771,35 @@ function checkPoValueCapacity(
 ) {
   const total = poLines
     .filter((line) => line.po_number === po.po_number)
-    .reduce((sum, line) => sum.plus(new Decimal(line.ordered_quantity).mul(line.unit_price)), new Decimal(0));
-  const lineIds = new Set(poLines.filter((line) => line.po_number === po.po_number).map((line) => line.id));
+    .reduce(
+      (sum, line) =>
+        sum.plus(new Decimal(line.ordered_quantity).mul(line.unit_price)),
+      new Decimal(0),
+    );
+  const lineIds = new Set(
+    poLines
+      .filter((line) => line.po_number === po.po_number)
+      .map((line) => line.id),
+  );
   const priorBasis = prior
     .filter((row) => lineIds.has(row.po_line_id))
     .reduce((sum, row) => sum.plus(row.po_basis_amount), new Decimal(0));
-  const currentBasis = current.reduce((sum, row) => sum.plus(row.poBasisAmount), new Decimal(0));
+  const currentBasis = current.reduce(
+    (sum, row) => sum.plus(row.poBasisAmount),
+    new Decimal(0),
+  );
   const passed = priorBasis.plus(currentBasis).lte(total);
-  checks.push({ code: "PO_VALUE_CAPACITY", passed, detail: "PO-basis value fits remaining ordered value." });
-  if (!passed) throw new ControlError("ORDERED_CAPACITY", "PO value capacity is exceeded.", checks);
+  checks.push({
+    code: "PO_VALUE_CAPACITY",
+    passed,
+    detail: "PO-basis value fits remaining ordered value.",
+  });
+  if (!passed)
+    throw new ControlError(
+      "ORDERED_CAPACITY",
+      "PO value capacity is exceeded.",
+      checks,
+    );
 }
 
 function usedQuantities(rows: PriorAllocationRow[]) {
@@ -689,8 +873,18 @@ function parseDate(value: string) {
     const parsed = normalized.match(/^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$/);
     if (!parsed) failNormalization("MISSING_REQUIRED_FIELD");
     const monthIndex = [
-      "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
-      "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER",
+      "JANUARY",
+      "FEBRUARY",
+      "MARCH",
+      "APRIL",
+      "MAY",
+      "JUNE",
+      "JULY",
+      "AUGUST",
+      "SEPTEMBER",
+      "OCTOBER",
+      "NOVEMBER",
+      "DECEMBER",
     ].findIndex((name) => name.startsWith(parsed[1]!.toUpperCase()));
     if (monthIndex < 0) failNormalization("MISSING_REQUIRED_FIELD");
     year = Number(parsed[3]);
@@ -718,7 +912,9 @@ function parseTaxRate(value: string) {
 }
 
 function money(value: Decimal.Value) {
-  return new Decimal(value).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
+  return new Decimal(value)
+    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+    .toFixed(2);
 }
 
 function candidateKey(components: BundleCandidate["components"]) {
