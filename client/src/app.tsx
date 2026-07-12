@@ -362,6 +362,7 @@ function DashboardPage() {
 function RunPage() {
   const { runId = "" } = useParams();
   const processStarted = useRef(false);
+  const [processError, setProcessError] = useState<string>();
   const run = useQuery({
     queryKey: ["run", runId],
     queryFn: () => getRun(runId),
@@ -385,15 +386,25 @@ function RunPage() {
   });
 
   useEffect(() => {
-    if (run.data?.state !== "PROCESSING" || processStarted.current) return;
+    if (
+      run.data?.state !== "PROCESSING" ||
+      processStarted.current ||
+      processError
+    )
+      return;
     processStarted.current = true;
+    setProcessError(undefined);
     void processRun(runId)
       .then((result) => queryClient.setQueryData(["run", runId], result))
-      .catch(() => {
-        processStarted.current = false;
+      .catch((caught: unknown) => {
+        setProcessError(
+          caught instanceof Error
+            ? caught.message
+            : "The invoice could not be processed.",
+        );
         void refetchRun();
       });
-  }, [run.data?.state, refetchRun, runId]);
+  }, [processError, run.data?.state, refetchRun, runId]);
 
   if (run.isPending) return <StatusPage>Loading run...</StatusPage>;
   if (run.error || !run.data)
@@ -446,6 +457,24 @@ function RunPage() {
             </div>
           )}
         </section>
+
+        {processError && (
+          <section className="surface processing-error" role="alert">
+            <div>
+              <strong>Processing stopped</strong>
+              <p>{processError}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                processStarted.current = false;
+                setProcessError(undefined);
+              }}
+            >
+              Retry processing
+            </button>
+          </section>
+        )}
 
         {detail.state === "AWAITING_PO_CONFIRMATION" && detail.candidatePo && (
           <section
@@ -597,26 +626,7 @@ function RunPage() {
               </section>
             )}
 
-            <section
-              className="surface pipeline-panel"
-              aria-labelledby="stages"
-            >
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Workflow</p>
-                  <h2 id="stages">Processing activity</h2>
-                </div>
-              </div>
-              <ol className="timeline">
-                {detail.stages.map((stage, index) => (
-                  <li key={`${stage.stage}-${index}`}>
-                    <span className={`dot ${stage.status.toLowerCase()}`} />
-                    <strong>{formatLabel(stage.stage)}</strong>
-                    <span>{formatLabel(stage.status)}</span>
-                  </li>
-                ))}
-              </ol>
-            </section>
+            <ProcessingActivity detail={detail} />
           </aside>
         </div>
 
@@ -930,6 +940,110 @@ function DecisionExplanation({ detail }: { detail: RunDetail }) {
   );
 }
 
+function ProcessingActivity({ detail }: { detail: RunDetail }) {
+  const phases = processingPhases(detail);
+  if (detail.state === "PROCESSING") {
+    const activeIndex = Math.max(
+      0,
+      phases.findIndex((phase) => phase.status !== "COMPLETED"),
+    );
+    const active = phases[activeIndex]!;
+    return (
+      <section className="surface processing-focus" aria-live="polite">
+        <div>
+          <p className="eyebrow">Processing invoice</p>
+          <h2>{active.label}</h2>
+          <p>{active.description}</p>
+        </div>
+        <span>
+          Step {activeIndex + 1} of {phases.length}
+        </span>
+        <div className="processing-progress" aria-hidden="true">
+          <span
+            style={{ width: `${((activeIndex + 1) / phases.length) * 100}%` }}
+          />
+        </div>
+      </section>
+    );
+  }
+  const visible = phases.filter((phase) => phase.status !== "NOT_STARTED");
+  if (!visible.length) return null;
+  return (
+    <details className="surface activity-log">
+      <summary>
+        <span>
+          <strong>Activity log</strong>
+          <small>
+            {visible.filter((phase) => phase.status === "COMPLETED").length}{" "}
+            phases completed
+          </small>
+        </span>
+        <span aria-hidden="true">⌄</span>
+      </summary>
+      <ol>
+        {visible.map((phase) => (
+          <li key={phase.label}>
+            <span className={`dot ${phase.status.toLowerCase()}`} />
+            <div>
+              <strong>{phase.label}</strong>
+              <span>{phase.description}</span>
+            </div>
+            <time>{phase.at ? formatTime(phase.at) : "—"}</time>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+function processingPhases(detail: RunDetail) {
+  const definitions = [
+    {
+      label: "Reading invoice",
+      description:
+        "Extracting invoice fields and linking them to document values.",
+      stages: ["EXTRACTION", "MAPPING"],
+    },
+    {
+      label: "Matching and checking",
+      description:
+        "Matching the vendor, purchase order, lines, amounts, and receipts.",
+      stages: ["NORMALIZATION", "CONTROLS"],
+    },
+    {
+      label: "Finalizing",
+      description:
+        "Posting the approved accounting effect or preparing a review action.",
+      stages: ["POSTING"],
+    },
+  ];
+  return definitions.map((definition) => {
+    const events = detail.stages.filter((event) =>
+      definition.stages.includes(event.stage),
+    );
+    const failed = events.findLast((event) => event.status === "FAILED");
+    const allCompleted = definition.stages.every((stage) =>
+      events.some(
+        (event) => event.stage === stage && event.status === "COMPLETED",
+      ),
+    );
+    const latest = events.at(-1);
+    return {
+      ...definition,
+      status: failed
+        ? ("FAILED" as const)
+        : allCompleted
+          ? ("COMPLETED" as const)
+          : detail.state !== "PROCESSING" && events.length
+            ? ("COMPLETED" as const)
+            : events.length
+              ? ("ACTIVE" as const)
+              : ("NOT_STARTED" as const),
+      at: latest?.at,
+    };
+  });
+}
+
 function fixtureLabel(fixtureId: FixtureId) {
   return fixtureId
     .split("_")
@@ -1029,6 +1143,14 @@ function formatDateOnly(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
     new Date(`${value}T00:00:00`),
   );
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
 }
 
 function StatusPage({ children }: { children: React.ReactNode }) {
