@@ -867,9 +867,22 @@ function ConsoleShell({ children }: { children: React.ReactNode }) {
       <aside className="app-sidebar">
         <Link className="brand" to="/">
           <span className="brand-mark" aria-hidden="true">
-            AP
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+            >
+              <path d="M4 6h16M4 12h10M4 18h16" />
+            </svg>
           </span>
-          <span>AP Resolution</span>
+          <span className="brand-copy">
+            <strong>AP Resolution</strong>
+            <small>Invoice review</small>
+          </span>
         </Link>
         <nav aria-label="Primary">
           <NavLink to="/" end>
@@ -890,6 +903,7 @@ function ConsoleShell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             className="reset-workspace"
+            aria-label="Reset workspace"
             disabled={reset.isPending}
             onClick={() => {
               if (
@@ -901,7 +915,9 @@ function ConsoleShell({ children }: { children: React.ReactNode }) {
             }}
           >
             {reset.isPending ? "Resetting…" : "Reset workspace"}
+            <span aria-hidden="true">{reset.isPending ? "…" : "Demo"}</span>
           </button>
+          <p>Restore demo invoices and clear activity.</p>
           {reset.error && <span className="error">{reset.error.message}</span>}
         </div>
       </aside>
