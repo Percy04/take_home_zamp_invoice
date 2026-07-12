@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   --background: oklch(0.975 0.004 240);
   --foreground: oklch(0.18 0.015 250);
@@ -25,6 +27,12 @@
 
 body {
   margin: 0;
+}
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
 }
 
 a,
@@ -2187,4 +2195,3 @@ button.reset-workspace:hover {
     text-align: left;
   }
 }
-@import "tailwindcss";

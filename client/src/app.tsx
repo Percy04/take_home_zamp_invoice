@@ -54,140 +54,103 @@ export function App() {
 
 function InvoicePage() {
   const navigate = useNavigate();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File>();
   const [fileError, setFileError] = useState<string>();
+  const [dragging, setDragging] = useState(false);
   const create = useMutation({
     mutationFn: createRun,
     onSuccess: (run) => navigate(`/runs/${run.runId}`),
   });
 
+  const chooseFile = (selected?: File) => {
+    if (
+      selected &&
+      selected.type !== "application/pdf" &&
+      !selected.name.toLowerCase().endsWith(".pdf")
+    ) {
+      setFile(undefined);
+      setFileError("Only PDF files are accepted.");
+    } else if (selected && selected.size > 10 * 1024 * 1024) {
+      setFile(undefined);
+      setFileError("File is too large. Maximum size is 10 MiB.");
+    } else {
+      setFile(selected);
+      setFileError(undefined);
+    }
+  };
+
   return (
     <ConsoleShell>
-      <main className="console-main intake-layout" aria-labelledby="page-title">
-        <div className="page-heading compact">
-          <div>
-            <p className="eyebrow">Invoice intake</p>
-            <h1 id="page-title">Upload an invoice</h1>
-            <p className="summary">
-              Add a PDF to extract its details, match it to a purchase order,
-              and run accounting controls.
+      <main className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 md:px-8 md:py-8 lg:grid-cols-[minmax(0,1fr)_360px]" aria-labelledby="page-title">
+        <div>
+          <header className="mb-5">
+            <p className="eyebrow">New invoice</p>
+            <h1 id="page-title" className="mt-1 text-2xl font-semibold tracking-tight">Upload an invoice</h1>
+            <p className="mt-1.5 max-w-2xl text-[13.5px] text-[var(--muted-foreground)]">
+              Add a PDF to extract invoice details, match it to a purchase order and run accounting controls.
             </p>
-          </div>
-        </div>
+          </header>
 
-        <div className="workspace-grid intake-grid">
-          <section className="surface upload-surface" aria-labelledby="upload">
-            <div>
-              <h2 id="upload">Invoice document</h2>
-              <p className="muted">PDF files up to 10 MiB.</p>
+          <section
+            aria-label="Invoice document"
+            onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => { event.preventDefault(); setDragging(false); chooseFile(event.dataTransfer.files?.[0]); }}
+            className={`panel px-5 py-8 text-center transition-colors ${dragging ? "border-[var(--primary)] bg-[var(--primary-soft)]" : ""}`}
+          >
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[var(--primary-soft)] text-[var(--primary)]" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
             </div>
+            <p className="mt-3 text-sm font-medium">Drop a PDF here or</p>
+            <button type="button" className="secondary mt-2 min-h-0 px-3 py-1.5 text-[13px]" onClick={() => inputRef.current?.click()}>Choose file</button>
+            <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => chooseFile(event.target.files?.[0])} />
+            <p className="mt-2 text-xs text-[var(--muted-foreground)]">PDF only · Max 10 MiB</p>
 
-            <label className="file-control upload-dropzone">
-              <span className="upload-icon" aria-hidden="true">
-                ↑
-              </span>
-              <strong>{file ? file.name : "Choose an invoice PDF"}</strong>
-              <span>Click to browse from your device</span>
-              <input
-                type="file"
-                accept="application/pdf,.pdf"
-                onChange={(event) => {
-                  const selected = event.target.files?.[0];
-                  if (
-                    selected &&
-                    selected.type !== "application/pdf" &&
-                    !selected.name.toLowerCase().endsWith(".pdf")
-                  ) {
-                    setFile(undefined);
-                    setFileError("Choose a PDF file.");
-                  } else if (selected && selected.size > 10 * 1024 * 1024) {
-                    setFile(undefined);
-                    setFileError("The PDF must be 10 MiB or smaller.");
-                  } else {
-                    setFile(selected);
-                    setFileError(undefined);
-                  }
-                }}
-              />
-            </label>
-
-            <div className="action-row">
-              <button
-                disabled={!file || create.isPending}
-                onClick={() => file && create.mutate(file)}
-              >
-                {create.isPending
-                  ? "Processing invoice..."
-                  : "Upload and process"}
-              </button>
-            </div>
-            <div className="privacy-note" role="note">
-              <strong>How your document is processed</strong>
-              <p>
-                The PDF is sent to Azure Document Intelligence. Only the
-                extracted invoice evidence is sent to the configured AI mapping
-                provider. The uploaded document and result are stored in this
-                workspace.
-              </p>
-            </div>
-            {fileError && <p className="error">{fileError}</p>}
-            {create.error && <p className="error">{create.error.message}</p>}
+            {file && (
+              <div className="mx-auto mt-4 flex max-w-md items-center justify-between gap-3 rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-left">
+                <div className="min-w-0"><div className="truncate text-[13px] font-medium">{file.name}</div><div className="text-[11.5px] text-[var(--muted-foreground)]">{(file.size / 1024).toFixed(0)} KB</div></div>
+                <button type="button" className="secondary min-h-0 border-0 bg-transparent px-0 text-xs" onClick={() => { chooseFile(); if (inputRef.current) inputRef.current.value = ""; }}>Remove</button>
+              </div>
+            )}
+            {fileError && <p role="alert" className="mt-3 text-[12.5px] text-[var(--destructive)]">{fileError}</p>}
+            {create.error && <p role="alert" className="mt-3 text-[12.5px] text-[var(--destructive)]">{create.error.message}</p>}
+            <button disabled={!file || create.isPending} className="mt-5 min-h-0 px-4 py-2 text-[13px]" onClick={() => file && create.mutate(file)}>{create.isPending ? "Uploading…" : "Upload and process"}</button>
+            <p role="note" className="mx-auto mt-4 max-w-xl text-xs leading-relaxed text-[var(--muted-foreground)]">
+              The PDF is sent to Azure Document Intelligence. Only extracted invoice evidence is sent to the configured AI mapping provider.
+            </p>
           </section>
 
-          <aside className="intake-side">
-            <section className="surface" aria-labelledby="workflow">
-              <p className="eyebrow">Automated workflow</p>
-              <h2 id="workflow">What happens next</h2>
-              <ol className="workflow-list">
-                <li>
-                  <span>1</span>
-                  <div>
-                    <strong>Extract</strong>
-                    <p>Read invoice fields and line items.</p>
-                  </div>
+          <section className="panel mt-4 p-4" aria-labelledby="workflow">
+            <p className="eyebrow" id="workflow">What happens next</p>
+            <ol className="mt-2 grid gap-2 sm:grid-cols-2">
+              {[
+                ["1", "Read invoice fields", "Vendor, invoice number, dates, lines and totals."],
+                ["2", "Match vendor and PO", "Find the purchase order and vendor on file."],
+                ["3", "Validate lines and capacity", "Prices, quantities, receipts and remaining PO value."],
+                ["4", "Post or route for review", "Auto-post when controls pass; otherwise show the exact reason."],
+              ].map(([number, title, description]) => (
+                <li key={number} className="flex gap-3 rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--primary-soft)] text-[11px] font-semibold text-[var(--primary)]">{number}</span>
+                  <div><div className="text-[13px] font-medium">{title}</div><div className="text-xs text-[var(--muted-foreground)]">{description}</div></div>
                 </li>
-                <li>
-                  <span>2</span>
-                  <div>
-                    <strong>Match</strong>
-                    <p>Compare against the purchase order.</p>
-                  </div>
-                </li>
-                <li>
-                  <span>3</span>
-                  <div>
-                    <strong>Review</strong>
-                    <p>Post automatically or flag exceptions.</p>
-                  </div>
-                </li>
-              </ol>
-            </section>
-
-            <section
-              className="surface demo-panel"
-              aria-labelledby="demo-invoices"
-            >
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Demo workspace</p>
-                  <h2 id="demo-invoices">Try a sample invoice</h2>
-                </div>
-              </div>
-              <div className="fixture-grid" aria-label="Fixture runs">
-                {fixtureIds.map((fixtureId) => (
-                  <button
-                    key={fixtureId}
-                    className="secondary"
-                    disabled={create.isPending}
-                    onClick={() => create.mutate(fixtureId)}
-                  >
-                    {fixtureLabel(fixtureId)}
-                  </button>
-                ))}
-              </div>
-            </section>
-          </aside>
+              ))}
+            </ol>
+          </section>
         </div>
+
+        <aside className="panel h-fit p-4" aria-labelledby="demo-invoices">
+          <p className="eyebrow">Demo workspace</p>
+          <h2 id="demo-invoices" className="mt-1 text-base font-semibold">Try a sample invoice</h2>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">Run a prepared scenario through the real processing workflow.</p>
+          <div className="mt-4 grid gap-2" aria-label="Fixture runs">
+            {fixtureIds.map((fixtureId) => (
+              <button key={fixtureId} className="secondary min-h-0 justify-between px-3 py-2 text-[12.5px]" disabled={create.isPending} onClick={() => create.mutate(fixtureId)}>
+                {fixtureLabel(fixtureId)} <span aria-hidden="true">→</span>
+              </button>
+            ))}
+          </div>
+        </aside>
       </main>
     </ConsoleShell>
   );
