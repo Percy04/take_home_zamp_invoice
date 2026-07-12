@@ -47,3 +47,4 @@ Preserved deterministic assets:
 `npm run build:demo-data` materializes the canonical synthetic data into `tmp/demo-data` using TypeScript. It regenerates digital PDFs from `cases.json`, retains the committed image-only scan baseline, copies the immutable seed, and emits matching hashes.
 
 Deployment and rehearsal instructions are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), [docs/DEMO_REHEARSAL.md](docs/DEMO_REHEARSAL.md), and [docs/SUBMISSION_CHECKLIST.md](docs/SUBMISSION_CHECKLIST.md).
+The latest paid-provider results and remaining scanned-input limitation are recorded in [docs/LIVE_VERIFICATION.md](docs/LIVE_VERIFICATION.md).
