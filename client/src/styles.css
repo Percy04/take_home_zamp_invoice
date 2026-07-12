@@ -325,7 +325,7 @@ h2 {
   font-weight: 800;
 }
 
-input[type="file"] {
+.file-control input[type="file"] {
   width: 100%;
   border: 1px solid #c9d3cc;
   border-radius: 6px;
