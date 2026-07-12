@@ -110,6 +110,7 @@ export function normalizeInvoice(
   const invoiceNumber = select(mapping.invoiceNumber, true, "invoiceNumber");
   const invoiceDate = parseDate(
     select(mapping.invoiceDate, true, "invoiceDate"),
+    "invoiceDate",
   );
   const poNumber = select(mapping.poNumber, false, "poNumber");
   if (
@@ -131,13 +132,19 @@ export function normalizeInvoice(
       failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.identity`);
     const quantity = parseQuantity(
       select(line.quantity, true, "quantity", sourceIds),
+      `lines.${index}.quantity`,
     );
-    const uom = parseUom(select(line.uom, true, "uom", sourceIds));
+    const uom = parseUom(
+      select(line.uom, true, "uom", sourceIds),
+      `lines.${index}.uom`,
+    );
     const observedUnitPrice = requiredMoney(
       select(line.unitPrice, true, "observedUnitPrice", sourceIds),
+      `lines.${index}.observedUnitPrice`,
     );
     const observedAmount = requiredMoney(
       select(line.amount, true, "observedAmount", sourceIds),
+      `lines.${index}.observedAmount`,
     );
     const taxInclusion = select(
       line.taxInclusion,
@@ -148,6 +155,7 @@ export function normalizeInvoice(
     const taxRate = select(line.taxRate, false, "taxRate", sourceIds);
     const observedTaxAmount = optionalMoney(
       select(line.taxAmount, false, "observedTaxAmount", sourceIds),
+      `lines.${index}.observedTaxAmount`,
     );
     if (quantity.mul(observedUnitPrice).minus(observedAmount).abs().gt("0.01"))
       failNormalization("TOTAL_MISMATCH");
@@ -167,10 +175,15 @@ export function normalizeInvoice(
 
   const observedSubtotal = optionalMoney(
     select(mapping.subtotal, false, "observedSubtotal"),
+    "observedSubtotal",
   );
-  const observedTax = optionalMoney(select(mapping.tax, false, "observedTax"));
+  const observedTax = optionalMoney(
+    select(mapping.tax, false, "observedTax"),
+    "observedTax",
+  );
   const observedTotal = requiredMoney(
     select(mapping.total, true, "observedTotal"),
+    "observedTotal",
   );
   const taxNote = select(mapping.taxNote, false, "taxNote");
   if (unsupportedTax.test(taxNote)) failNormalization("UNSUPPORTED_STRUCTURE");
@@ -913,17 +926,17 @@ function reserve(map: Map<string, Decimal>, id: string, quantity: Decimal) {
   map.set(id, (map.get(id) ?? new Decimal(0)).plus(quantity));
 }
 
-function requiredMoney(value: string) {
-  const parsed = parseMoney(value, false);
-  if (!parsed) failNormalization("MISSING_REQUIRED_FIELD");
+function requiredMoney(value: string, field?: string) {
+  const parsed = parseMoney(value, false, field);
+  if (!parsed) failNormalization("MISSING_REQUIRED_FIELD", field);
   return parsed;
 }
 
-function optionalMoney(value: string) {
-  return value ? parseMoney(value, false) : null;
+function optionalMoney(value: string, field?: string) {
+  return value ? parseMoney(value, false, field) : null;
 }
 
-function parseMoney(value: string, allowUnparseable: boolean) {
+function parseMoney(value: string, allowUnparseable: boolean, field?: string) {
   const normalized = value.normalize("NFKC").trim();
   if (!normalized) return null;
   if (/^\(.*\)$/.test(normalized) || /-/.test(normalized))
@@ -935,29 +948,29 @@ function parseMoney(value: string, allowUnparseable: boolean) {
     .trim();
   if (!/^\d+(?:\.\d+)?$/.test(stripped)) {
     if (allowUnparseable) return null;
-    failNormalization("MISSING_REQUIRED_FIELD");
+    failNormalization("MISSING_REQUIRED_FIELD", field);
   }
   return new Decimal(stripped);
 }
 
-function parseQuantity(value: string) {
+function parseQuantity(value: string, field?: string) {
   const stripped = value.replace(/,/g, "").trim();
   if (!/^\d+(?:\.\d+)?$/.test(stripped))
-    failNormalization("MISSING_REQUIRED_FIELD");
+    failNormalization("MISSING_REQUIRED_FIELD", field);
   const quantity = new Decimal(stripped);
   if (quantity.lte(0)) failNormalization("UNSUPPORTED_STRUCTURE");
   return quantity;
 }
 
-function parseUom(value: string) {
+function parseUom(value: string, field?: string) {
   const normalized = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (["EA", "EACH", "PC", "PCS"].includes(normalized)) return "EA";
   if (normalized === "KIT") return "KIT";
-  if (!normalized) failNormalization("MISSING_REQUIRED_FIELD");
+  if (!normalized) failNormalization("MISSING_REQUIRED_FIELD", field);
   return normalized;
 }
 
-function parseDate(value: string) {
+function parseDate(value: string, field?: string) {
   const normalized = value.trim();
   let year: number;
   let month: number;
@@ -968,7 +981,7 @@ function parseDate(value: string) {
     [, month, day, year] = match.map(Number);
   else {
     const parsed = normalized.match(/^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$/);
-    if (!parsed) failNormalization("MISSING_REQUIRED_FIELD");
+    if (!parsed) failNormalization("MISSING_REQUIRED_FIELD", field);
     const monthIndex = [
       "JANUARY",
       "FEBRUARY",
@@ -983,7 +996,7 @@ function parseDate(value: string) {
       "NOVEMBER",
       "DECEMBER",
     ].findIndex((name) => name.startsWith(parsed[1]!.toUpperCase()));
-    if (monthIndex < 0) failNormalization("MISSING_REQUIRED_FIELD");
+    if (monthIndex < 0) failNormalization("MISSING_REQUIRED_FIELD", field);
     year = Number(parsed[3]);
     month = monthIndex + 1;
     day = Number(parsed[2]);
@@ -994,7 +1007,7 @@ function parseDate(value: string) {
     date.getUTCMonth() + 1 !== month! ||
     date.getUTCDate() !== day!
   )
-    failNormalization("MISSING_REQUIRED_FIELD");
+    failNormalization("MISSING_REQUIRED_FIELD", field);
   return `${String(year!).padStart(4, "0")}-${String(month!).padStart(2, "0")}-${String(day!).padStart(2, "0")}`;
 }
 
