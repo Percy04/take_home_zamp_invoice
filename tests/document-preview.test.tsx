@@ -1,9 +1,30 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DocumentPreview } from "../frontend_v1/ap-resolve-console/src/components/DocumentPreview";
 import type { Run } from "../frontend_v1/ap-resolve-console/src/lib/types";
+
+vi.mock("react-pdf", () => ({
+  pdfjs: { GlobalWorkerOptions: {} },
+  Document: ({
+    children,
+    onLoadSuccess,
+  }: {
+    children: React.ReactNode;
+    onLoadSuccess: (document: { numPages: number }) => void;
+  }) => (
+    <div>
+      <button onClick={() => onLoadSuccess({ numPages: 2 })}>Load PDF</button>
+      {children}
+    </div>
+  ),
+  Page: ({ pageNumber, width }: { pageNumber: number; width: number }) => (
+    <div data-testid="pdf-page" data-width={width}>
+      Page {pageNumber}
+    </div>
+  ),
+}));
 
 const run = {
   runId: "11111111-1111-4111-8111-111111111111",
@@ -22,17 +43,20 @@ const run = {
 } satisfies Run;
 
 describe("DocumentPreview", () => {
-  it("keeps its viewport width fixed while changing PDF zoom", () => {
+  it("uses real page counts and fit-width zoom controls", () => {
     render(<DocumentPreview run={run} compact />);
-    const viewport = screen.getByTestId("document-viewport");
-    const width = viewport.getAttribute("style");
 
-    fireEvent.click(screen.getByRole("button", { name: "+" }));
+    expect(screen.getByText("Page 1 of —")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Load PDF" }));
+    expect(screen.getByText("Page 1 of 2")).toBeVisible();
+    const page = screen.getByTestId("pdf-page");
+    const initialWidth = page.dataset.width;
 
-    expect(viewport).toHaveAttribute("style", width!);
-    expect(screen.getByTitle("Original PDF: invoice.pdf")).toHaveAttribute(
-      "src",
-      expect.stringContaining("zoom=85"),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    expect(screen.getByText("125%")).toBeVisible();
+    expect(page.dataset.width).not.toBe(initialWidth);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText("Page 2")).toBeVisible();
   });
 });

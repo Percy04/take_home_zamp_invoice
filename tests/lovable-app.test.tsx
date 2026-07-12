@@ -2,8 +2,16 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getRouter } from "../frontend_v1/ap-resolve-console/src/router";
+
+vi.mock("react-pdf", () => ({
+  pdfjs: { GlobalWorkerOptions: {} },
+  Document: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  Page: () => <div>PDF page</div>,
+}));
 
 describe("main Lovable frontend", () => {
   beforeEach(() => window.history.replaceState({}, "", "/"));
