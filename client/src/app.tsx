@@ -82,57 +82,170 @@ function InvoicePage() {
 
   return (
     <ConsoleShell>
-      <main className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 md:px-8 md:py-8 lg:grid-cols-[minmax(0,1fr)_360px]" aria-labelledby="page-title">
+      <main
+        className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 md:px-8 md:py-8 lg:grid-cols-[minmax(0,1fr)_360px]"
+        aria-labelledby="page-title"
+      >
         <div>
           <header className="mb-5">
             <p className="eyebrow">New invoice</p>
-            <h1 id="page-title" className="mt-1 text-2xl font-semibold tracking-tight">Upload an invoice</h1>
+            <h1
+              id="page-title"
+              className="mt-1 text-2xl font-semibold tracking-tight"
+            >
+              Upload an invoice
+            </h1>
             <p className="mt-1.5 max-w-2xl text-[13.5px] text-[var(--muted-foreground)]">
-              Add a PDF to extract invoice details, match it to a purchase order and run accounting controls.
+              Add a PDF to extract invoice details, match it to a purchase order
+              and run accounting controls.
             </p>
           </header>
 
           <section
             aria-label="Invoice document"
-            onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
             onDragLeave={() => setDragging(false)}
-            onDrop={(event) => { event.preventDefault(); setDragging(false); chooseFile(event.dataTransfer.files?.[0]); }}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragging(false);
+              chooseFile(event.dataTransfer.files?.[0]);
+            }}
             className={`panel px-5 py-8 text-center transition-colors ${dragging ? "border-[var(--primary)] bg-[var(--primary-soft)]" : ""}`}
           >
-            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[var(--primary-soft)] text-[var(--primary)]" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+            <div
+              className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[var(--primary-soft)] text-[var(--primary)]"
+              aria-hidden="true"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              >
+                <path d="M12 3v12" />
+                <path d="m7 8 5-5 5 5" />
+                <path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+              </svg>
             </div>
             <p className="mt-3 text-sm font-medium">Drop a PDF here or</p>
-            <button type="button" className="secondary mt-2 min-h-0 px-3 py-1.5 text-[13px]" onClick={() => inputRef.current?.click()}>Choose file</button>
-            <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => chooseFile(event.target.files?.[0])} />
-            <p className="mt-2 text-xs text-[var(--muted-foreground)]">PDF only · Max 10 MiB</p>
+            <button
+              type="button"
+              className="secondary mt-2 min-h-0 px-3 py-1.5 text-[13px]"
+              onClick={() => inputRef.current?.click()}
+            >
+              Choose file
+            </button>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              className="sr-only"
+              onChange={(event) => chooseFile(event.target.files?.[0])}
+            />
+            <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+              PDF only · Max 10 MiB
+            </p>
 
             {file && (
               <div className="mx-auto mt-4 flex max-w-md items-center justify-between gap-3 rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-left">
-                <div className="min-w-0"><div className="truncate text-[13px] font-medium">{file.name}</div><div className="text-[11.5px] text-[var(--muted-foreground)]">{(file.size / 1024).toFixed(0)} KB</div></div>
-                <button type="button" className="secondary min-h-0 border-0 bg-transparent px-0 text-xs" onClick={() => { chooseFile(); if (inputRef.current) inputRef.current.value = ""; }}>Remove</button>
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-medium">
+                    {file.name}
+                  </div>
+                  <div className="text-[11.5px] text-[var(--muted-foreground)]">
+                    {(file.size / 1024).toFixed(0)} KB
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="secondary min-h-0 border-0 bg-transparent px-0 text-xs"
+                  onClick={() => {
+                    chooseFile();
+                    if (inputRef.current) inputRef.current.value = "";
+                  }}
+                >
+                  Remove
+                </button>
               </div>
             )}
-            {fileError && <p role="alert" className="mt-3 text-[12.5px] text-[var(--destructive)]">{fileError}</p>}
-            {create.error && <p role="alert" className="mt-3 text-[12.5px] text-[var(--destructive)]">{create.error.message}</p>}
-            <button disabled={!file || create.isPending} className="mt-5 min-h-0 px-4 py-2 text-[13px]" onClick={() => file && create.mutate(file)}>{create.isPending ? "Uploading…" : "Upload and process"}</button>
-            <p role="note" className="mx-auto mt-4 max-w-xl text-xs leading-relaxed text-[var(--muted-foreground)]">
-              The PDF is sent to Azure Document Intelligence. Only extracted invoice evidence is sent to the configured AI mapping provider.
+            {fileError && (
+              <p
+                role="alert"
+                className="mt-3 text-[12.5px] text-[var(--destructive)]"
+              >
+                {fileError}
+              </p>
+            )}
+            {create.error && (
+              <p
+                role="alert"
+                className="mt-3 text-[12.5px] text-[var(--destructive)]"
+              >
+                {create.error.message}
+              </p>
+            )}
+            <button
+              disabled={!file || create.isPending}
+              className="mt-5 min-h-0 px-4 py-2 text-[13px]"
+              onClick={() => file && create.mutate(file)}
+            >
+              {create.isPending ? "Uploading…" : "Upload and process"}
+            </button>
+            <p
+              role="note"
+              className="mx-auto mt-4 max-w-xl text-xs leading-relaxed text-[var(--muted-foreground)]"
+            >
+              The PDF is sent to Azure Document Intelligence. Only extracted
+              invoice evidence is sent to the configured AI mapping provider.
             </p>
           </section>
 
           <section className="panel mt-4 p-4" aria-labelledby="workflow">
-            <p className="eyebrow" id="workflow">What happens next</p>
+            <p className="eyebrow" id="workflow">
+              What happens next
+            </p>
             <ol className="mt-2 grid gap-2 sm:grid-cols-2">
               {[
-                ["1", "Read invoice fields", "Vendor, invoice number, dates, lines and totals."],
-                ["2", "Match vendor and PO", "Find the purchase order and vendor on file."],
-                ["3", "Validate lines and capacity", "Prices, quantities, receipts and remaining PO value."],
-                ["4", "Post or route for review", "Auto-post when controls pass; otherwise show the exact reason."],
+                [
+                  "1",
+                  "Read invoice fields",
+                  "Vendor, invoice number, dates, lines and totals.",
+                ],
+                [
+                  "2",
+                  "Match vendor and PO",
+                  "Find the purchase order and vendor on file.",
+                ],
+                [
+                  "3",
+                  "Validate lines and capacity",
+                  "Prices, quantities, receipts and remaining PO value.",
+                ],
+                [
+                  "4",
+                  "Post or route for review",
+                  "Auto-post when controls pass; otherwise show the exact reason.",
+                ],
               ].map(([number, title, description]) => (
-                <li key={number} className="flex gap-3 rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--primary-soft)] text-[11px] font-semibold text-[var(--primary)]">{number}</span>
-                  <div><div className="text-[13px] font-medium">{title}</div><div className="text-xs text-[var(--muted-foreground)]">{description}</div></div>
+                <li
+                  key={number}
+                  className="flex gap-3 rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2"
+                >
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--primary-soft)] text-[11px] font-semibold text-[var(--primary)]">
+                    {number}
+                  </span>
+                  <div>
+                    <div className="text-[13px] font-medium">{title}</div>
+                    <div className="text-xs text-[var(--muted-foreground)]">
+                      {description}
+                    </div>
+                  </div>
                 </li>
               ))}
             </ol>
@@ -141,11 +254,20 @@ function InvoicePage() {
 
         <aside className="panel h-fit p-4" aria-labelledby="demo-invoices">
           <p className="eyebrow">Demo workspace</p>
-          <h2 id="demo-invoices" className="mt-1 text-base font-semibold">Try a sample invoice</h2>
-          <p className="mt-1 text-xs text-[var(--muted-foreground)]">Run a prepared scenario through the real processing workflow.</p>
+          <h2 id="demo-invoices" className="mt-1 text-base font-semibold">
+            Try a sample invoice
+          </h2>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+            Run a prepared scenario through the real processing workflow.
+          </p>
           <div className="mt-4 grid gap-2" aria-label="Fixture runs">
             {fixtureIds.map((fixtureId) => (
-              <button key={fixtureId} className="secondary min-h-0 justify-between px-3 py-2 text-[12.5px]" disabled={create.isPending} onClick={() => create.mutate(fixtureId)}>
+              <button
+                key={fixtureId}
+                className="secondary min-h-0 justify-between px-3 py-2 text-[12.5px]"
+                disabled={create.isPending}
+                onClick={() => create.mutate(fixtureId)}
+              >
                 {fixtureLabel(fixtureId)} <span aria-hidden="true">→</span>
               </button>
             ))}
@@ -168,18 +290,37 @@ function DashboardPage() {
 
   return (
     <ConsoleShell>
-      <main className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8" aria-labelledby="dashboard-title">
+      <main
+        className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8"
+        aria-labelledby="dashboard-title"
+      >
         <header className="flex flex-wrap items-end justify-between gap-4 pb-4">
           <div>
             <p className="eyebrow">Activity</p>
-            <h1 id="dashboard-title" className="mt-1 text-2xl font-semibold tracking-tight">Invoices</h1>
-            <p className="mt-1 max-w-2xl text-[13px] text-[var(--muted-foreground)]">Review processing outcomes and resolve invoices that need attention.</p>
+            <h1
+              id="dashboard-title"
+              className="mt-1 text-2xl font-semibold tracking-tight"
+            >
+              Invoices
+            </h1>
+            <p className="mt-1 max-w-2xl text-[13px] text-[var(--muted-foreground)]">
+              Review processing outcomes and resolve invoices that need
+              attention.
+            </p>
           </div>
-          <Link to="/" className="rounded bg-[var(--primary)] px-3 py-1.5 text-[13px] font-semibold text-[var(--primary-foreground)]">Upload invoice</Link>
+          <Link
+            to="/"
+            className="rounded bg-[var(--primary)] px-3 py-1.5 text-[13px] font-semibold text-[var(--primary-foreground)]"
+          >
+            Upload invoice
+          </Link>
         </header>
 
         {runs.data && (
-          <section className="panel mb-4 grid grid-cols-2 divide-y divide-[var(--border)] sm:grid-cols-4 sm:divide-x sm:divide-y-0" aria-label="Dashboard metrics">
+          <section
+            className="panel mb-4 grid grid-cols-2 divide-y divide-[var(--border)] sm:grid-cols-4 sm:divide-x sm:divide-y-0"
+            aria-label="Dashboard metrics"
+          >
             <Metric
               label="All invoices"
               value={String(runs.data.metrics.totalRuns)}
@@ -202,43 +343,60 @@ function DashboardPage() {
         )}
 
         <div className="panel mb-4 flex flex-wrap items-center gap-2 p-2">
-            <label className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-              <span className="sr-only">Status</span>
-              <select
-                aria-label="Status"
-                className="rounded border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-[13px] text-[var(--foreground)]"
-                value={state}
-                onChange={(event) => {
-                  const next = new URLSearchParams();
-                  if (event.target.value) next.set("state", event.target.value);
-                  setSearch(next);
-                }}
-              >
-                <option value="">All statuses</option>
-                <option value="POSTED">Posted</option>
-                <option value="NEEDS_REVIEW">Needs review</option>
-                <option value="AWAITING_PO_CONFIRMATION">Awaiting PO</option>
-                <option value="AWAITING_BUNDLE_CONFIRMATION">
-                  Awaiting bundle
-                </option>
-                <option value="PROCESSING">Processing</option>
-              </select>
-            </label>
-            <span className="ml-auto px-2 text-xs text-[var(--muted-foreground)]">
-              {runs.data ? `${runs.data.items.length} ${runs.data.items.length === 1 ? "invoice" : "invoices"}` : "Loading invoice history…"}
-            </span>
-          </div>
+          <label className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+            <span className="sr-only">Status</span>
+            <select
+              aria-label="Status"
+              className="rounded border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-[13px] text-[var(--foreground)]"
+              value={state}
+              onChange={(event) => {
+                const next = new URLSearchParams();
+                if (event.target.value) next.set("state", event.target.value);
+                setSearch(next);
+              }}
+            >
+              <option value="">All statuses</option>
+              <option value="POSTED">Posted</option>
+              <option value="NEEDS_REVIEW">Needs review</option>
+              <option value="AWAITING_PO_CONFIRMATION">Awaiting PO</option>
+              <option value="AWAITING_BUNDLE_CONFIRMATION">
+                Awaiting bundle
+              </option>
+              <option value="PROCESSING">Processing</option>
+            </select>
+          </label>
+          <span className="ml-auto px-2 text-xs text-[var(--muted-foreground)]">
+            {runs.data
+              ? `${runs.data.items.length} ${runs.data.items.length === 1 ? "invoice" : "invoices"}`
+              : "Loading invoice history…"}
+          </span>
+        </div>
 
-        <section className="panel overflow-hidden" aria-labelledby="recent-runs-title">
-          <h2 id="recent-runs-title" className="sr-only">Invoice activity</h2>
+        <section
+          className="panel overflow-hidden"
+          aria-labelledby="recent-runs-title"
+        >
+          <h2 id="recent-runs-title" className="sr-only">
+            Invoice activity
+          </h2>
           {runs.isPending && (
-            <p className="px-4 py-10 text-center text-[13px] text-[var(--muted-foreground)]">Loading invoices…</p>
+            <p className="px-4 py-10 text-center text-[13px] text-[var(--muted-foreground)]">
+              Loading invoices…
+            </p>
           )}
-          {runs.error && <p className="p-4 text-[var(--destructive)]">{runs.error.message}</p>}
+          {runs.error && (
+            <p className="p-4 text-[var(--destructive)]">
+              {runs.error.message}
+            </p>
+          )}
           {runs.data?.items.length === 0 && (
             <div className="px-4 py-12 text-center">
-              <strong className="text-[13.5px] font-medium">No invoices match this view</strong>
-              <p className="mt-1 text-[12.5px] text-[var(--muted-foreground)]">Try a different filter or upload a new invoice.</p>
+              <strong className="text-[13.5px] font-medium">
+                No invoices match this view
+              </strong>
+              <p className="mt-1 text-[12.5px] text-[var(--muted-foreground)]">
+                Try a different filter or upload a new invoice.
+              </p>
             </div>
           )}
           {runs.data && runs.data.items.length > 0 && (
@@ -252,25 +410,59 @@ function DashboardPage() {
                     <th className="px-3 py-2.5">Status</th>
                     <th className="px-3 py-2.5">Primary reason</th>
                     <th className="px-3 py-2.5">Updated</th>
-                    <th className="px-3 py-2.5"><span className="sr-only">Open</span></th>
+                    <th className="px-3 py-2.5">
+                      <span className="sr-only">Open</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {runs.data.items.map((run) => (
-                    <tr key={run.runId} className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
+                    <tr
+                      key={run.runId}
+                      className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]"
+                    >
                       <td className="px-3 py-2.5 align-top">
-                        <Link className="font-medium hover:text-[var(--primary)] hover:underline" to={`/runs/${run.runId}`}>{run.invoiceNumber ?? run.filename}</Link>
-                        <div className="max-w-[220px] truncate text-[11.5px] text-[var(--muted-foreground)]">{run.filename}</div>
+                        <Link
+                          className="font-medium hover:text-[var(--primary)] hover:underline"
+                          to={`/runs/${run.runId}`}
+                        >
+                          {run.invoiceNumber ?? run.filename}
+                        </Link>
+                        <div className="max-w-[220px] truncate text-[11.5px] text-[var(--muted-foreground)]">
+                          {run.filename}
+                        </div>
                       </td>
-                      <td className="px-3 py-2.5 align-top text-[12.5px]">{run.vendor ?? "—"}</td>
-                      <td className="px-3 py-2.5 text-right align-top tabular-nums">{run.total ? `$${run.total}` : "—"}</td>
-                      <td className="px-3 py-2.5 align-top"><span className={`status-badge ${stateTone(run.state)}`}>{formatLabel(run.state)}</span></td>
+                      <td className="px-3 py-2.5 align-top text-[12.5px]">
+                        {run.vendor ?? "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-right align-top tabular-nums">
+                        {run.total ? `$${run.total}` : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 align-top">
+                        <span
+                          className={`status-badge ${stateTone(run.state)}`}
+                        >
+                          {formatLabel(run.state)}
+                        </span>
+                      </td>
                       <td className="px-3 py-2.5 align-top text-[12.5px] text-[var(--muted-foreground)]">
-                        {run.reasonCode ? formatReason(run.reasonCode) : run.state === "PROCESSING" ? "Processing…" : "—"}
+                        {run.reasonCode
+                          ? formatReason(run.reasonCode)
+                          : run.state === "PROCESSING"
+                            ? "Processing…"
+                            : "—"}
                       </td>
-                      <td className="px-3 py-2.5 align-top text-xs text-[var(--muted-foreground)]">{formatDate(run.updatedAt)}</td>
+                      <td className="px-3 py-2.5 align-top text-xs text-[var(--muted-foreground)]">
+                        {formatDate(run.updatedAt)}
+                      </td>
                       <td className="px-3 py-2.5 text-right align-top">
-                        <Link className="text-[12.5px] font-medium text-[var(--primary)] hover:underline" to={`/runs/${run.runId}`} aria-label={`Open ${run.filename}`}>Open →</Link>
+                        <Link
+                          className="text-[12.5px] font-medium text-[var(--primary)] hover:underline"
+                          to={`/runs/${run.runId}`}
+                          aria-label={`Open ${run.filename}`}
+                        >
+                          Open →
+                        </Link>
                       </td>
                     </tr>
                   ))}
@@ -801,7 +993,7 @@ function ConsoleShell({ children }: { children: React.ReactNode }) {
   });
   return (
     <div className="app-shell">
-      <aside className="app-sidebar">
+      <header className="app-topbar">
         <Link className="brand" to="/">
           <span className="brand-mark" aria-hidden="true">
             <svg
@@ -823,20 +1015,12 @@ function ConsoleShell({ children }: { children: React.ReactNode }) {
         </Link>
         <nav aria-label="Primary">
           <NavLink to="/" end>
-            <span className="nav-icon" aria-hidden="true">
-              +
-            </span>
             New invoice
           </NavLink>
-          <NavLink to="/dashboard">
-            <span className="nav-icon" aria-hidden="true">
-              ▦
-            </span>
-            Invoices
-          </NavLink>
+          <NavLink to="/dashboard">Invoices</NavLink>
         </nav>
-        <div className="sidebar-footer">
-          <p>Workspace data is stored on this server.</p>
+        <div className="topbar-actions">
+          <span className="demo-indicator">Demo</span>
           <button
             type="button"
             className="reset-workspace"
@@ -852,12 +1036,10 @@ function ConsoleShell({ children }: { children: React.ReactNode }) {
             }}
           >
             {reset.isPending ? "Resetting…" : "Reset workspace"}
-            <span aria-hidden="true">{reset.isPending ? "…" : "Demo"}</span>
           </button>
-          <p>Restore demo invoices and clear activity.</p>
           {reset.error && <span className="error">{reset.error.message}</span>}
         </div>
-      </aside>
+      </header>
       <div className="app-content">{children}</div>
     </div>
   );
@@ -874,8 +1056,14 @@ function Metric({
 }) {
   return (
     <div className="px-4 py-3">
-      <span className="text-[11px] uppercase tracking-wider text-[var(--muted-foreground)]">{label}</span>
-      <strong className={`mt-1 block text-xl font-semibold tabular-nums ${tone === "warn" ? "text-[var(--warning)]" : tone === "ok" ? "text-[var(--success)]" : ""}`}>{value}</strong>
+      <span className="text-[11px] uppercase tracking-wider text-[var(--muted-foreground)]">
+        {label}
+      </span>
+      <strong
+        className={`mt-1 block text-xl font-semibold tabular-nums ${tone === "warn" ? "text-[var(--warning)]" : tone === "ok" ? "text-[var(--success)]" : ""}`}
+      >
+        {value}
+      </strong>
     </div>
   );
 }
@@ -1151,7 +1339,17 @@ function DecisionExplanation({ detail }: { detail: RunDetail }) {
             {failures.map((check) => (
               <li key={check.code}>
                 <strong>{formatReason(check.code)}</strong>
-                <span>{check.detail}</span>
+                <span>
+                  {check.detail}
+                  {check.calculation && (
+                    <small className="issue-calculation">
+                      {calculationSummary(check)}
+                      {check.sourceIds?.length
+                        ? ` Sources: ${check.sourceIds.join(", ")}.`
+                        : ""}
+                    </small>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
@@ -1347,6 +1545,7 @@ function formatReason(value: string) {
       MISSING_PO: "PO confirmation required",
       BUNDLE_MAPPING_REQUIRED: "Bundle confirmation required",
       PRICE_MATCH: "Price variance",
+      MULTIPLE_ISSUES: "Multiple independent issues",
       RECEIPT_CAPACITY: "Receipt quantity exceeded",
       ORDERED_CAPACITY: "Ordered quantity exceeded",
       PO_VALUE_CAPACITY: "PO value exceeded",
@@ -1411,6 +1610,8 @@ function reasonExplanation(detail: RunDetail) {
       return `Invoice ${detail.invoice?.invoiceNumber ?? "number"} is already posted for this vendor. Nothing was posted again.`;
     case "RECEIPT_CAPACITY_EXCEEDED":
       return "The invoice quantity is greater than the remaining received quantity on the purchase order. Nothing was posted.";
+    case "MULTIPLE_ISSUES":
+      return "More than one independent control failed. Nothing was posted.";
     case "MISSING_PO":
       return "No purchase order was found on the invoice. Confirm the stored candidate before posting.";
     case "BUNDLE_MAPPING_REQUIRED":
@@ -1424,6 +1625,14 @@ function reasonExplanation(detail: RunDetail) {
         detail.nextAction ?? "Review the failed control before continuing."
       );
   }
+}
+
+function calculationSummary(check: RunDetail["checks"][number]) {
+  if (!check.calculation) return "";
+  const calculation = check.calculation;
+  if (calculation.kind === "RECEIPT_CAPACITY")
+    return `Requested ${calculation.requestedQuantity} ${calculation.uom}; received availability ${calculation.receivedAvailability} ${calculation.uom}; shortfall ${calculation.shortfall} ${calculation.uom}; ordered availability ${calculation.orderedAvailability} ${calculation.uom}.`;
+  return `Invoice $${calculation.invoiceUnitPrice} vs PO $${calculation.poUnitPrice} per ${calculation.uom}; $${calculation.varianceAmount} total variance (${calculation.variancePercent}% vs ${calculation.tolerancePercent}% tolerance).`;
 }
 
 function stateTone(state: string): "neutral" | "ok" | "warn" | "bad" {

@@ -172,14 +172,38 @@ describe("invoice workflow UI", () => {
             state: "NEEDS_REVIEW",
             decision: "NEEDS_REVIEW",
             execution: "BLOCKED",
-            reasonCode: "PRICE_VARIANCE_EXCEEDED",
+            reasonCode: "MULTIPLE_ISSUES",
             ledgerId: null,
             checks: [
-              { code: "PRICE_MATCH", passed: false, detail: "Price differs." },
+              {
+                code: "PRICE_MATCH",
+                passed: false,
+                detail: "Price differs.",
+                calculation: {
+                  kind: "PRICE_VARIANCE",
+                  sku: "WID-100",
+                  uom: "EA",
+                  quantity: "3",
+                  invoiceUnitPrice: "55.00",
+                  poUnitPrice: "50.00",
+                  varianceAmount: "15.00",
+                  variancePercent: "10.00",
+                  tolerancePercent: "1.00",
+                },
+              },
               {
                 code: "RECEIPT_CAPACITY",
                 passed: false,
                 detail: "Receipt quantity is insufficient.",
+                calculation: {
+                  kind: "RECEIPT_CAPACITY",
+                  sku: "VAL-500",
+                  uom: "EA",
+                  requestedQuantity: "3",
+                  receivedAvailability: "2",
+                  orderedAvailability: "6",
+                  shortfall: "1",
+                },
               },
             ],
           }),
@@ -196,6 +220,11 @@ describe("invoice workflow UI", () => {
     expect(
       screen.getAllByText("Receipt quantity exceeded").length,
     ).toBeGreaterThan(0);
+    expect(
+      screen.getByText(
+        /Requested 3 EA; received availability 2 EA; shortfall 1 EA/i,
+      ),
+    ).toBeVisible();
   });
 
   it("shows a retry action when processing fails unexpectedly", async () => {
