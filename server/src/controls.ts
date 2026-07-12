@@ -86,7 +86,7 @@ export function normalizeInvoice(
     sources = fieldSources,
   ) => {
     if (!id) {
-      if (required) failNormalization("MISSING_REQUIRED_FIELD");
+      if (required) failNormalization("MISSING_REQUIRED_FIELD", field);
       return "";
     }
     const source = byId.get(id);
@@ -94,9 +94,9 @@ export function normalizeInvoice(
     selected.push(source);
     if (field) sources[field] = id;
     if (source.confidence !== null && source.confidence < 0.75)
-      failNormalization("LOW_CONFIDENCE");
+      failNormalization("LOW_CONFIDENCE", field);
     const value = source.content.normalize("NFKC").trim();
-    if (required && !value) failNormalization("MISSING_REQUIRED_FIELD");
+    if (required && !value) failNormalization("MISSING_REQUIRED_FIELD", field);
     return value;
   };
 
@@ -118,7 +118,7 @@ export function normalizeInvoice(
   )
     failNormalization("UNSUPPORTED_STRUCTURE");
 
-  const observedLines = mapping.lines.map((line) => {
+  const observedLines = mapping.lines.map((line, index) => {
     const sourceIds: Record<string, string> = {};
     const sku = select(line.sku, false, "sku", sourceIds);
     const description = select(
@@ -127,7 +127,8 @@ export function normalizeInvoice(
       "description",
       sourceIds,
     );
-    if (!sku && !description) failNormalization("MISSING_REQUIRED_FIELD");
+    if (!sku && !description)
+      failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.identity`);
     const quantity = parseQuantity(
       select(line.quantity, true, "quantity", sourceIds),
     );
@@ -191,7 +192,7 @@ export function normalizeInvoice(
       : "";
   if (currency && currency !== "USD")
     failNormalization("UNSUPPORTED_STRUCTURE");
-  if (!currency) failNormalization("MISSING_REQUIRED_FIELD");
+  if (!currency) failNormalization("MISSING_REQUIRED_FIELD", "currency");
 
   const documentInclusionClaim = claimsTaxInclusion(taxNote);
   const documentRate = parseTaxRate(taxNote);
@@ -745,8 +746,11 @@ export class ControlError extends Error {
 }
 
 export class NormalizationError extends Error {
-  constructor(readonly reasonCode: string) {
-    super(reasonCode);
+  constructor(
+    readonly reasonCode: string,
+    readonly field?: string,
+  ) {
+    super(field ? `${reasonCode}: ${field}` : reasonCode);
   }
 }
 
@@ -1022,6 +1026,6 @@ function candidateKey(components: BundleCandidate["components"]) {
     .join("|");
 }
 
-function failNormalization(reasonCode: string): never {
-  throw new NormalizationError(reasonCode);
+function failNormalization(reasonCode: string, field?: string): never {
+  throw new NormalizationError(reasonCode, field);
 }
