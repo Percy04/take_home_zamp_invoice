@@ -319,7 +319,7 @@ async function mapWithOpenAI(evidence: SourceRef[]) {
         {
           role: "system",
           content:
-            "Map invoice fields only by selecting provided source IDs. Return IDs exactly as provided. Associate explicit tax-inclusion, tax-rate, and tax-amount evidence with the relevant line when the document does so. Never infer, rewrite, calculate, or decide values.",
+            "Map invoice fields only by selecting provided source IDs. Return IDs exactly as provided. When equivalent sources contain the same observed value, select the highest-confidence source and prefer confidence of at least 0.75. Associate explicit tax-inclusion, tax-rate, and tax-amount evidence with the relevant line when the document does so. Never infer, rewrite, calculate, or decide values.",
         },
         { role: "user", content: JSON.stringify(evidence) },
       ],
@@ -362,6 +362,7 @@ async function mapWithGemini(evidence: SourceRef[]) {
               {
                 text:
                   "Map invoice fields only by selecting provided source IDs. " +
+                  "Prefer the highest-confidence equivalent source and confidence of at least 0.75. " +
                   "Associate explicit tax evidence with its relevant line. " +
                   "Return IDs exactly as provided. Never infer or rewrite values.",
               },
