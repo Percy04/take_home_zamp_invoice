@@ -373,7 +373,9 @@ function RunPage() {
   const { runId = "" } = useParams();
   const processStarted = useRef(false);
   const [processError, setProcessError] = useState<string>();
-  const [pdfPage, setPdfPage] = useState(1);
+  const [pdfView, setPdfView] = useState({ runId, page: 1 });
+  const pdfPage = pdfView.runId === runId ? pdfView.page : 1;
+  const setPdfPage = (page: number) => setPdfView({ runId, page });
   const run = useQuery({
     queryKey: ["run", runId],
     queryFn: () => getRun(runId),
@@ -395,8 +397,6 @@ function RunPage() {
       await queryClient.invalidateQueries({ queryKey: ["runs"] });
     },
   });
-
-  useEffect(() => setPdfPage(1), [runId]);
 
   useEffect(() => {
     if (

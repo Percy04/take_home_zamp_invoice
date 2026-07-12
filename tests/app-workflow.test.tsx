@@ -141,9 +141,7 @@ describe("invoice workflow UI", () => {
     });
     const fetchMock = vi
       .fn()
-      .mockImplementation((input: RequestInfo | URL) =>
-        Promise.resolve(jsonResponse(awaiting)),
-      );
+      .mockImplementation(() => Promise.resolve(jsonResponse(awaiting)));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
