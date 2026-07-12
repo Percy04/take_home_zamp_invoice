@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildInvoicePreview,
   NormalizationError,
   normalizeInvoice,
 } from "../server/src/controls.js";
@@ -59,6 +60,23 @@ function inclusiveEvidence(): SourceRef[] {
 }
 
 describe("deterministic normalization", () => {
+  it("preserves mapped evidence when normalization stops on a missing field", () => {
+    const preview = buildInvoicePreview(
+      inclusiveEvidence(),
+      { ...mapping, invoiceDate: "missing-source" },
+      "invoiceDate",
+    );
+
+    expect(preview).toMatchObject({
+      vendor: "Acme Industrial Supplies LLC",
+      invoiceNumber: "ACME-2026-005",
+      invoiceDate: null,
+      total: "$590.00",
+      missingField: "invoiceDate",
+      lines: [{ description: "Safety Sensor", quantity: "2" }],
+    });
+  });
+
   it("preserves observed inclusive values and derives exact net values", () => {
     const invoice = normalizeInvoice(inclusiveEvidence(), mapping);
 

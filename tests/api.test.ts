@@ -88,6 +88,35 @@ describe("confirmation errors", () => {
   });
 });
 
+describe("processing re-entry", () => {
+  it("returns the current run instead of failing a concurrent processing request", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-process-reentry-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+    const created = await request(app)
+      .post("/api/runs")
+      .field("fixtureId", "happy")
+      .expect(201);
+
+    const responses = await Promise.all([
+      request(app).post(`/api/runs/${created.body.runId}/process`),
+      request(app).post(`/api/runs/${created.body.runId}/process`),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      200, 202,
+    ]);
+    expect(
+      responses.find((response) => response.status === 202)?.body,
+    ).toMatchObject({
+      runId: created.body.runId,
+      state: "PROCESSING",
+    });
+    storage.close();
+  });
+});
+
 describe("API hardening", () => {
   it("reuses an Idempotency-Key and paginates with state filters", async () => {
     const runtime = mkdtempSync(path.join(tmpdir(), "zamp-api-"));

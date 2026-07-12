@@ -8,7 +8,12 @@ import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
 import { runStateSchema } from "../../shared/contracts.js";
 import { env } from "./env.js";
-import { confirmBundle, confirmPo, processInvoice } from "./pipeline.js";
+import {
+  confirmBundle,
+  confirmPo,
+  processInvoice,
+  rejectPo,
+} from "./pipeline.js";
 import type { Storage } from "./storage.js";
 
 const maxPdfBytes = 10 * 1024 * 1024;
@@ -46,7 +51,9 @@ export function createApi(storage?: Storage) {
         database: storage ? "available" : "not-initialized",
       });
     } catch {
-      response.status(503).json({ status: "not-ready", database: "unavailable" });
+      response
+        .status(503)
+        .json({ status: "not-ready", database: "unavailable" });
     }
   });
 
@@ -62,12 +69,16 @@ export function createApi(storage?: Storage) {
       .strict()
       .safeParse(request.query);
     if (!parsed.success)
-      return response.status(400).json(error("INVALID_QUERY", "Run filters are invalid."));
+      return response
+        .status(400)
+        .json(error("INVALID_QUERY", "Run filters are invalid."));
     try {
       response.json(storage.listRuns(parsed.data));
     } catch (caught) {
       if (caught instanceof Error && caught.message === "INVALID_CURSOR")
-        return response.status(400).json(error("INVALID_CURSOR", "The pagination cursor is invalid."));
+        return response
+          .status(400)
+          .json(error("INVALID_CURSOR", "The pagination cursor is invalid."));
       throw caught;
     }
   });
@@ -80,7 +91,11 @@ export function createApi(storage?: Storage) {
       try {
         const idempotencyKey = request.get("Idempotency-Key")?.trim();
         if (idempotencyKey && idempotencyKey.length > 200)
-          return response.status(400).json(error("INVALID_IDEMPOTENCY_KEY", "Idempotency-Key is too long."));
+          return response
+            .status(400)
+            .json(
+              error("INVALID_IDEMPOTENCY_KEY", "Idempotency-Key is too long."),
+            );
         if (idempotencyKey) {
           const existing = storage.getRunByIdempotencyKey(idempotencyKey);
           if (existing)
@@ -132,73 +147,145 @@ export function createApi(storage?: Storage) {
     },
   );
 
-  api.post("/runs/:runId/process", writeLimit, async (request, response, next) => {
-    try {
-      const runId = validRunId(request.params.runId);
-      if (!runId)
-        return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
-      if (!emptyBody(request.body))
-        return response.status(400).json(error("INVALID_BODY", "This action accepts no request body.", runId));
-      const run = storage.getRun(runId);
-      if (!run)
-        return response
-          .status(404)
-          .json(error("RUN_NOT_FOUND", "Run not found."));
-      if (processingRuns.has(runId))
-        return response.status(409).json(error("RUN_ALREADY_PROCESSING", "This run is already processing.", runId));
-      processingRuns.add(runId);
+  api.post(
+    "/runs/:runId/process",
+    writeLimit,
+    async (request, response, next) => {
       try {
-        response.json(await processInvoice(runId, storage));
-      } finally {
-        processingRuns.delete(runId);
+        const runId = validRunId(request.params.runId);
+        if (!runId)
+          return response
+            .status(400)
+            .json(error("INVALID_RUN_ID", "Run ID is invalid."));
+        if (!emptyBody(request.body))
+          return response
+            .status(400)
+            .json(
+              error(
+                "INVALID_BODY",
+                "This action accepts no request body.",
+                runId,
+              ),
+            );
+        const run = storage.getRun(runId);
+        if (!run)
+          return response
+            .status(404)
+            .json(error("RUN_NOT_FOUND", "Run not found."));
+        if (processingRuns.has(runId)) return response.status(202).json(run);
+        processingRuns.add(runId);
+        try {
+          response.json(await processInvoice(runId, storage));
+        } finally {
+          processingRuns.delete(runId);
+        }
+      } catch (caught) {
+        next(caught);
       }
+    },
+  );
+
+  api.post(
+    "/runs/:runId/confirm-po",
+    writeLimit,
+    async (request, response, next) => {
+      try {
+        const runId = validRunId(request.params.runId);
+        if (!runId)
+          return response
+            .status(400)
+            .json(error("INVALID_RUN_ID", "Run ID is invalid."));
+        const body = z
+          .object({ poNumber: z.string().trim().min(1) })
+          .strict()
+          .safeParse(request.body);
+        if (!body.success)
+          return response
+            .status(400)
+            .json(
+              error(
+                "INVALID_CONFIRMATION",
+                "Provide exactly one PO candidate.",
+                runId,
+              ),
+            );
+        const run = storage.getRun(runId);
+        if (!run)
+          return response
+            .status(404)
+            .json(error("RUN_NOT_FOUND", "Run not found."));
+        response.json(confirmPo(runId, storage, body.data.poNumber));
+      } catch (caught) {
+        next(caught);
+      }
+    },
+  );
+
+  api.post("/runs/:runId/reject-po", writeLimit, (request, response, next) => {
+    try {
+      const runId = validRunId(request.params.runId);
+      if (!runId)
+        return response
+          .status(400)
+          .json(error("INVALID_RUN_ID", "Run ID is invalid."));
+      if (!emptyBody(request.body))
+        return response
+          .status(400)
+          .json(
+            error(
+              "INVALID_BODY",
+              "This action accepts no request body.",
+              runId,
+            ),
+          );
+      response.json(rejectPo(runId, storage));
     } catch (caught) {
       next(caught);
     }
   });
 
-  api.post("/runs/:runId/confirm-po", writeLimit, async (request, response, next) => {
-    try {
-      const runId = validRunId(request.params.runId);
-      if (!runId)
-        return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
-      const body = z.object({ poNumber: z.string().trim().min(1) }).strict().safeParse(request.body);
-      if (!body.success)
-        return response.status(400).json(error("INVALID_CONFIRMATION", "Provide exactly one PO candidate.", runId));
-      const run = storage.getRun(runId);
-      if (!run)
-        return response
-          .status(404)
-          .json(error("RUN_NOT_FOUND", "Run not found."));
-      response.json(confirmPo(runId, storage, body.data.poNumber));
-    } catch (caught) {
-      next(caught);
-    }
-  });
-
-  api.post("/runs/:runId/confirm-bundle", writeLimit, async (request, response, next) => {
-    try {
-      const runId = validRunId(request.params.runId);
-      if (!runId)
-        return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
-      const body = z.object({ candidateId: z.string().trim().min(1) }).strict().safeParse(request.body);
-      if (!body.success)
-        return response.status(400).json(error("INVALID_CONFIRMATION", "Provide exactly one bundle candidate.", runId));
-      const run = storage.getRun(runId);
-      if (!run)
-        return response
-          .status(404)
-          .json(error("RUN_NOT_FOUND", "Run not found."));
-      response.json(confirmBundle(runId, storage, body.data.candidateId));
-    } catch (caught) {
-      next(caught);
-    }
-  });
+  api.post(
+    "/runs/:runId/confirm-bundle",
+    writeLimit,
+    async (request, response, next) => {
+      try {
+        const runId = validRunId(request.params.runId);
+        if (!runId)
+          return response
+            .status(400)
+            .json(error("INVALID_RUN_ID", "Run ID is invalid."));
+        const body = z
+          .object({ candidateId: z.string().trim().min(1) })
+          .strict()
+          .safeParse(request.body);
+        if (!body.success)
+          return response
+            .status(400)
+            .json(
+              error(
+                "INVALID_CONFIRMATION",
+                "Provide exactly one bundle candidate.",
+                runId,
+              ),
+            );
+        const run = storage.getRun(runId);
+        if (!run)
+          return response
+            .status(404)
+            .json(error("RUN_NOT_FOUND", "Run not found."));
+        response.json(confirmBundle(runId, storage, body.data.candidateId));
+      } catch (caught) {
+        next(caught);
+      }
+    },
+  );
 
   api.get("/runs/:runId", (request, response) => {
     const runId = validRunId(request.params.runId);
     if (!runId)
-      return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
+      return response
+        .status(400)
+        .json(error("INVALID_RUN_ID", "Run ID is invalid."));
     const run = storage.getRun(runId);
     if (!run)
       return response
@@ -210,7 +297,9 @@ export function createApi(storage?: Storage) {
   api.get("/runs/:runId/document", (request, response) => {
     const runId = validRunId(request.params.runId);
     if (!runId)
-      return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
+      return response
+        .status(400)
+        .json(error("INVALID_RUN_ID", "Run ID is invalid."));
     const pdfPath = storage.getPdfPath(runId);
     if (!pdfPath)
       return response
@@ -225,11 +314,22 @@ export function createApi(storage?: Storage) {
 
   api.post("/reset", writeLimit, (request, response) => {
     if (!env.ALLOW_DEMO_RESET)
-      return response.status(403).json(error("RESET_DISABLED", "Demo reset is disabled."));
+      return response
+        .status(403)
+        .json(error("RESET_DISABLED", "Demo reset is disabled."));
     if (!emptyBody(request.body))
-      return response.status(400).json(error("INVALID_BODY", "Reset accepts no request body."));
+      return response
+        .status(400)
+        .json(error("INVALID_BODY", "Reset accepts no request body."));
     if (processingRuns.size)
-      return response.status(409).json(error("WRITE_IN_PROGRESS", "Reset is unavailable while a run is processing."));
+      return response
+        .status(409)
+        .json(
+          error(
+            "WRITE_IN_PROGRESS",
+            "Reset is unavailable while a run is processing.",
+          ),
+        );
     storage.reset();
     response.json({ status: "reset" });
   });

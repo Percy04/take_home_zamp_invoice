@@ -110,6 +110,10 @@ export const allocationSchema = z.object({
   actualNetAmount: z.string(),
   remainingOrderedQuantity: z.string(),
   remainingReceivedQuantity: z.string(),
+  poDescription: z.string().optional(),
+  poUnitPrice: z.string().optional(),
+  availableOrderedQuantity: z.string().optional(),
+  availableReceivedQuantity: z.string().optional(),
   matchReason: z.string().optional(),
   priceVariance: z.string().nullable().optional(),
   sourceIds: z.array(z.string().min(1)).optional(),
@@ -127,8 +131,26 @@ export const bundleCandidateSchema = z.object({
       uom: z.string(),
       quantity: z.string(),
       poBasisAmount: z.string(),
+      description: z.string().optional(),
+      unitPrice: z.string().optional(),
+      availableOrderedQuantity: z.string().optional(),
+      availableReceivedQuantity: z.string().optional(),
     }),
   ),
+});
+
+export const poCandidateLineSchema = z.object({
+  invoiceLineIndex: z.number().int().nonnegative(),
+  invoiceSku: z.string(),
+  invoiceDescription: z.string(),
+  requestedQuantity: z.string(),
+  uom: z.string(),
+  poLineId: z.string(),
+  poSku: z.string(),
+  poDescription: z.string(),
+  poUnitPrice: z.string(),
+  availableOrderedQuantity: z.string(),
+  availableReceivedQuantity: z.string(),
 });
 
 export const poCandidateSchema = z.object({
@@ -137,6 +159,49 @@ export const poCandidateSchema = z.object({
   matchedLineCount: z.number().int().nonnegative(),
   remainingPoBasisValue: z.string(),
   subtotalDifference: z.string(),
+  lines: z.array(poCandidateLineSchema).default([]),
+});
+
+export const invoicePreviewSchema = z.object({
+  vendor: z.string().nullable(),
+  invoiceNumber: z.string().nullable(),
+  invoiceDate: z.string().nullable(),
+  poNumber: z.string().nullable(),
+  currency: z.string().nullable(),
+  subtotal: z.string().nullable(),
+  tax: z.string().nullable(),
+  total: z.string().nullable(),
+  missingField: z.string().nullable(),
+  lines: z.array(
+    z.object({
+      sku: z.string().nullable(),
+      description: z.string().nullable(),
+      quantity: z.string().nullable(),
+      uom: z.string().nullable(),
+      unitPrice: z.string().nullable(),
+      amount: z.string().nullable(),
+    }),
+  ),
+});
+
+export const duplicateMatchSchema = z.object({
+  ledgerId: z.string(),
+  invoiceNumber: z.string(),
+  invoiceDate: z.string(),
+  poNumber: z.string(),
+  total: z.string(),
+  postedAt: z.iso.datetime(),
+  allocations: z.array(
+    z.object({
+      poLineId: z.string(),
+      sku: z.string(),
+      description: z.string(),
+      uom: z.string(),
+      quantity: z.string(),
+      unitPrice: z.string(),
+      poBasisAmount: z.string(),
+    }),
+  ),
 });
 
 export const runDetailSchema = z
@@ -156,6 +221,8 @@ export const runDetailSchema = z
     stages: z.array(stageEventSchema),
     evidence: z.array(sourceRefSchema),
     invoice: normalizedInvoiceSchema.nullable(),
+    invoicePreview: invoicePreviewSchema.nullable(),
+    duplicateMatch: duplicateMatchSchema.nullable(),
     checks: z.array(checkResultSchema),
     allocations: z.array(allocationSchema),
     candidatePo: z.string().nullable(),
@@ -229,6 +296,8 @@ export type StageEvent = z.infer<typeof stageEventSchema>;
 export type CheckResult = z.infer<typeof checkResultSchema>;
 export type NormalizedInvoice = z.infer<typeof normalizedInvoiceSchema>;
 export type Allocation = z.infer<typeof allocationSchema>;
+export type InvoicePreview = z.infer<typeof invoicePreviewSchema>;
+export type DuplicateMatch = z.infer<typeof duplicateMatchSchema>;
 export type BundleCandidate = z.infer<typeof bundleCandidateSchema>;
 export type PoCandidate = z.infer<typeof poCandidateSchema>;
 export type RunDetail = z.infer<typeof runDetailSchema>;

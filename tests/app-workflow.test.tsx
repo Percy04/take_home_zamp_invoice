@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../client/src/app";
+import { runDetailSchema, type RunDetail } from "../shared/contracts";
 
 vi.mock("../client/src/pdf-preview", () => ({
   default: () => <div>PDF preview</div>,
@@ -57,6 +58,25 @@ describe("invoice workflow UI", () => {
             reasonCode: "DUPLICATE",
             ledgerId: null,
             nextAction: "Verify that this is not a duplicate submission.",
+            duplicateMatch: {
+              ledgerId: "LEDGER-SEED-001",
+              invoiceNumber: "ACME-2026-000",
+              invoiceDate: "2026-06-01",
+              poNumber: "PO-0999",
+              total: "110.00",
+              postedAt: "2026-06-01T10:00:00.000Z",
+              allocations: [
+                {
+                  poLineId: "PO-0999-L1",
+                  sku: "FIL-900",
+                  description: "Replacement Filter",
+                  uom: "EA",
+                  quantity: "1",
+                  unitPrice: "100.00",
+                  poBasisAmount: "100.00",
+                },
+              ],
+            },
           }),
         ),
       ),
@@ -70,6 +90,112 @@ describe("invoice workflow UI", () => {
     expect(screen.getByText("Why this needs review")).toBeVisible();
     expect(screen.getAllByText("Duplicate invoice")).toHaveLength(2);
     expect(screen.getByText(/nothing was posted again/i)).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Existing ledger invoice" }),
+    ).toBeVisible();
+    expect(screen.getByText("LEDGER-SEED-001")).toBeVisible();
+    expect(screen.getByText("Replacement Filter")).toBeVisible();
+  });
+
+  it("shows partial invoice evidence and identifies the missing field", async () => {
+    const runId = "22222222-2222-4222-8222-222222222224";
+    window.history.replaceState({}, "", `/runs/${runId}`);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          runDetail({
+            runId,
+            state: "NEEDS_REVIEW",
+            decision: "NEEDS_REVIEW",
+            execution: "BLOCKED",
+            reasonCode: "MISSING_REQUIRED_FIELD",
+            ledgerId: null,
+            invoice: null,
+            invoicePreview: {
+              vendor: "Acme Industrial Supplies LLC",
+              invoiceNumber: "ACME-2026-001",
+              invoiceDate: null,
+              poNumber: "PO-1001",
+              currency: "USD",
+              subtotal: "$900.00",
+              tax: "$90.00",
+              total: "$990.00",
+              missingField: "invoiceDate",
+              lines: [
+                {
+                  sku: "WID-100",
+                  description: "Industrial Widget",
+                  quantity: "8",
+                  uom: "EA",
+                  unitPrice: "$100.00",
+                  amount: "$800.00",
+                },
+              ],
+            },
+            checks: [
+              {
+                code: "MISSING_REQUIRED_FIELD",
+                passed: false,
+                detail:
+                  "Invoice date is missing or could not be read reliably.",
+                expected: "A readable invoice date",
+                actual: "Not found",
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "What the system could read",
+      }),
+    ).toBeVisible();
+    expect(screen.getByText("Invoice date missing")).toBeVisible();
+    expect(screen.getByText("Industrial Widget")).toBeVisible();
+    expect(screen.getByText("$990.00")).toBeVisible();
+  });
+
+  it("summarizes independent failures together", async () => {
+    const runId = "22222222-2222-4222-8222-222222222223";
+    window.history.replaceState({}, "", `/runs/${runId}`);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          runDetail({
+            runId,
+            state: "NEEDS_REVIEW",
+            decision: "NEEDS_REVIEW",
+            execution: "BLOCKED",
+            reasonCode: "PRICE_VARIANCE_EXCEEDED",
+            ledgerId: null,
+            checks: [
+              { code: "PRICE_MATCH", passed: false, detail: "Price differs." },
+              {
+                code: "RECEIPT_CAPACITY",
+                passed: false,
+                detail: "Receipt quantity is insufficient.",
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "2 issues need attention" }),
+    ).toBeVisible();
+    expect(screen.getAllByText("Price variance").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Receipt quantity exceeded").length,
+    ).toBeGreaterThan(0);
   });
 
   it("shows a retry action when processing fails unexpectedly", async () => {
@@ -113,8 +239,11 @@ describe("invoice workflow UI", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Processing service unavailable.",
     );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "The server may still be processing this invoice.",
+    );
     expect(
-      screen.getByRole("button", { name: "Retry processing" }),
+      screen.getByRole("button", { name: "Refresh status" }),
     ).toBeEnabled();
   });
 
@@ -136,6 +265,21 @@ describe("invoice workflow UI", () => {
           matchedLineCount: 1,
           remainingPoBasisValue: "500.00",
           subtotalDifference: "2.00",
+          lines: [
+            {
+              invoiceLineIndex: 0,
+              invoiceSku: "SEN-300",
+              invoiceDescription: "Safety Sensor",
+              requestedQuantity: "2",
+              uom: "EA",
+              poLineId: "PO-1002-L1",
+              poSku: "SEN-300",
+              poDescription: "Safety Sensor",
+              poUnitPrice: "250.00",
+              availableOrderedQuantity: "2",
+              availableReceivedQuantity: "2",
+            },
+          ],
         },
       ],
     });
@@ -145,7 +289,25 @@ describe("invoice workflow UI", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm PO" }));
+    expect(
+      await screen.findByRole("button", { name: "Not this PO" }),
+    ).toBeEnabled();
+    expect(screen.getByText(/2 EA requested/)).toBeVisible();
+    expect(screen.getByText(/2 received available/)).toBeVisible();
+    const action = screen.getByLabelText("PO confirmation");
+    const evidence = screen.getByRole("heading", {
+      name: "Suggested purchase order",
+    });
+    const document = screen.getByRole("heading", { name: "Original PDF" });
+    expect(
+      action.compareDocumentPosition(evidence) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      evidence.compareDocumentPosition(document) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -165,6 +327,19 @@ describe("invoice workflow UI", () => {
       execution: "AWAITING_CONFIRMATION",
       reasonCode: "BUNDLE_MAPPING_REQUIRED",
       ledgerId: null,
+      invoice: {
+        ...runDetail({}).invoice!,
+        poNumber: "PO-1005",
+        lines: [
+          {
+            ...runDetail({}).invoice!.lines[0]!,
+            sku: "",
+            description: "Maintenance Pack",
+            quantity: "1",
+            uom: "KIT",
+          },
+        ],
+      },
       bundleCandidates: [
         {
           id: "BUNDLE-CANDIDATE-1",
@@ -178,6 +353,10 @@ describe("invoice workflow UI", () => {
               uom: "EA",
               quantity: "2",
               poBasisAmount: "200.00",
+              description: "Industrial Widget",
+              unitPrice: "100.00",
+              availableOrderedQuantity: "2",
+              availableReceivedQuantity: "2",
             },
           ],
         },
@@ -189,9 +368,10 @@ describe("invoice workflow UI", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Confirm bundle" }),
-    );
+    expect(await screen.findByText("PO PO-1005")).toBeVisible();
+    expect(screen.getByText("Industrial Widget")).toBeVisible();
+    expect(screen.getByText(/2 received available/)).toBeVisible();
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -246,10 +426,8 @@ describe("dashboard and workspace actions", () => {
   });
 });
 
-function runDetail(
-  overrides: Record<string, unknown> = {},
-): Record<string, unknown> {
-  return {
+function runDetail(overrides: Record<string, unknown> = {}): RunDetail {
+  return runDetailSchema.parse({
     runId: postedRunId,
     filename: "happy.pdf",
     state: "POSTED",
@@ -298,6 +476,8 @@ function runDetail(
       ],
       fieldSources: { vendor: "field.VendorName" },
     },
+    invoicePreview: null,
+    duplicateMatch: null,
     checks: [{ code: "VENDOR_MATCH", passed: true, detail: "Vendor matched." }],
     allocations: [
       {
@@ -318,7 +498,7 @@ function runDetail(
     poCandidates: [],
     bundleCandidates: [],
     ...overrides,
-  };
+  });
 }
 
 function jsonResponse(body: unknown, status = 200) {

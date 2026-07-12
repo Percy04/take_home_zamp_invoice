@@ -80,6 +80,10 @@ export function confirmPo(runId: string, poNumber: string) {
   });
 }
 
+export function rejectPo(runId: string) {
+  return runRequest(`/api/runs/${runId}/reject-po`, { method: "POST" });
+}
+
 export function confirmBundle(runId: string, candidateId: string) {
   return runRequest(`/api/runs/${runId}/confirm-bundle`, {
     method: "POST",

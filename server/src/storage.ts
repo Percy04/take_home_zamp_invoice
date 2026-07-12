@@ -15,6 +15,8 @@ import {
   type Allocation,
   type BundleCandidate,
   type CheckResult,
+  type DuplicateMatch,
+  type InvoicePreview,
   type NormalizedInvoice,
   type PoCandidate,
   type RunDetail,
@@ -47,6 +49,8 @@ type Evaluation = {
   invoice: NormalizedInvoice | null;
   checks: CheckResult[];
   allocations: Allocation[];
+  invoicePreview?: InvoicePreview | null;
+  duplicateMatch?: DuplicateMatch | null;
 };
 
 export class Storage {
@@ -142,6 +146,8 @@ export class Storage {
       invoice: evaluation.invoice
         ? normalizedInvoiceSchema.parse(evaluation.invoice)
         : null,
+      invoicePreview: evaluation.invoicePreview ?? null,
+      duplicateMatch: evaluation.duplicateMatch ?? null,
       checks: checkResultSchema.array().parse(evaluation.checks),
       allocations: allocationSchema.array().parse(evaluation.allocations),
       candidatePo: parsePoCandidates(row.candidates_json)[0]?.poNumber ?? null,
@@ -324,6 +330,62 @@ export class Storage {
       : null;
   }
 
+  findDuplicate(invoice: NormalizedInvoice): DuplicateMatch | null {
+    const vendor = this.db
+      .prepare("SELECT id FROM vendors WHERE normalized_name = ?")
+      .get(normalize(invoice.vendor)) as { id: string } | undefined;
+    if (!vendor) return null;
+    const posted = this.db
+      .prepare(
+        `SELECT id, invoice_number, invoice_date, po_number, total, posted_at
+         FROM posted_invoices WHERE vendor_id = ? AND normalized_invoice_number = ?`,
+      )
+      .get(vendor.id, normalize(invoice.invoiceNumber)) as
+      | {
+          id: string;
+          invoice_number: string;
+          invoice_date: string;
+          po_number: string;
+          total: string;
+          posted_at: string;
+        }
+      | undefined;
+    if (!posted) return null;
+    const allocations = this.db
+      .prepare(
+        `SELECT a.po_line_id, a.component_quantity, a.po_basis_amount,
+                p.sku, p.description, p.uom, p.unit_price
+         FROM allocations a JOIN po_lines p ON p.id = a.po_line_id
+         WHERE a.posted_invoice_id = ? ORDER BY a.invoice_line_index, a.id`,
+      )
+      .all(posted.id) as Array<{
+      po_line_id: string;
+      component_quantity: string;
+      po_basis_amount: string;
+      sku: string | null;
+      description: string;
+      uom: string;
+      unit_price: string;
+    }>;
+    return {
+      ledgerId: posted.id,
+      invoiceNumber: posted.invoice_number,
+      invoiceDate: posted.invoice_date,
+      poNumber: posted.po_number,
+      total: posted.total,
+      postedAt: posted.posted_at,
+      allocations: allocations.map((allocation) => ({
+        poLineId: allocation.po_line_id,
+        sku: allocation.sku ?? "",
+        description: allocation.description,
+        uom: allocation.uom,
+        quantity: allocation.component_quantity,
+        unitPrice: allocation.unit_price,
+        poBasisAmount: allocation.po_basis_amount,
+      })),
+    };
+  }
+
   findPoCandidates(invoice: NormalizedInvoice): PoCandidate[] {
     const vendor = this.db
       .prepare("SELECT id FROM vendors WHERE normalized_name = ?")
@@ -341,10 +403,29 @@ export class Storage {
           const candidateInvoice = { ...invoice, poNumber: po.po_number };
           let matchedLineCount: number;
           let allLinesResolvable: boolean;
+          let lines: PoCandidate["lines"] = [];
           try {
-            evaluateInvoice(candidateInvoice, context);
+            const evaluation = evaluateInvoice(candidateInvoice, context);
             matchedLineCount = invoice.lines.length;
             allLinesResolvable = true;
+            lines = evaluation.allocations.map((allocation) => {
+              const invoiceLine = invoice.lines[allocation.invoiceLineIndex]!;
+              return {
+                invoiceLineIndex: allocation.invoiceLineIndex,
+                invoiceSku: invoiceLine.sku,
+                invoiceDescription: invoiceLine.description,
+                requestedQuantity: allocation.quantity,
+                uom: invoiceLine.uom,
+                poLineId: allocation.poLineId,
+                poSku: allocation.sku,
+                poDescription: allocation.poDescription ?? allocation.sku,
+                poUnitPrice: allocation.poUnitPrice ?? "0.00",
+                availableOrderedQuantity:
+                  allocation.availableOrderedQuantity ?? allocation.quantity,
+                availableReceivedQuantity:
+                  allocation.availableReceivedQuantity ?? allocation.quantity,
+              };
+            });
           } catch {
             allLinesResolvable = false;
             const lines = context.poLines as Array<{
@@ -395,8 +476,10 @@ export class Storage {
               .minus(invoice.subtotal)
               .abs()
               .toFixed(2),
+            lines,
           };
         })
+        .filter((candidate) => candidate.allLinesResolvable)
         .sort(
           (left, right) =>
             Number(right.allLinesResolvable) -
@@ -576,6 +659,7 @@ export class Storage {
           `UPDATE runs SET state = 'POSTED', decision = 'AUTO_CLEARED', execution = 'POSTED',
            vendor_id = ?, normalized_invoice_number = ?, selected_po_number = ?,
            primary_reason_code = NULL, next_action = NULL,
+           candidates_json = '[]', bundle_candidates_json = '[]',
            ledger_invoice_id = ?, evaluation_json = ?, updated_at = ? WHERE id = ?`,
         )
         .run(
@@ -598,16 +682,27 @@ export class Storage {
     nextAction: string,
     invoice: NormalizedInvoice | null = null,
     checks: CheckResult[] = [],
+    evidence: {
+      invoicePreview?: InvoicePreview | null;
+      duplicateMatch?: DuplicateMatch | null;
+    } = {},
   ) {
     this.db
       .prepare(
         `UPDATE runs SET state = 'NEEDS_REVIEW', decision = 'NEEDS_REVIEW', execution = 'BLOCKED',
-         primary_reason_code = ?, next_action = ?, evaluation_json = ?, updated_at = ? WHERE id = ?`,
+         primary_reason_code = ?, next_action = ?, evaluation_json = ?,
+         candidates_json = '[]', bundle_candidates_json = '[]', updated_at = ? WHERE id = ?`,
       )
       .run(
         reasonCode,
         nextAction,
-        JSON.stringify({ invoice, checks, allocations: [] }),
+        JSON.stringify({
+          invoice,
+          checks,
+          allocations: [],
+          invoicePreview: evidence.invoicePreview ?? null,
+          duplicateMatch: evidence.duplicateMatch ?? null,
+        }),
         new Date().toISOString(),
         id,
       );

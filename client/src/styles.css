@@ -1,14 +1,7 @@
 :root {
   color: #16211c;
   background: #f4f6f5;
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+  font-family: Aptos, "Segoe UI Variable", "Segoe UI", sans-serif;
   font-synthesis: none;
 }
 
@@ -236,11 +229,7 @@ h2 {
 }
 
 .metric::before {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: #aeb9b3;
-  content: "";
+  display: none;
 }
 
 .metric span {
@@ -286,8 +275,8 @@ h2 {
 }
 
 .metric.bad {
-  border-color: #e5a29d;
-  background: #fff0ef;
+  border-color: #d7dfd9;
+  background: white;
 }
 
 .workspace-grid,
@@ -539,6 +528,12 @@ th {
 
 .confirmation-panel h2 {
   margin: 4px 0 0;
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .document-panel {
@@ -899,45 +894,18 @@ button.reset-workspace:hover {
 
 .outcome-panel {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
   align-items: start;
   border: 1px solid #dce3de;
   border-radius: 10px;
-  padding: 16px 18px;
+  padding: 14px 16px;
   background: white;
 }
 
-.outcome-panel.ok {
-  border-left: 3px solid #23805f;
-}
-.outcome-panel.warn {
-  border-left: 3px solid #d48a22;
-}
-.outcome-panel.bad {
-  border-left: 3px solid #b9473f;
-}
-
-.outcome-icon {
-  display: inline-flex;
-  width: 30px;
-  height: 30px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  color: #176b50;
-  background: #e6f2ed;
-  font-weight: 900;
-}
-
-.outcome-panel.bad .outcome-icon {
-  color: #8a302a;
-  background: #f7e3e1;
-}
-
-.outcome-panel.warn .outcome-icon {
-  color: #7a4a09;
-  background: #fff0d9;
+.outcome-panel:has(.resolution-action) {
+  grid-template-columns: minmax(0, 1fr) minmax(270px, 0.42fr);
+  align-items: stretch;
 }
 
 .outcome-panel h2,
@@ -958,6 +926,41 @@ button.reset-workspace:hover {
   padding-top: 6px;
 }
 
+.resolution-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  align-items: center;
+  border-left: 1px solid #e1e7e3;
+  padding-left: 16px;
+}
+
+.resolution-action > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.resolution-action > div:first-child > span {
+  color: #596760;
+  font-size: 12px;
+}
+
+.resolution-action .eyebrow {
+  margin: 0 0 2px;
+}
+
+.resolution-action button {
+  min-height: 34px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
+.resolution-action .error {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 11px;
+}
+
 .ledger-reference {
   max-width: 260px;
   text-align: right;
@@ -966,6 +969,317 @@ button.reset-workspace:hover {
 .ledger-reference span,
 .ledger-reference strong {
   display: block;
+}
+
+.compact-head {
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.compact-head h2 {
+  font-size: 16px;
+}
+
+.compact-head > span {
+  color: #748078;
+  font-size: 11px;
+}
+
+.evidence-panel {
+  padding: 14px 16px;
+}
+
+.candidate-evidence {
+  display: grid;
+}
+
+.candidate-evidence > div {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) auto;
+  gap: 2px 24px;
+  align-items: center;
+  border-top: 1px solid #e7ece9;
+  padding: 11px 0 0;
+}
+
+.candidate-evidence > div > strong,
+.candidate-evidence > div > span {
+  grid-column: 1;
+}
+
+.candidate-evidence > div > span {
+  color: #69766f;
+  font-size: 12px;
+}
+
+.candidate-evidence dl {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  gap: 26px;
+  margin: 0;
+}
+
+.candidate-evidence dl div {
+  display: grid;
+  gap: 3px;
+  text-align: right;
+}
+
+.candidate-evidence dt,
+.invoice-record-total span {
+  color: #748078;
+  font-size: 10px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.candidate-evidence dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.candidate-line-evidence {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+  border-top: 1px solid #edf0ee;
+}
+
+.candidate-line-evidence > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 10px 0;
+}
+
+.candidate-line-evidence > div > div {
+  display: grid;
+  gap: 2px;
+}
+
+.candidate-line-evidence span,
+.candidate-line-evidence small,
+.evidence-line-list > span {
+  color: #748078;
+  font-size: 10px;
+}
+
+.candidate-line-evidence > div > span {
+  color: #96a19b;
+  font-size: 15px;
+}
+
+.evidence-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid #e7ece9;
+}
+
+.evidence-fact-grid > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 11px 14px 4px 0;
+}
+
+.evidence-fact-grid > div + div {
+  border-left: 1px solid #edf0ee;
+  padding-left: 14px;
+}
+
+.evidence-fact-grid span {
+  color: #748078;
+  font-size: 10px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.evidence-fact-grid strong {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.evidence-fact-grid .missing strong {
+  color: #9b3b35;
+}
+
+.evidence-line-list {
+  display: grid;
+  gap: 0;
+  margin-top: 13px;
+  border-top: 1px solid #e7ece9;
+  padding-top: 9px;
+}
+
+.evidence-line-list > span {
+  margin-bottom: 4px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.evidence-line-list > div {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(90px, 0.45fr) minmax(
+      170px,
+      0.7fr
+    ) auto;
+  gap: 16px;
+  align-items: center;
+  border-top: 1px solid #edf0ee;
+  padding: 9px 0;
+  font-size: 12px;
+}
+
+.evidence-line-list > div > span {
+  color: #65736b;
+}
+
+.duplicate-facts {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.bundle-evidence {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  border-top: 1px solid #e7ece9;
+}
+
+.bundle-evidence div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 12px;
+  padding: 11px 18px 2px 0;
+  font-size: 12px;
+}
+
+.bundle-evidence div + div {
+  border-left: 1px solid #e7ece9;
+  padding-left: 24px;
+}
+
+.bundle-evidence span {
+  color: #69766f;
+}
+
+.bundle-evidence span:nth-of-type(even) {
+  text-align: right;
+}
+
+.match-summary {
+  margin: 0 0 10px;
+  color: #5f6d66;
+  font-size: 12px;
+}
+
+.match-evidence-head {
+  margin-bottom: 5px;
+}
+
+.table-secondary {
+  display: block;
+  margin-top: 2px;
+  color: #748078;
+  font-size: 10px;
+}
+
+.invoice-record {
+  padding: 0;
+  overflow: hidden;
+}
+
+.invoice-record summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 28px;
+  align-items: center;
+  padding: 13px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.invoice-record summary::-webkit-details-marker {
+  display: none;
+}
+
+.invoice-record summary > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.invoice-record summary p {
+  margin: 0 0 2px;
+}
+
+.invoice-record summary > div:first-child > span,
+.disclosure-label {
+  color: #748078;
+  font-size: 11px;
+}
+
+.invoice-record-total {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.invoice-record-total strong {
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.disclosure-label {
+  border-left: 1px solid #e1e7e3;
+  padding-left: 18px;
+  font-weight: 750;
+}
+
+.invoice-record[open] .disclosure-label {
+  color: #176b50;
+}
+
+.invoice-record-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.95fr);
+  gap: 20px;
+  border-top: 1px solid #e1e7e3;
+  padding: 16px;
+}
+
+.invoice-record-body h3 {
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.compact-facts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.invoice-record-body .value-comparison {
+  margin: 0;
+  border-radius: 7px;
+}
+
+.invoice-record-body .validation-summary {
+  padding: 8px 0 0;
+}
+
+.invoice-record-body .validation-summary span {
+  min-height: 40px;
+  padding: 7px 9px;
+}
+
+.document-panel {
+  padding: 14px;
+}
+
+.document-panel .pdf-preview {
+  min-height: 680px;
+  max-height: 820px;
+  border-color: #dbe2de;
+  background: #eef1ef;
 }
 
 .ledger-reference span {
@@ -1182,16 +1496,18 @@ button.reset-workspace:hover {
 }
 
 .decision-explanation {
-  margin: 0 16px 16px;
+  margin: 0;
+  border: 1px solid #e1e7e3;
   border-radius: 8px;
-  padding: 14px;
+  padding: 13px 16px;
 }
 
 .decision-explanation.approved {
-  background: #f0f7f3;
+  background: white;
 }
 .decision-explanation.review {
-  background: #fff5e8;
+  border: 1px solid #e1e7e3;
+  background: white;
 }
 
 .decision-explanation h3 {
@@ -1730,6 +2046,43 @@ button.reset-workspace:hover {
   .review-workspace .pdf-preview {
     min-height: 520px;
   }
+
+  .outcome-panel:has(.resolution-action) {
+    grid-template-columns: 1fr;
+  }
+
+  .resolution-action {
+    grid-template-columns: minmax(0, 1fr) auto;
+    border-top: 1px solid #e1e7e3;
+    border-left: 0;
+    padding-top: 12px;
+    padding-left: 0;
+  }
+
+  .invoice-record summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+  }
+
+  .invoice-record summary .disclosure-label {
+    display: none;
+  }
+
+  .invoice-record-body {
+    grid-template-columns: 1fr;
+  }
+
+  .evidence-fact-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .evidence-line-list > div {
+    grid-template-columns: minmax(0, 1fr) minmax(130px, 0.6fr);
+  }
+
+  .document-panel .pdf-preview {
+    min-height: 520px;
+  }
 }
 
 @media (max-width: 520px) {
@@ -1747,6 +2100,47 @@ button.reset-workspace:hover {
 
   .validation-summary {
     grid-template-columns: 1fr;
+  }
+
+  .resolution-action,
+  .candidate-evidence > div {
+    grid-template-columns: 1fr;
+  }
+
+  .resolution-action .confirmation-actions,
+  .candidate-evidence dl {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .candidate-evidence dl {
+    justify-content: space-between;
+    margin-top: 8px;
+  }
+
+  .candidate-evidence dl div {
+    text-align: left;
+  }
+
+  .compact-facts,
+  .invoice-record summary,
+  .evidence-fact-grid,
+  .candidate-line-evidence > div,
+  .evidence-line-list > div {
+    grid-template-columns: 1fr;
+  }
+
+  .candidate-line-evidence > div > span {
+    display: none;
+  }
+
+  .evidence-fact-grid > div + div {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .invoice-record-total {
+    text-align: left;
   }
 }
 @import "tailwindcss";

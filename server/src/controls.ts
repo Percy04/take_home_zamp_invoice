@@ -4,6 +4,7 @@ import {
   type Allocation,
   type BundleCandidate,
   type CheckResult,
+  type InvoicePreview,
   type NormalizedInvoice,
   type SourceRef,
 } from "../../shared/contracts.js";
@@ -71,6 +72,39 @@ const unsupportedCharge =
   /FREIGHT|SHIPPING|DISCOUNT|CREDIT|RETAINAGE|SPECIAL\s*CHARGE/i;
 const unsupportedTax =
   /COMPOUND|EXEMPT|WITHHOLDING|REVERSE[\s-]?CHARGE|RECOVERAB/i;
+
+export function buildInvoicePreview(
+  evidence: SourceRef[],
+  mapping: InvoiceMapping,
+  missingField: string | null = null,
+): InvoicePreview {
+  const byId = new Map(
+    evidence.map((source) => [source.id, source.content.trim()]),
+  );
+  const read = (id: string | null | undefined) =>
+    id ? (byId.get(id) ?? null) : null;
+  return {
+    vendor: read(mapping.vendor),
+    invoiceNumber: read(mapping.invoiceNumber),
+    invoiceDate: read(mapping.invoiceDate),
+    poNumber: read(mapping.poNumber),
+    currency:
+      read(mapping.currency) ??
+      (evidence.some((source) => /\$/.test(source.content)) ? "USD" : null),
+    subtotal: read(mapping.subtotal),
+    tax: read(mapping.tax),
+    total: read(mapping.total),
+    missingField,
+    lines: mapping.lines.map((line) => ({
+      sku: read(line.sku),
+      description: read(line.description),
+      quantity: read(line.quantity),
+      uom: read(line.uom),
+      unitPrice: read(line.unitPrice),
+      amount: read(line.amount),
+    })),
+  };
+}
 
 export function normalizeInvoice(
   evidence: SourceRef[],
@@ -370,13 +404,21 @@ export function evaluateInvoice(
   const bundleDefinitions = context.bundleDefinitions as BundleDefinitionRow[];
   const priorAllocations = context.priorAllocations as PriorAllocationRow[];
   const checks: CheckResult[] = [];
-  const check = (
+  const record = (
     code: string,
     passed: boolean,
     detail: string,
     metadata: Partial<CheckResult> = {},
   ) => {
     checks.push({ ...metadata, code, passed, detail });
+  };
+  const gate = (
+    code: string,
+    passed: boolean,
+    detail: string,
+    metadata: Partial<CheckResult> = {},
+  ) => {
+    record(code, passed, detail, metadata);
     if (!passed) throw new ControlError(code, detail, [...checks]);
   };
 
@@ -387,13 +429,13 @@ export function evaluateInvoice(
     ];
     return names.some((name) => normalize(name) === normalize(invoice.vendor));
   });
-  check(
+  gate(
     "VENDOR_MATCH",
     vendorMatches.length === 1,
     "Vendor resolves to one active master record.",
   );
   const vendor = vendorMatches[0]!;
-  check(
+  gate(
     "DUPLICATE",
     !postedInvoices.some(
       (row) =>
@@ -412,7 +454,7 @@ export function evaluateInvoice(
   const poMatches = purchaseOrders.filter(
     (row) => row.normalized_po_number === normalize(invoice.poNumber),
   );
-  check(
+  gate(
     "PO_ELIGIBLE",
     poMatches.length === 1 &&
       poMatches[0]!.vendor_id === vendor.id &&
@@ -421,7 +463,7 @@ export function evaluateInvoice(
     "PO is open, USD, and belongs to the vendor.",
   );
   const po = poMatches[0]!;
-  check(
+  gate(
     "TAX_BASIS",
     po.price_basis === "TAX_EXCLUSIVE",
     "PO uses the supported tax-exclusive price basis.",
@@ -451,7 +493,7 @@ export function evaluateInvoice(
           ? new Decimal(0)
           : new Decimal(Infinity)
         : invoicePrice.minus(poPrice).abs().div(poPrice);
-      check(
+      record(
         "PRICE_MATCH",
         ratio.lte("0.01"),
         `${line.sku || line.description} is within the 1% unit-price tolerance.`,
@@ -482,7 +524,7 @@ export function evaluateInvoice(
           ? row.normalized_bundle_sku === normalize(line.sku)
           : row.normalized_description === normalize(line.description)),
     );
-    check(
+    gate(
       "LINE_MATCH",
       matchingPoLines.length === 0 && bundleMatches.length === 1,
       `${line.sku || line.description} resolves uniquely to a direct line or trusted bundle.`,
@@ -503,7 +545,7 @@ export function evaluateInvoice(
           row.normalized_sku === normalize(component.sku) &&
           row.uom === "EA",
       );
-      check(
+      gate(
         "LINE_MATCH",
         componentLines.length === 1,
         `${component.sku} resolves to one PO component.`,
@@ -528,7 +570,7 @@ export function evaluateInvoice(
       (total, row) => total.plus(row.poBasisAmount),
       new Decimal(0),
     );
-    check(
+    record(
       "PRICE_MATCH",
       bundleBasis.minus(line.amount).abs().lte("0.01"),
       `${line.sku || line.description} equals trusted bundle component basis.`,
@@ -536,7 +578,7 @@ export function evaluateInvoice(
     allocations.push(...componentAllocations);
   }
 
-  check(
+  record(
     "PRICE_MATCH",
     directVariances
       .reduce((sum, value) => sum.plus(value), new Decimal(0))
@@ -550,12 +592,12 @@ export function evaluateInvoice(
     (total, line) => total.plus(line.amount),
     new Decimal(0),
   );
-  check(
+  record(
     "SUBTOTAL_MATCH",
     lineTotal.minus(invoice.subtotal).abs().lte("0.01"),
     "Normalized line amounts equal the subtotal.",
   );
-  check(
+  record(
     "TOTAL_MATCH",
     new Decimal(invoice.subtotal)
       .plus(invoice.tax)
@@ -564,6 +606,8 @@ export function evaluateInvoice(
       .lte("0.01"),
     "Subtotal plus tax equals total.",
   );
+  const failed = checks.find((check) => !check.passed);
+  if (failed) throw new ControlError(failed.code, failed.detail, checks);
   return { checks, allocations };
 }
 
@@ -645,12 +689,11 @@ export function evaluateConfirmedBundle(
     (sum, allocation) => sum.plus(allocation.poBasisAmount),
     new Decimal(0),
   );
-  if (basis.minus(line.amount).abs().gt("0.01"))
-    throw new ControlError(
-      "PRICE_MATCH",
-      "Confirmed bundle amount no longer matches.",
-      checks,
-    );
+  checks.push({
+    code: "PRICE_MATCH",
+    passed: basis.minus(line.amount).abs().lte("0.01"),
+    detail: "Confirmed bundle amount matches the current PO basis.",
+  });
   checks.push({
     code: "BUNDLE_MAPPING_CONFIRMED",
     passed: true,
@@ -658,6 +701,8 @@ export function evaluateConfirmedBundle(
   });
   checkCapacities(allocations, checks);
   checkPoValueCapacity(po, poLines, priorAllocations, allocations, checks);
+  const failed = checks.find((check) => !check.passed);
+  if (failed) throw new ControlError(failed.code, failed.detail, checks);
   return { checks, allocations };
 }
 
@@ -717,6 +762,18 @@ export function buildUnknownBundleCandidates(
               uom: "EA",
               quantity: String(quantity),
               poBasisAmount: money(amount),
+              description: choice.line.description,
+              unitPrice: choice.line.unit_price,
+              availableOrderedQuantity: new Decimal(
+                choice.line.ordered_quantity,
+              )
+                .minus(used.get(choice.line.id) ?? 0)
+                .toString(),
+              availableReceivedQuantity: new Decimal(
+                choice.line.received_quantity,
+              )
+                .minus(used.get(choice.line.id) ?? 0)
+                .toString(),
             },
           ],
           total.plus(amount),
@@ -794,6 +851,12 @@ function allocationFor(input: {
   const receivedRemaining = new Decimal(input.poLine.received_quantity)
     .minus(consumed)
     .minus(input.quantity);
+  const availableOrderedQuantity = new Decimal(input.poLine.ordered_quantity)
+    .minus(consumed)
+    .toString();
+  const availableReceivedQuantity = new Decimal(input.poLine.received_quantity)
+    .minus(consumed)
+    .toString();
   const actualNetAmount =
     input.matchType === "DIRECT" ? input.line.amount : money(basis);
   return {
@@ -808,6 +871,10 @@ function allocationFor(input: {
     actualNetAmount,
     remainingOrderedQuantity: orderedRemaining.toString(),
     remainingReceivedQuantity: receivedRemaining.toString(),
+    poDescription: input.poLine.description,
+    poUnitPrice: input.poLine.unit_price,
+    availableOrderedQuantity,
+    availableReceivedQuantity,
     matchReason:
       input.matchType === "DIRECT"
         ? "Matched invoice line to PO line by exact SKU, description, and UOM."
@@ -837,12 +904,6 @@ function checkCapacities(allocations: Allocation[], checks: CheckResult[]) {
       : null,
     sourceIds: receiptFailure?.sourceIds ?? [],
   });
-  if (!receiptPasses)
-    throw new ControlError(
-      "RECEIPT_CAPACITY",
-      "Quantity exceeds received capacity.",
-      checks,
-    );
   const orderFailure = allocations.find((row) =>
     new Decimal(row.remainingOrderedQuantity).lt(0),
   );
@@ -860,12 +921,6 @@ function checkCapacities(allocations: Allocation[], checks: CheckResult[]) {
       : null,
     sourceIds: orderFailure?.sourceIds ?? [],
   });
-  if (!orderPasses)
-    throw new ControlError(
-      "ORDERED_CAPACITY",
-      "Quantity exceeds ordered capacity.",
-      checks,
-    );
 }
 
 function checkPoValueCapacity(
@@ -904,12 +959,6 @@ function checkPoValueCapacity(
     actual: `$${money(currentBasis)} invoice PO-basis value`,
     sourceIds: current.flatMap((row) => row.sourceIds ?? []),
   });
-  if (!passed)
-    throw new ControlError(
-      "ORDERED_CAPACITY",
-      "PO value capacity is exceeded.",
-      checks,
-    );
 }
 
 function usedQuantities(rows: PriorAllocationRow[]) {

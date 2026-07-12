@@ -24,10 +24,16 @@ import {
   getRun,
   listRuns,
   processRun,
+  rejectPo,
   resetWorkspace,
   type FixtureId,
 } from "./api";
-import type { RunDetail, SourceRef } from "../../shared/contracts";
+import type {
+  DuplicateMatch,
+  InvoicePreview,
+  RunDetail,
+  SourceRef,
+} from "../../shared/contracts";
 
 const queryClient = new QueryClient();
 const PdfPreview = lazy(() => import("./pdf-preview"));
@@ -390,6 +396,13 @@ function RunPage() {
       await queryClient.invalidateQueries({ queryKey: ["runs"] });
     },
   });
+  const poRejection = useMutation({
+    mutationFn: () => rejectPo(runId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["run", runId] });
+      await queryClient.invalidateQueries({ queryKey: ["runs"] });
+    },
+  });
   const bundleConfirmation = useMutation({
     mutationFn: (candidateId: string) => confirmBundle(runId, candidateId),
     onSuccess: async () => {
@@ -450,32 +463,88 @@ function RunPage() {
           className={`outcome-panel ${outcome.tone}`}
           aria-labelledby="outcome-title"
         >
-          <span className="outcome-icon" aria-hidden="true">
-            {outcome.icon}
-          </span>
           <div>
             <p className="eyebrow">Invoice result</p>
             <h2 id="outcome-title">{outcome.title}</h2>
             <p>{outcome.description}</p>
-            {detail.nextAction && !isPosted && (
-              <p className="outcome-action">
-                <strong>Next step:</strong> {detail.nextAction}
-              </p>
-            )}
+            {detail.nextAction &&
+              !isPosted &&
+              !detail.state.startsWith("AWAITING") && (
+                <p className="outcome-action">
+                  <strong>Next step:</strong> {detail.nextAction}
+                </p>
+              )}
           </div>
-          {detail.ledgerId && (
+          {detail.state === "AWAITING_PO_CONFIRMATION" && detail.candidatePo ? (
+            <aside className="resolution-action" aria-label="PO confirmation">
+              <div>
+                <p className="eyebrow">Reviewer action</p>
+                <strong>{detail.candidatePo}</strong>
+              </div>
+              <div className="confirmation-actions">
+                <button
+                  className="secondary"
+                  disabled={poConfirmation.isPending || poRejection.isPending}
+                  onClick={() => poRejection.mutate()}
+                >
+                  {poRejection.isPending ? "Declining..." : "Not this PO"}
+                </button>
+                <button
+                  disabled={poConfirmation.isPending || poRejection.isPending}
+                  onClick={() => poConfirmation.mutate(detail.candidatePo!)}
+                >
+                  {poConfirmation.isPending ? "Confirming..." : "Confirm"}
+                </button>
+              </div>
+              {(poConfirmation.error || poRejection.error) && (
+                <p className="error">
+                  {(poConfirmation.error ?? poRejection.error)?.message}
+                </p>
+              )}
+            </aside>
+          ) : detail.state === "AWAITING_BUNDLE_CONFIRMATION" &&
+            detail.bundleCandidates[0] ? (
+            <aside
+              className="resolution-action"
+              aria-label="Bundle confirmation"
+            >
+              <div>
+                <p className="eyebrow">Reviewer action</p>
+                <strong>Confirm decomposition</strong>
+                <span>
+                  {detail.bundleCandidates[0].components
+                    .map(
+                      (component) => `${component.quantity} ${component.sku}`,
+                    )
+                    .join(" · ")}
+                </span>
+              </div>
+              <button
+                disabled={bundleConfirmation.isPending}
+                onClick={() =>
+                  bundleConfirmation.mutate(detail.bundleCandidates[0]!.id)
+                }
+              >
+                {bundleConfirmation.isPending ? "Confirming..." : "Confirm"}
+              </button>
+              {bundleConfirmation.error && (
+                <p className="error">{bundleConfirmation.error.message}</p>
+              )}
+            </aside>
+          ) : detail.ledgerId ? (
             <div className="ledger-reference">
               <span>Ledger reference</span>
               <strong>{detail.ledgerId}</strong>
             </div>
-          )}
+          ) : null}
         </section>
 
-        {processError && (
+        {processError && detail.state === "PROCESSING" && (
           <section className="surface processing-error" role="alert">
             <div>
-              <strong>Processing stopped</strong>
+              <strong>Processing status unavailable</strong>
               <p>{processError}</p>
+              <p>The server may still be processing this invoice.</p>
             </div>
             <button
               type="button"
@@ -484,109 +553,140 @@ function RunPage() {
                 setProcessError(undefined);
               }}
             >
-              Retry processing
+              Refresh status
             </button>
           </section>
         )}
 
-        {detail.state === "AWAITING_PO_CONFIRMATION" && detail.candidatePo && (
-          <section
-            className="surface confirmation-panel"
-            aria-label="PO confirmation"
-          >
-            <div>
-              <p className="eyebrow">Reviewer action</p>
-              <h2>Confirm PO {detail.candidatePo}</h2>
-            </div>
-            <button
-              disabled={poConfirmation.isPending}
-              onClick={() => poConfirmation.mutate(detail.candidatePo!)}
-            >
-              {poConfirmation.isPending ? "Confirming..." : "Confirm PO"}
-            </button>
-            {poConfirmation.error && (
-              <p className="error">{poConfirmation.error.message}</p>
-            )}
-          </section>
+        {detail.state === "PROCESSING" ? (
+          <ProcessingActivity detail={detail} />
+        ) : !detail.state.startsWith("AWAITING") ? (
+          <DecisionExplanation detail={detail} />
+        ) : null}
+
+        {detail.invoicePreview && !detail.invoice && (
+          <PartialInvoiceEvidence
+            preview={detail.invoicePreview}
+            reasonCode={detail.reasonCode}
+          />
         )}
 
-        {detail.state === "AWAITING_BUNDLE_CONFIRMATION" &&
-          detail.bundleCandidates[0] && (
-            <section
-              className="surface confirmation-panel"
-              aria-label="Bundle confirmation"
-            >
-              <div>
-                <p className="eyebrow">Reviewer action</p>
-                <h2>Confirm bundle decomposition</h2>
-                <p className="muted">
-                  {detail.bundleCandidates[0].components
-                    .map(
-                      (component) => `${component.quantity} ${component.sku}`,
-                    )
-                    .join(", ")}
-                </p>
-              </div>
-              <button
-                disabled={bundleConfirmation.isPending}
-                onClick={() =>
-                  bundleConfirmation.mutate(detail.bundleCandidates[0]!.id)
-                }
-              >
-                {bundleConfirmation.isPending
-                  ? "Confirming..."
-                  : "Confirm bundle"}
-              </button>
-              {bundleConfirmation.error && (
-                <p className="error">{bundleConfirmation.error.message}</p>
-              )}
-            </section>
-          )}
+        {detail.duplicateMatch && (
+          <DuplicateEvidence match={detail.duplicateMatch} />
+        )}
 
-        <div className="run-grid review-workspace">
+        {detail.poCandidates.length > 0 && (
           <section
-            className="surface document-panel"
-            aria-labelledby="document"
+            className="surface evidence-panel"
+            aria-labelledby="po-candidates"
           >
-            <div className="section-head">
+            <div className="section-head compact-head">
               <div>
-                <p className="eyebrow">Source document</p>
-                <h2 id="document">Original PDF</h2>
+                <p className="eyebrow">Decision evidence</p>
+                <h2 id="po-candidates">Suggested purchase order</h2>
               </div>
-              <span className="status-badge neutral">Stored</span>
+              <span>{detail.poCandidates.length} feasible match</span>
             </div>
-            <Suspense
-              fallback={<p className="muted">Loading PDF preview...</p>}
-            >
-              <PdfPreview
-                url={`/api/runs/${detail.runId}/document`}
-                filename={detail.filename}
-                page={pdfPage}
-                onPageChange={setPdfPage}
-              />
-            </Suspense>
-          </section>
-
-          <aside className="side-stack">
-            {detail.invoice && (
-              <section
-                className="surface review-panel"
-                aria-labelledby="normalized"
-              >
-                <div className="review-panel-head">
-                  <div>
-                    <p className="eyebrow">Invoice review</p>
-                    <h2 id="normalized">{detail.invoice.vendor}</h2>
-                    <strong className="invoice-total">
-                      ${detail.invoice.total}
-                    </strong>
+            <div className="candidate-evidence">
+              {detail.poCandidates.map((candidate) => (
+                <div key={candidate.poNumber}>
+                  <strong>{candidate.poNumber}</strong>
+                  <span>{candidate.matchedLineCount} invoice line matched</span>
+                  <dl>
+                    <div>
+                      <dt>Remaining value</dt>
+                      <dd>${candidate.remainingPoBasisValue}</dd>
+                    </div>
+                    <div>
+                      <dt>Invoice difference</dt>
+                      <dd>${candidate.subtotalDifference}</dd>
+                    </div>
+                  </dl>
+                  <div className="candidate-line-evidence">
+                    {candidate.lines.map((line) => (
+                      <div key={line.poLineId}>
+                        <div>
+                          <span>Invoice item</span>
+                          <strong>
+                            {line.invoiceDescription || line.invoiceSku}
+                          </strong>
+                          <small>
+                            {line.invoiceSku || "No SKU"} ·{" "}
+                            {line.requestedQuantity} {line.uom} requested
+                          </small>
+                        </div>
+                        <span aria-hidden="true">→</span>
+                        <div>
+                          <span>PO item</span>
+                          <strong>{line.poDescription}</strong>
+                          <small>
+                            {line.poSku} · ${line.poUnitPrice} each ·{" "}
+                            {line.availableReceivedQuantity} received available
+                          </small>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <span className={`status-badge ${stateTone(detail.state)}`}>
-                    {isPosted ? "Approved" : formatLabel(detail.state)}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {detail.bundleCandidates[0] && (
+          <section
+            className="surface evidence-panel"
+            aria-labelledby="bundle-evidence"
+          >
+            <div className="section-head compact-head">
+              <div>
+                <p className="eyebrow">Decision evidence</p>
+                <h2 id="bundle-evidence">Proposed bundle components</h2>
+              </div>
+              <span>PO {detail.invoice?.poNumber}</span>
+            </div>
+            <p className="match-summary">
+              {detail.invoice?.lines[0]?.description || "Invoice bundle"} is
+              represented by these purchasable PO items.
+            </p>
+            <div className="bundle-evidence">
+              {detail.bundleCandidates[0].components.map((component) => (
+                <div key={component.poLineId}>
+                  <strong>{component.description || component.sku}</strong>
+                  <span>{component.sku}</span>
+                  <span>{component.quantity} EA requested</span>
+                  <span>${component.unitPrice ?? "—"} each</span>
+                  <span>
+                    {component.availableReceivedQuantity ?? "—"} received
+                    available
                   </span>
                 </div>
-                <h3 className="fact-group-title">Invoice details</h3>
-                <dl className="facts">
+              ))}
+            </div>
+          </section>
+        )}
+
+        {detail.invoice && (
+          <details className="surface invoice-record">
+            <summary>
+              <div>
+                <p className="eyebrow">Supporting record</p>
+                <strong id="normalized">{detail.invoice.vendor}</strong>
+                <span>
+                  {detail.invoice.invoiceNumber} ·{" "}
+                  {detail.invoice.poNumber || "No PO supplied"}
+                </span>
+              </div>
+              <div className="invoice-record-total">
+                <span>Invoice total</span>
+                <strong>${detail.invoice.total}</strong>
+              </div>
+              <span className="disclosure-label">View details</span>
+            </summary>
+            <div className="invoice-record-body">
+              <div>
+                <h3>Invoice details</h3>
+                <dl className="facts compact-facts">
                   <SourceFact
                     label="Vendor"
                     value={detail.invoice.vendor}
@@ -608,26 +708,17 @@ function RunPage() {
                     evidence={detail.evidence}
                     onViewSource={setPdfPage}
                   />
-                </dl>
-                <h3 className="fact-group-title">Purchase order match</h3>
-                <dl className="facts">
                   <SourceFact
                     label="PO number"
-                    value={detail.invoice.poNumber}
+                    value={detail.invoice.poNumber || "Not supplied"}
                     sourceId={detail.invoice.fieldSources.poNumber}
                     evidence={detail.evidence}
                     onViewSource={setPdfPage}
                   />
-                  <Fact
-                    label="Match status"
-                    value={
-                      detail.allocations.length > 0
-                        ? `${detail.allocations.length} line items matched`
-                        : "Pending validation"
-                    }
-                  />
                 </dl>
-                <h3 className="fact-group-title">Payment summary</h3>
+              </div>
+              <div>
+                <h3>Payment summary</h3>
                 <ValueComparison invoice={detail.invoice} />
                 <div className="validation-summary">
                   <span>
@@ -641,33 +732,31 @@ function RunPage() {
                     lines matched
                   </span>
                 </div>
-                <DecisionExplanation detail={detail} />
-              </section>
-            )}
-
-            <ProcessingActivity detail={detail} />
-          </aside>
-        </div>
+              </div>
+            </div>
+          </details>
+        )}
 
         {detail.allocations.length > 0 && (
           <section className="surface" aria-labelledby="comparison">
-            <div className="section-head">
+            <div className="section-head compact-head match-evidence-head">
               <div>
-                <p className="eyebrow">Matching</p>
+                <p className="eyebrow">Decision evidence</p>
                 <h2 id="comparison">How invoice lines matched</h2>
               </div>
+              <span>{matchMethodLabel(detail)}</span>
             </div>
+            <p className="match-summary">{matchEvidenceSummary(detail)}</p>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>Invoice line</th>
-                    <th>Matched PO line</th>
+                    <th>PO item</th>
                     <th>Qty</th>
-                    <th>Invoice net</th>
+                    <th>PO unit price</th>
                     <th>PO basis</th>
-                    <th>Received left</th>
-                    <th>Result</th>
+                    <th>Received</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -680,14 +769,23 @@ function RunPage() {
                         </strong>
                       </td>
                       <td>
-                        {allocation.poNumber} · {allocation.sku}
+                        <strong>
+                          {allocation.poDescription || allocation.sku}
+                        </strong>
+                        <span className="table-secondary">
+                          {allocation.poNumber} · {allocation.sku}
+                        </span>
                       </td>
                       <td>{allocation.quantity}</td>
-                      <td>${allocation.actualNetAmount}</td>
-                      <td>${allocation.poBasisAmount}</td>
-                      <td>{allocation.remainingReceivedQuantity}</td>
                       <td>
-                        <span className="status-badge ok">Matched</span>
+                        {allocation.poUnitPrice
+                          ? `$${allocation.poUnitPrice}`
+                          : "—"}
+                      </td>
+                      <td>${allocation.poBasisAmount}</td>
+                      <td>
+                        {allocation.availableReceivedQuantity ?? "—"} before ·{" "}
+                        {allocation.remainingReceivedQuantity} after
                       </td>
                     </tr>
                   ))}
@@ -697,40 +795,26 @@ function RunPage() {
           </section>
         )}
 
-        {detail.poCandidates.length > 0 && (
-          <section className="surface" aria-labelledby="po-candidates">
-            <div className="section-head">
-              <div>
-                <p className="eyebrow">Reviewer evidence</p>
-                <h2 id="po-candidates">PO candidates</h2>
-              </div>
+        <section className="surface document-panel" aria-labelledby="document">
+          <div className="section-head compact-head">
+            <div>
+              <p className="eyebrow">Source document</p>
+              <h2 id="document">Original PDF</h2>
             </div>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>PO</th>
-                    <th>Lines matched</th>
-                    <th>Remaining basis</th>
-                    <th>Difference</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.poCandidates.map((candidate) => (
-                    <tr key={candidate.poNumber}>
-                      <td>{candidate.poNumber}</td>
-                      <td>
-                        {candidate.matchedLineCount}
-                        {candidate.allLinesResolvable ? " (all)" : ""}
-                      </td>
-                      <td>${candidate.remainingPoBasisValue}</td>
-                      <td>${candidate.subtotalDifference}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+            <span className="status-badge neutral">Stored</span>
+          </div>
+          <Suspense fallback={<p className="muted">Loading PDF preview...</p>}>
+            <PdfPreview
+              url={`/api/runs/${detail.runId}/document`}
+              filename={detail.filename}
+              page={pdfPage}
+              onPageChange={setPdfPage}
+            />
+          </Suspense>
+        </section>
+
+        {detail.state !== "PROCESSING" && (
+          <ProcessingActivity detail={detail} />
         )}
 
         {detail.checks.length > 0 && (
@@ -947,15 +1031,183 @@ function ValueComparison({ invoice }: { invoice: RunDetail["invoice"] }) {
   );
 }
 
+function PartialInvoiceEvidence({
+  preview,
+  reasonCode,
+}: {
+  preview: InvoicePreview;
+  reasonCode: string | null;
+}) {
+  const missing = preview.missingField
+    ? formatFieldName(preview.missingField)
+    : "Required invoice field";
+  const fields = [
+    ["vendor", "Vendor", preview.vendor],
+    ["invoiceNumber", "Invoice number", preview.invoiceNumber],
+    ["invoiceDate", "Invoice date", preview.invoiceDate],
+    ["poNumber", "PO number", preview.poNumber],
+    ["currency", "Currency", preview.currency],
+    ["subtotal", "Subtotal", preview.subtotal],
+    ["tax", "Tax", preview.tax],
+    ["observedTotal", "Total", preview.total],
+  ] as const;
+  return (
+    <section
+      className="surface evidence-panel"
+      aria-labelledby="partial-evidence"
+    >
+      <div className="section-head compact-head">
+        <div>
+          <p className="eyebrow">Extracted evidence</p>
+          <h2 id="partial-evidence">What the system could read</h2>
+        </div>
+        <span className="status-badge bad">
+          {missing}{" "}
+          {reasonCode === "MISSING_REQUIRED_FIELD" ? "missing" : "needs review"}
+        </span>
+      </div>
+      <div className="evidence-fact-grid">
+        {fields.map(([field, label, value]) => {
+          const isMissing = preview.missingField === field;
+          return (
+            <div key={field} className={isMissing ? "missing" : undefined}>
+              <span>{label}</span>
+              <strong>
+                {value || (isMissing ? "Not found" : "Not stated")}
+              </strong>
+            </div>
+          );
+        })}
+      </div>
+      {preview.lines.length > 0 && (
+        <div className="evidence-line-list">
+          <span>Extracted line items</span>
+          {preview.lines.map((line, index) => (
+            <div key={`${line.sku}-${index}`}>
+              <strong>
+                {line.description || line.sku || `Line ${index + 1}`}
+              </strong>
+              <span>{line.sku || "No SKU"}</span>
+              <span>
+                {line.quantity || "—"} {line.uom || ""} ×{" "}
+                {line.unitPrice || "—"}
+              </span>
+              <strong>{line.amount || "—"}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DuplicateEvidence({ match }: { match: DuplicateMatch }) {
+  return (
+    <section
+      className="surface evidence-panel"
+      aria-labelledby="duplicate-evidence"
+    >
+      <div className="section-head compact-head">
+        <div>
+          <p className="eyebrow">Decision evidence</p>
+          <h2 id="duplicate-evidence">Existing ledger invoice</h2>
+        </div>
+        <span>Posted {formatDate(match.postedAt)}</span>
+      </div>
+      <div className="evidence-fact-grid duplicate-facts">
+        <div>
+          <span>Invoice</span>
+          <strong>{match.invoiceNumber}</strong>
+        </div>
+        <div>
+          <span>Purchase order</span>
+          <strong>{match.poNumber}</strong>
+        </div>
+        <div>
+          <span>Invoice total</span>
+          <strong>${match.total}</strong>
+        </div>
+        <div>
+          <span>Ledger reference</span>
+          <strong>{match.ledgerId}</strong>
+        </div>
+      </div>
+      <div className="evidence-line-list">
+        <span>Previously matched PO items</span>
+        {match.allocations.map((allocation) => (
+          <div key={allocation.poLineId}>
+            <strong>{allocation.description}</strong>
+            <span>{allocation.sku}</span>
+            <span>
+              {allocation.quantity} {allocation.uom} × ${allocation.unitPrice}
+            </span>
+            <strong>${allocation.poBasisAmount}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function formatFieldName(field: string) {
+  const normalized = field.replace(/^lines\.\d+\./, "");
+  return (
+    {
+      vendor: "Vendor",
+      invoiceNumber: "Invoice number",
+      invoiceDate: "Invoice date",
+      currency: "Currency",
+      observedTotal: "Invoice total",
+      observedUnitPrice: "Unit price",
+      quantity: "Line quantity",
+      uom: "Unit of measure",
+      identity: "Line item SKU or description",
+    }[normalized] ?? formatLabel(normalized)
+  );
+}
+
+function matchMethodLabel(detail: RunDetail) {
+  const method = detail.allocations[0]?.matchType;
+  if (method === "BUNDLE_MASTER") return "Trusted bundle definition";
+  if (method === "BUNDLE_CONFIRMED") return "Reviewer-confirmed bundle";
+  return "Direct PO line match";
+}
+
+function matchEvidenceSummary(detail: RunDetail) {
+  const first = detail.allocations[0];
+  const invoiceItem = first
+    ? detail.invoice?.lines[first.invoiceLineIndex]?.description
+    : null;
+  if (first?.matchType === "BUNDLE_MASTER")
+    return `${invoiceItem || "The invoice bundle"} was expanded using ${first.bundleDefinitionId} and matched to ${first.poNumber}.`;
+  if (first?.matchType === "BUNDLE_CONFIRMED")
+    return `${invoiceItem || "The invoice bundle"} was expanded from the confirmed proposal and matched to ${first.poNumber}.`;
+  return `${detail.allocations.length} invoice line${detail.allocations.length === 1 ? "" : "s"} matched to ${first?.poNumber} by SKU, description, and unit of measure.`;
+}
+
 function DecisionExplanation({ detail }: { detail: RunDetail }) {
   if (detail.state === "PROCESSING") return null;
   if (detail.state !== "POSTED") {
-    const failed = detail.checks.find((check) => !check.passed);
+    const failures = uniqueFailures(detail);
+    const failed = failures[0];
     return (
       <section className="decision-explanation review">
         <h3>Why this needs review</h3>
-        <strong>{formatReason(detail.reasonCode ?? detail.state)}</strong>
-        <p>{reasonExplanation(detail)}</p>
+        {failures.length > 1 ? (
+          <ul className="issue-list">
+            {failures.map((check) => (
+              <li key={check.code}>
+                <strong>{formatReason(check.code)}</strong>
+                <span>{check.detail}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <>
+            <strong>{formatReason(detail.reasonCode ?? detail.state)}</strong>
+            <p>{reasonExplanation(detail)}</p>
+          </>
+        )}
         {failed?.expected && failed.actual && (
           <dl className="exception-facts">
             <div>
@@ -975,37 +1227,33 @@ function DecisionExplanation({ detail }: { detail: RunDetail }) {
     (sum, allocation) => sum + Number(allocation.poBasisAmount),
     0,
   );
+  const usesBundle = detail.allocations.some(
+    (allocation) => allocation.matchType !== "DIRECT",
+  );
   return (
     <section className="decision-explanation approved">
       <h3>How it was approved</h3>
       <ul>
         <li>
           <strong>Vendor matched</strong>
-          <span>An approved vendor record matched exactly.</span>
+          <span>Approved vendor · open PO {detail.invoice?.poNumber}</span>
         </li>
         <li>
-          <strong>Purchase order matched</strong>
+          <strong>
+            {detail.allocations.length}{" "}
+            {usesBundle ? "PO components matched" : "lines matched"}
+          </strong>
           <span>
-            {detail.invoice?.poNumber} is open and belongs to this vendor.
+            {usesBundle
+              ? "The invoice bundle was expanded into its purchasable PO items."
+              : "Invoice items matched PO lines by SKU, description, and UOM."}
           </span>
         </li>
         <li>
-          <strong>{detail.allocations.length} lines matched</strong>
+          <strong>Amounts and capacity passed</strong>
           <span>
-            Invoice items matched PO lines by SKU, description, and UOM.
-          </span>
-        </li>
-        <li>
-          <strong>Amounts reconciled</strong>
-          <span>
-            Invoice net ${detail.invoice?.subtotal} matches PO basis $
-            {poBasis.toFixed(2)}.
-          </span>
-        </li>
-        <li>
-          <strong>Receipt capacity passed</strong>
-          <span>
-            Allocated quantities are within ordered and received capacity.
+            ${detail.invoice?.subtotal} invoice net · ${poBasis.toFixed(2)} PO
+            basis
           </span>
         </li>
       </ul>
@@ -1048,7 +1296,11 @@ function ProcessingActivity({ detail }: { detail: RunDetail }) {
           <strong>Activity log</strong>
           <small>
             {visible.filter((phase) => phase.status === "COMPLETED").length}{" "}
-            phases completed
+            {visible.filter((phase) => phase.status === "COMPLETED").length ===
+            1
+              ? "phase"
+              : "phases"}{" "}
+            completed
           </small>
         </span>
         <span aria-hidden="true">⌄</span>
@@ -1141,6 +1393,12 @@ function formatReason(value: string) {
       EXTRACTION_FAILED: "Document could not be read",
       MISSING_PO: "PO confirmation required",
       BUNDLE_MAPPING_REQUIRED: "Bundle confirmation required",
+      PRICE_MATCH: "Price variance",
+      RECEIPT_CAPACITY: "Receipt quantity exceeded",
+      ORDERED_CAPACITY: "Ordered quantity exceeded",
+      PO_VALUE_CAPACITY: "PO value exceeded",
+      SUBTOTAL_MATCH: "Subtotal mismatch",
+      TOTAL_MATCH: "Total mismatch",
     }[value] ?? formatLabel(value)
   );
 }
@@ -1165,16 +1423,33 @@ function describeOutcome(detail: RunDetail) {
   if (detail.state.startsWith("AWAITING"))
     return {
       title: "Confirmation required",
-      description: formatReason(detail.reasonCode ?? detail.state),
+      description: reasonExplanation(detail),
       tone: "warn",
       icon: "!",
     };
+  const failures = uniqueFailures(detail);
   return {
-    title: "Needs review",
-    description: formatReason(detail.reasonCode ?? detail.state),
+    title:
+      failures.length > 1
+        ? `${failures.length} issues need attention`
+        : "Needs review",
+    description:
+      failures.length > 1
+        ? failures.map((check) => formatReason(check.code)).join(" · ")
+        : formatReason(detail.reasonCode ?? detail.state),
     tone: "bad",
     icon: "!",
   };
+}
+
+function uniqueFailures(detail: RunDetail) {
+  return detail.checks
+    .filter((check) => !check.passed)
+    .filter(
+      (check, index, failures) =>
+        failures.findIndex((candidate) => candidate.code === check.code) ===
+        index,
+    );
 }
 
 function reasonExplanation(detail: RunDetail) {

@@ -96,6 +96,21 @@ describe("happy-path vertical slice", () => {
           }),
         ]),
       );
+    if (reasonCode === "DUPLICATE")
+      expect(processed.body.duplicateMatch).toMatchObject({
+        ledgerId: "LEDGER-SEED-001",
+        invoiceNumber: "ACME-2026-000",
+        poNumber: "PO-0999",
+        total: "110.00",
+        allocations: [
+          {
+            sku: "FIL-900",
+            description: "Replacement Filter",
+            quantity: "1",
+            unitPrice: "100.00",
+          },
+        ],
+      });
 
     const database = new Database(path.join(runtime, "runtime.sqlite"), {
       readonly: true,
@@ -159,6 +174,15 @@ describe("happy-path vertical slice", () => {
       invoice: expected.invoice,
       allocations: expected.allocations,
     });
+    expect(processed.body.allocations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          poDescription: expect.any(String),
+          poUnitPrice: expect.any(String),
+          availableReceivedQuantity: expect.any(String),
+        }),
+      ]),
+    );
     expect(retried.body.ledgerId).toBe(processed.body.ledgerId);
 
     const database = new Database(path.join(runtime, "runtime.sqlite"), {
@@ -203,6 +227,20 @@ describe("happy-path vertical slice", () => {
       reasonCode: "MISSING_PO",
       candidatePo: "PO-1002",
       ledgerId: null,
+      poCandidates: [
+        {
+          poNumber: "PO-1002",
+          lines: [
+            {
+              invoiceDescription: "Safety Sensor",
+              poDescription: "Safety Sensor",
+              requestedQuantity: "2",
+              poUnitPrice: "250.00",
+              availableReceivedQuantity: "2",
+            },
+          ],
+        },
+      ],
     });
     expect(confirmed.body).toMatchObject({
       runId: created.body.runId,
@@ -213,6 +251,111 @@ describe("happy-path vertical slice", () => {
       allocations: [{ poNumber: "PO-1002", matchType: "DIRECT" }],
     });
     expect(retried.body.ledgerId).toBe(confirmed.body.ledgerId);
+    storage.close();
+  });
+
+  it("blocks a repeated missing-PO invoice as a duplicate without offering stale candidates", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-repeat-missing-po-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+
+    const first = await request(app)
+      .post("/api/runs")
+      .field("fixtureId", "missing_po")
+      .expect(201);
+    const awaiting = await request(app)
+      .post(`/api/runs/${first.body.runId}/process`)
+      .expect(200);
+    await request(app)
+      .post(`/api/runs/${first.body.runId}/confirm-po`)
+      .send({ poNumber: awaiting.body.candidatePo })
+      .expect(200);
+    const postedInvoice = storage.getEvaluation(first.body.runId)!.invoice!;
+    expect(
+      storage.findPoCandidates({
+        ...postedInvoice,
+        invoiceNumber: "ACME-2026-NOT-A-DUPLICATE",
+        poNumber: "",
+      }),
+    ).toEqual([]);
+
+    const second = await request(app)
+      .post("/api/runs")
+      .field("fixtureId", "missing_po")
+      .expect(201);
+    const repeated = await request(app)
+      .post(`/api/runs/${second.body.runId}/process`)
+      .expect(200);
+
+    expect(repeated.body).toMatchObject({
+      state: "NEEDS_REVIEW",
+      reasonCode: "DUPLICATE",
+      candidatePo: null,
+      poCandidates: [],
+    });
+    storage.close();
+  });
+
+  it("lets a reviewer decline every stored PO candidate", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-decline-po-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+    const created = await request(app)
+      .post("/api/runs")
+      .field("fixtureId", "missing_po")
+      .expect(201);
+    await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+
+    const declined = await request(app)
+      .post(`/api/runs/${created.body.runId}/reject-po`)
+      .expect(200);
+
+    expect(declined.body).toMatchObject({
+      state: "NEEDS_REVIEW",
+      execution: "BLOCKED",
+      reasonCode: "MISSING_PO",
+      candidatePo: null,
+      poCandidates: [],
+    });
+    await request(app)
+      .post(`/api/runs/${created.body.runId}/confirm-po`)
+      .send({ poNumber: "PO-1002" })
+      .expect(409);
+    storage.close();
+  });
+
+  it("reports independent price and receipt failures together", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-multi-issue-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const database = new Database(path.join(runtime, "runtime.sqlite"));
+    database
+      .prepare(
+        "UPDATE po_lines SET unit_price = '50.00', received_quantity = '0' WHERE po_number = 'PO-1001' AND sku = 'WID-100'",
+      )
+      .run();
+    database.close();
+    const app = createApp({ storage });
+    const created = await request(app)
+      .post("/api/runs")
+      .field("fixtureId", "happy")
+      .expect(201);
+
+    const processed = await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+    const failedCodes = processed.body.checks
+      .filter((check: { passed: boolean }) => !check.passed)
+      .map((check: { code: string }) => check.code);
+
+    expect(processed.body.reasonCode).toBe("PRICE_VARIANCE_EXCEEDED");
+    expect(failedCodes).toEqual(
+      expect.arrayContaining(["PRICE_MATCH", "RECEIPT_CAPACITY"]),
+    );
     storage.close();
   });
 
@@ -246,7 +389,20 @@ describe("happy-path vertical slice", () => {
         {
           id: "BUNDLE-CANDIDATE-1",
           totalPoBasisAmount: "300.00",
-          components: [{ sku: "WID-100" }, { sku: "BOL-200" }],
+          components: [
+            {
+              sku: "WID-100",
+              description: "Industrial Widget",
+              unitPrice: "100.00",
+              availableReceivedQuantity: "2",
+            },
+            {
+              sku: "BOL-200",
+              description: "Mounting Bolt Pack",
+              unitPrice: "20.00",
+              availableReceivedQuantity: "5",
+            },
+          ],
         },
       ],
       ledgerId: null,
