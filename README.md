@@ -45,9 +45,10 @@ npm run pipeline:workbook -- --fixture happy --step normalize
 npm run pipeline:workbook -- --fixture happy --step controls
 npm run pipeline:workbook -- --fixture happy --step run
 npm run pipeline:workbook -- --fixture missing_po --step run --confirm PO-1002
+npm run pipeline:workbook -- --file data/fixtures/02-Invoice-2.pdf --step run
 ```
 
-Use `--step all` to print every stage. `--confirm` accepts a candidate PO number or bundle candidate ID after a review state. See the script header for fixture names.
+Use `--file` for any PDF and `--fixture` for a recorded demo case. `--step all` prints every stage; `--confirm` accepts a candidate PO number or bundle candidate ID after a review state. External PDFs require `PROVIDER_MODE=live` with the provider credentials configured.
 
 The production server exposes the client at `http://localhost:3000` and readiness at `http://localhost:3000/api/health`.
 

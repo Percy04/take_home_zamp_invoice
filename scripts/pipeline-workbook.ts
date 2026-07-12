@@ -7,6 +7,7 @@
  *   npm run pipeline:workbook -- --fixture happy --step controls
  *   npm run pipeline:workbook -- --fixture happy --step run
  *   npm run pipeline:workbook -- --fixture missing_po --step run --confirm PO-1002
+ *   npm run pipeline:workbook -- --file data/fixtures/02-Invoice-2.pdf --step run
  *
  * Available fixtures: happy, duplicate, missing_po, bundle_known,
  * bundle_unknown, receipt_capacity, tax_inclusive.
@@ -29,24 +30,29 @@ import {
 } from "../server/src/pipeline.js";
 import { Storage } from "../server/src/storage.js";
 
-const fixture = argument("--fixture") ?? "happy";
+const fixture = argument("--fixture");
+const file = argument("--file");
 const step = argument("--step") ?? "all";
 const confirmation = argument("--confirm");
-const fixturePath = path.resolve(`data/fixtures/${fixture}.pdf`);
+if (fixture && file) throw new Error("Choose either --fixture or --file.");
+const fixturePath = path.resolve(file ?? `data/fixtures/${fixture ?? "happy"}.pdf`);
 
 if (!new Set(["extract", "normalize", "controls", "run", "all"]).has(step)) {
   throw new Error("--step must be extract, normalize, controls, run, or all.");
 }
 
 const pdf = await readFile(fixturePath);
-const extracted = await extractAndMap(pdf);
+const extracted = step === "run" ? null : await extractAndMap(pdf);
 
-if (step === "extract" || step === "all") print("1. extraction + mapping", extracted);
+if (extracted && (step === "extract" || step === "all"))
+  print("1. extraction + mapping", extracted);
 
 let invoice;
 try {
-  invoice = normalizeInvoice(extracted.evidence, extracted.mapping);
-  if (step === "normalize" || step === "all") print("2. normalization", invoice);
+  if (extracted) {
+    invoice = normalizeInvoice(extracted.evidence, extracted.mapping);
+    if (step === "normalize" || step === "all") print("2. normalization", invoice);
+  }
 } catch (error) {
   print("2. normalization failed", error);
   process.exitCode = 1;
