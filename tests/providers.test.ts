@@ -1,11 +1,26 @@
 import { describe, expect, it } from "vitest";
+import { PDFDocument } from "pdf-lib";
 import {
   buildSourceCatalogue,
+  extractAndMap,
   preferReliableEvidence,
   ProviderError,
   validateMapping,
 } from "../server/src/providers.js";
 import type { SourceRef } from "../shared/contracts.js";
+
+describe("recorded provider", () => {
+  it("rejects an unrecognised PDF instead of substituting a fixture", async () => {
+    const pdf = await PDFDocument.create();
+    pdf.addPage();
+
+    await expect(
+      extractAndMap(Buffer.from(await pdf.save())),
+    ).rejects.toMatchObject({
+      stage: "RECORDED_PROVIDER",
+    });
+  });
+});
 
 describe("Azure evidence catalogue", () => {
   it("preserves fields, tax details, tables, OCR confidence, and key-value evidence", () => {

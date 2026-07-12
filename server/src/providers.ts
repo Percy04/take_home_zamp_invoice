@@ -689,7 +689,6 @@ async function recordingForDocument(bytes: Buffer) {
     updateMetadata: false,
   });
   const title = pdf.getTitle();
-  if (!title || title === "untitled") return "happy_layout_c_scanned";
   if (title === "Invoice ACME-2026-001") return "happy";
   if (title === "Invoice ACME-2026-000") return "duplicate";
   if (title === "Invoice DELTA-2026-010") return "receipt_capacity";
