@@ -252,7 +252,7 @@ function DashboardPage() {
                     <th className="px-3 py-2.5">Status</th>
                     <th className="px-3 py-2.5">Primary reason</th>
                     <th className="px-3 py-2.5">Updated</th>
-                    <th className="sr-only">Open</th>
+                    <th className="px-3 py-2.5"><span className="sr-only">Open</span></th>
                   </tr>
                 </thead>
                 <tbody>
