@@ -373,6 +373,7 @@ function RunPage() {
   const { runId = "" } = useParams();
   const processStarted = useRef(false);
   const [processError, setProcessError] = useState<string>();
+  const [pdfPage, setPdfPage] = useState(1);
   const run = useQuery({
     queryKey: ["run", runId],
     queryFn: () => getRun(runId),
@@ -394,6 +395,8 @@ function RunPage() {
       await queryClient.invalidateQueries({ queryKey: ["runs"] });
     },
   });
+
+  useEffect(() => setPdfPage(1), [runId]);
 
   useEffect(() => {
     if (
@@ -558,6 +561,8 @@ function RunPage() {
               <PdfPreview
                 url={`/api/runs/${detail.runId}/document`}
                 filename={detail.filename}
+                page={pdfPage}
+                onPageChange={setPdfPage}
               />
             </Suspense>
           </section>
@@ -587,18 +592,21 @@ function RunPage() {
                     value={detail.invoice.vendor}
                     sourceId={detail.invoice.fieldSources.vendor}
                     evidence={detail.evidence}
+                    onViewSource={setPdfPage}
                   />
                   <SourceFact
                     label="Invoice #"
                     value={detail.invoice.invoiceNumber}
                     sourceId={detail.invoice.fieldSources.invoiceNumber}
                     evidence={detail.evidence}
+                    onViewSource={setPdfPage}
                   />
                   <SourceFact
                     label="Invoice date"
                     value={formatDateOnly(detail.invoice.invoiceDate)}
                     sourceId={detail.invoice.fieldSources.invoiceDate}
                     evidence={detail.evidence}
+                    onViewSource={setPdfPage}
                   />
                 </dl>
                 <h3 className="fact-group-title">Purchase order match</h3>
@@ -608,6 +616,7 @@ function RunPage() {
                     value={detail.invoice.poNumber}
                     sourceId={detail.invoice.fieldSources.poNumber}
                     evidence={detail.evidence}
+                    onViewSource={setPdfPage}
                   />
                   <Fact
                     label="Match status"
@@ -848,11 +857,13 @@ function SourceFact({
   value,
   sourceId,
   evidence,
+  onViewSource,
 }: {
   label: string;
   value: string;
   sourceId?: string;
   evidence: SourceRef[];
+  onViewSource: (page: number) => void;
 }) {
   const source = evidence.find((item) => item.id === sourceId);
   return (
@@ -865,6 +876,19 @@ function SourceFact({
             {source.page ? `Page ${source.page}` : "Document"}
             {source.confidence !== null &&
               ` · ${Math.round(source.confidence * 100)}% confidence`}
+            {source.page && (
+              <button
+                type="button"
+                onClick={() => {
+                  onViewSource(source.page!);
+                  document
+                    .getElementById("document")
+                    ?.scrollIntoView({ behavior: "smooth" });
+                }}
+              >
+                View source
+              </button>
+            )}
           </span>
         )}
       </dd>

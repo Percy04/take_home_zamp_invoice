@@ -1112,6 +1112,20 @@ button.reset-workspace:hover {
   font-weight: 500;
 }
 
+.source-hint button {
+  display: inline;
+  min-height: 0;
+  margin-left: 7px;
+  border: 0;
+  padding: 0;
+  color: #176b50;
+  background: transparent;
+  font-size: inherit;
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .review-panel .payment-facts div:last-child dd {
   font-size: 16px;
 }

@@ -11,19 +11,24 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 export default function PdfPreview({
   url,
   filename,
+  page,
+  onPageChange,
 }: {
   url: string;
   filename: string;
+  page: number;
+  onPageChange: (page: number) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(560);
   const [pages, setPages] = useState(0);
-  const [page, setPage] = useState(1);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
     const update = () =>
-      setWidth(Math.max(280, Math.min(760, container.current?.clientWidth ?? 560)));
+      setWidth(
+        Math.max(280, Math.min(760, container.current?.clientWidth ?? 560)),
+      );
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
@@ -48,15 +53,17 @@ export default function PdfPreview({
           <button
             className="secondary"
             disabled={page === 1}
-            onClick={() => setPage((current) => current - 1)}
+            onClick={() => onPageChange(page - 1)}
           >
             Previous
           </button>
-          <span>Page {page} of {pages}</span>
+          <span>
+            Page {page} of {pages}
+          </span>
           <button
             className="secondary"
             disabled={page === pages}
-            onClick={() => setPage((current) => current + 1)}
+            onClick={() => onPageChange(page + 1)}
           >
             Next
           </button>
