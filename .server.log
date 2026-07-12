@@ -1,0 +1,5 @@
+
+> ap-resolution-agent@0.1.0 dev:server
+> tsx watch server/src/index.ts
+
+AP Resolution Agent listening on http://localhost:3000
