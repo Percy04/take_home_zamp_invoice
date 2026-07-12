@@ -23,11 +23,12 @@ describe("main Lovable frontend", () => {
       await screen.findByRole("heading", { name: "Upload an invoice" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("region", { name: "Demo scenarios" }),
+      screen.getByRole("region", { name: "Prepared invoices" }),
     ).toBeVisible();
     expect(
       screen.getByRole("button", { name: /Unknown bundle/ }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: /Tax inclusive/ })).toBeVisible();
+    expect(screen.queryByText(/demo/i)).not.toBeInTheDocument();
   });
 });
