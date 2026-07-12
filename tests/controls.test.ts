@@ -115,6 +115,65 @@ describe("deterministic normalization", () => {
     );
   });
 
+  it("normalizes unambiguous line-specific mixed tax", () => {
+    const mixedMapping: InvoiceMapping = {
+      ...mapping,
+      taxNote: null,
+      lines: [
+        {
+          ...mapping.lines[0]!,
+          taxInclusion: "line1TaxNote",
+          taxRate: "line1TaxRate",
+          taxAmount: null,
+        },
+        {
+          sku: "sku2",
+          description: "description2",
+          quantity: "quantity2",
+          uom: "uom2",
+          unitPrice: "unitPrice2",
+          amount: "amount2",
+          taxInclusion: null,
+          taxRate: null,
+          taxAmount: "taxAmount2",
+        },
+      ],
+    };
+    const mixedEvidence = [
+      source("vendor", "Acme Industrial Supplies LLC"),
+      source("invoice", "ACME-2026-006"),
+      source("date", "2026-07-07"),
+      source("po", "PO-1006"),
+      source("total", "$228.00", "InvoiceTotal"),
+      source("sku", "INC-100"),
+      source("description", "Tax inclusive item"),
+      source("quantity", "1"),
+      source("uom", "EA"),
+      source("unitPrice", "$118.00", "UnitPrice"),
+      source("amount", "$118.00", "Amount"),
+      source("line1TaxNote", "Price includes tax", "TaxNote"),
+      source("line1TaxRate", "18%", "TaxRate"),
+      source("sku2", "EXC-100"),
+      source("description2", "Tax exclusive item"),
+      source("quantity2", "1"),
+      source("uom2", "EA"),
+      source("unitPrice2", "$100.00", "UnitPrice"),
+      source("amount2", "$100.00", "Amount"),
+      source("taxAmount2", "$10.00", "TaxAmount"),
+    ];
+
+    expect(normalizeInvoice(mixedEvidence, mixedMapping)).toMatchObject({
+      taxTreatment: "MIXED",
+      subtotal: "200.00",
+      tax: "28.00",
+      total: "228.00",
+      lines: [
+        { amount: "100.00", taxAmount: "18.00", taxTreatment: "INCLUSIVE" },
+        { amount: "100.00", taxAmount: "10.00", taxTreatment: "EXCLUSIVE" },
+      ],
+    });
+  });
+
   it("blocks unsupported non-zero charges before accounting controls", () => {
     const evidence = [
       ...inclusiveEvidence(),

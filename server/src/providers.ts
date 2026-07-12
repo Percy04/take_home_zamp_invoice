@@ -18,6 +18,9 @@ const lineMappingSchema = z.object({
   uom: z.string(),
   unitPrice: z.string(),
   amount: z.string(),
+  taxInclusion: z.string().nullable().optional(),
+  taxRate: z.string().nullable().optional(),
+  taxAmount: z.string().nullable().optional(),
 });
 
 export const invoiceMappingSchema = z.object({
@@ -62,8 +65,31 @@ const lineMappingJsonSchema = {
       type: "string",
       description: "Source ID for the invoice line net or line amount.",
     },
+    taxInclusion: {
+      type: ["string", "null"],
+      description:
+        "Source ID explicitly stating whether this line includes tax.",
+    },
+    taxRate: {
+      type: ["string", "null"],
+      description: "Source ID for the tax rate associated with this line.",
+    },
+    taxAmount: {
+      type: ["string", "null"],
+      description: "Source ID for the tax amount associated with this line.",
+    },
   },
-  required: ["sku", "description", "quantity", "uom", "unitPrice", "amount"],
+  required: [
+    "sku",
+    "description",
+    "quantity",
+    "uom",
+    "unitPrice",
+    "amount",
+    "taxInclusion",
+    "taxRate",
+    "taxAmount",
+  ],
 };
 
 const invoiceMappingJsonSchema = {
@@ -293,7 +319,7 @@ async function mapWithOpenAI(evidence: SourceRef[]) {
         {
           role: "system",
           content:
-            "Map invoice fields only by selecting provided source IDs. Return IDs exactly as provided. Never infer, rewrite, calculate, or decide values.",
+            "Map invoice fields only by selecting provided source IDs. Return IDs exactly as provided. Associate explicit tax-inclusion, tax-rate, and tax-amount evidence with the relevant line when the document does so. Never infer, rewrite, calculate, or decide values.",
         },
         { role: "user", content: JSON.stringify(evidence) },
       ],
@@ -336,6 +362,7 @@ async function mapWithGemini(evidence: SourceRef[]) {
               {
                 text:
                   "Map invoice fields only by selecting provided source IDs. " +
+                  "Associate explicit tax evidence with its relevant line. " +
                   "Return IDs exactly as provided. Never infer or rewrite values.",
               },
             ],

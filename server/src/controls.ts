@@ -138,6 +138,16 @@ export function normalizeInvoice(
     const observedAmount = requiredMoney(
       select(line.amount, true, "observedAmount", sourceIds),
     );
+    const taxInclusion = select(
+      line.taxInclusion,
+      false,
+      "taxInclusion",
+      sourceIds,
+    );
+    const taxRate = select(line.taxRate, false, "taxRate", sourceIds);
+    const observedTaxAmount = optionalMoney(
+      select(line.taxAmount, false, "observedTaxAmount", sourceIds),
+    );
     if (quantity.mul(observedUnitPrice).minus(observedAmount).abs().gt("0.01"))
       failNormalization("TOTAL_MISMATCH");
     return {
@@ -147,6 +157,9 @@ export function normalizeInvoice(
       uom,
       observedUnitPrice,
       observedAmount,
+      taxInclusion,
+      taxRate,
+      observedTaxAmount,
       sourceIds,
     };
   });
@@ -180,21 +193,32 @@ export function normalizeInvoice(
     failNormalization("UNSUPPORTED_STRUCTURE");
   if (!currency) failNormalization("MISSING_REQUIRED_FIELD");
 
-  const inclusionClaim =
-    /INCLUD(?:E|ES|ED|ING).*?(?:TAX|VAT|GST)|(?:TAX|VAT|GST).*?INCLUD/i.test(
-      taxNote,
-    );
-  const rate = parseTaxRate(taxNote);
-  if ((inclusionClaim && !rate) || (rate && !inclusionClaim))
+  const documentInclusionClaim = claimsTaxInclusion(taxNote);
+  const documentRate = parseTaxRate(taxNote);
+  if (
+    (documentInclusionClaim && !documentRate) ||
+    (documentRate && !documentInclusionClaim)
+  )
     failNormalization("TAX_TREATMENT_UNRESOLVED");
 
   const lines = observedLines.map((line) => {
-    const amount = rate
-      ? money(line.observedAmount.div(new Decimal(1).plus(rate)))
+    const lineTaxText = `${line.taxInclusion} ${line.taxRate}`.trim();
+    const hasLineTaxEvidence = Boolean(line.taxInclusion || line.taxRate);
+    const inclusionClaim = hasLineTaxEvidence
+      ? claimsTaxInclusion(lineTaxText)
+      : documentInclusionClaim;
+    const rate = hasLineTaxEvidence ? parseTaxRate(lineTaxText) : documentRate;
+    if ((inclusionClaim && !rate) || (rate && !inclusionClaim))
+      failNormalization("TAX_TREATMENT_UNRESOLVED");
+    const amount = inclusionClaim
+      ? money(line.observedAmount.div(new Decimal(1).plus(rate!)))
       : money(line.observedAmount);
-    const unitPrice = rate
+    const unitPrice = inclusionClaim
       ? money(new Decimal(amount).div(line.quantity))
       : money(line.observedUnitPrice);
+    const taxAmount = inclusionClaim
+      ? money(line.observedAmount.minus(amount))
+      : money(line.observedTaxAmount ?? 0);
     return {
       sku: line.sku,
       description: line.description,
@@ -202,14 +226,24 @@ export function normalizeInvoice(
       uom: line.uom,
       observedUnitPrice: money(line.observedUnitPrice),
       observedAmount: money(line.observedAmount),
+      observedTaxAmount: line.observedTaxAmount
+        ? money(line.observedTaxAmount)
+        : null,
       unitPrice,
       amount,
+      taxAmount,
+      taxTreatment: inclusionClaim
+        ? ("INCLUSIVE" as const)
+        : line.observedTaxAmount?.isZero() === false
+          ? ("EXCLUSIVE" as const)
+          : ("ZERO" as const),
+      taxRate: rate?.toString() ?? null,
       sourceIds: line.sourceIds,
-      derivations: rate
+      derivations: inclusionClaim
         ? [
             {
               field: "amount",
-              formula: `${money(line.observedAmount)} / (1 + ${rate.toString()})`,
+              formula: `${money(line.observedAmount)} / (1 + ${rate!.toString()})`,
               sourceIds: [
                 line.sourceIds.observedAmount,
                 fieldSources.taxNote,
@@ -231,9 +265,31 @@ export function normalizeInvoice(
 
   let taxTreatment: NormalizedInvoice["taxTreatment"];
   let normalizedTax: Decimal;
-  if (rate) {
+  const inclusiveLines = lines.filter(
+    (line) => line.taxTreatment === "INCLUSIVE",
+  );
+  const hasInclusiveLines = inclusiveLines.length > 0;
+  const hasNonInclusiveLines = inclusiveLines.length < lines.length;
+  if (hasInclusiveLines && hasNonInclusiveLines) {
+    if (
+      lines.some(
+        (line) =>
+          line.taxTreatment !== "INCLUSIVE" &&
+          !line.sourceIds.observedTaxAmount,
+      )
+    )
+      failNormalization("TAX_TREATMENT_UNRESOLVED");
+    taxTreatment = "MIXED";
+    normalizedTax = lines.reduce(
+      (sum, line) => sum.plus(line.taxAmount),
+      new Decimal(0),
+    );
+  } else if (hasInclusiveLines) {
     taxTreatment = "INCLUSIVE";
-    normalizedTax = observedTotal.minus(goodsSubtotal);
+    normalizedTax = lines.reduce(
+      (sum, line) => sum.plus(line.taxAmount),
+      new Decimal(0),
+    );
     if (observedTax && observedTax.minus(normalizedTax).abs().gt("0.01"))
       failNormalization("TOTAL_MISMATCH");
   } else if (observedTax) {
@@ -259,13 +315,17 @@ export function normalizeInvoice(
     observedTax: observedTax ? money(observedTax) : null,
     observedTotal: money(observedTotal),
     taxTreatment,
-    taxRate: rate?.toString() ?? null,
+    taxRate:
+      taxTreatment === "INCLUSIVE" &&
+      new Set(lines.map((line) => line.taxRate)).size === 1
+        ? lines[0]!.taxRate
+        : null,
     subtotal: money(goodsSubtotal),
     tax: money(normalizedTax),
     total: money(observedTotal),
     lines,
     fieldSources,
-    derivations: rate
+    derivations: hasInclusiveLines
       ? [
           {
             field: "subtotal",
@@ -909,6 +969,12 @@ function parseTaxRate(value: string) {
   const rate = new Decimal(matches[0]![1]!).div(100);
   if (rate.lte(0) || rate.gte(1)) failNormalization("TAX_TREATMENT_UNRESOLVED");
   return rate;
+}
+
+function claimsTaxInclusion(value: string) {
+  return /INCLUD(?:E|ES|ED|ING).*?(?:TAX|VAT|GST)|(?:TAX|VAT|GST).*?INCLUD/i.test(
+    value,
+  );
 }
 
 function money(value: Decimal.Value) {
