@@ -447,6 +447,40 @@ describe("happy-path vertical slice", () => {
     storage.close();
   });
 
+  it("keeps matching PO lines visible when receipt capacity blocks posting", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-receipt-evidence-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+    const created = await request(app)
+      .post("/api/runs")
+      .field("fixtureId", "receipt_capacity")
+      .expect(201);
+
+    const result = await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+
+    expect(result.body).toMatchObject({
+      state: "NEEDS_REVIEW",
+      reasonCode: "RECEIPT_CAPACITY_EXCEEDED",
+      poCandidates: [
+        {
+          poNumber: "PO-2001",
+          lines: [
+            {
+              poSku: "VAL-500",
+              requestedQuantity: "3",
+              availableOrderedQuantity: "6",
+              availableReceivedQuantity: "2",
+            },
+          ],
+        },
+      ],
+    });
+    storage.close();
+  });
+
   it.each([
     ["happy", "POSTED", null],
     ["duplicate", "NEEDS_REVIEW", "DUPLICATE"],
