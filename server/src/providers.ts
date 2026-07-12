@@ -15,7 +15,7 @@ const lineMappingSchema = z.object({
   sku: z.string().nullable(),
   description: z.string().nullable(),
   quantity: z.string(),
-  uom: z.string(),
+  uom: z.string().nullable(),
   unitPrice: z.string(),
   amount: z.string(),
   taxInclusion: z.string().nullable().optional(),
@@ -108,14 +108,18 @@ export class ProviderError extends Error {
 
 export function invoiceMappingSchemaForEvidence(evidence: SourceRef[]) {
   const ids = [...new Set(evidence.map((source) => source.id))];
+  const uomIds = unitSourceIds(evidence);
   if (!ids.length) throw new Error("Evidence is required for source mapping.");
   const sourceId = z.enum(ids as [string, ...string[]]);
   const optionalSourceId = sourceId.nullable();
+  const uomSourceId = uomIds.length
+    ? z.enum(uomIds as [string, ...string[]]).nullable()
+    : z.null();
   const line = z.object({
     sku: optionalSourceId,
     description: optionalSourceId,
     quantity: sourceId,
-    uom: sourceId,
+    uom: uomSourceId,
     unitPrice: sourceId,
     amount: sourceId,
     taxInclusion: optionalSourceId.optional(),
@@ -138,15 +142,20 @@ export function invoiceMappingSchemaForEvidence(evidence: SourceRef[]) {
 
 function invoiceMappingJsonSchemaForEvidence(evidence: SourceRef[]) {
   const ids = [...new Set(evidence.map((source) => source.id))];
+  const uomIds = unitSourceIds(evidence);
   const sourceId = { type: "string", enum: ids };
   const optionalSourceId = { type: ["string", "null"], enum: [...ids, null] };
+  const optionalUomSourceId = {
+    type: ["string", "null"],
+    enum: [...uomIds, null],
+  };
   const line = {
     type: "object",
     properties: {
       sku: optionalSourceId,
       description: optionalSourceId,
       quantity: sourceId,
-      uom: sourceId,
+      uom: optionalUomSourceId,
       unitPrice: sourceId,
       amount: sourceId,
       taxInclusion: optionalSourceId,
@@ -190,6 +199,16 @@ function invoiceMappingJsonSchemaForEvidence(evidence: SourceRef[]) {
       "lines",
     ],
   };
+}
+
+function unitSourceIds(evidence: SourceRef[]) {
+  return evidence
+    .filter(
+      (source) =>
+        /^(UNIT|UOM|UNIT OF MEASURE)$/i.test(source.label.trim()) ||
+        /^(EA|EACH|PC|PCS|KIT)$/i.test(source.content.trim()),
+    )
+    .map((source) => source.id);
 }
 
 export async function extractAndMap(bytes: Buffer): Promise<{
