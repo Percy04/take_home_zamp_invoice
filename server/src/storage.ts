@@ -7,6 +7,7 @@ import {
   bundleCandidateSchema,
   checkResultSchema,
   normalizedInvoiceSchema,
+  poCandidateSchema,
   runDetailSchema,
   runSummarySchema,
   sourceRefSchema,
@@ -15,11 +16,16 @@ import {
   type BundleCandidate,
   type CheckResult,
   type NormalizedInvoice,
+  type PoCandidate,
   type RunDetail,
   type RunSummary,
   type SourceRef,
   type StageEvent,
 } from "../../shared/contracts.js";
+import {
+  buildUnknownBundleCandidates,
+  evaluateInvoice,
+} from "./controls.js";
 
 type RunRow = {
   id: string;
@@ -63,6 +69,7 @@ export class Storage {
     if (!exists(this.databasePath))
       copyFileSync(this.seedPath, this.databasePath);
     this.db = this.open();
+    this.migrate();
   }
 
   private open() {
@@ -72,11 +79,23 @@ export class Storage {
     return db;
   }
 
+  private migrate() {
+    const columns = this.db.prepare("PRAGMA table_info(runs)").all() as Array<{
+      name: string;
+    }>;
+    if (!columns.some((column) => column.name === "idempotency_key"))
+      this.db.exec("ALTER TABLE runs ADD COLUMN idempotency_key TEXT");
+    this.db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS runs_idempotency_key ON runs(idempotency_key) WHERE idempotency_key IS NOT NULL",
+    );
+  }
+
   createRun(input: {
     id: string;
     filename: string;
     sha256: string;
     pdfPath: string;
+    idempotencyKey?: string;
   }): RunDetail {
     const now = new Date().toISOString();
     const stages: StageEvent[] = [
@@ -85,8 +104,8 @@ export class Storage {
     this.db
       .prepare(
         `INSERT INTO runs
-         (id, created_at, updated_at, filename, file_sha256, pdf_path, state, stage_events_json)
-         VALUES (?, ?, ?, ?, ?, ?, 'PROCESSING', ?)`,
+         (id, created_at, updated_at, filename, file_sha256, pdf_path, state, stage_events_json, idempotency_key)
+         VALUES (?, ?, ?, ?, ?, ?, 'PROCESSING', ?, ?)`,
       )
       .run(
         input.id,
@@ -96,6 +115,7 @@ export class Storage {
         input.sha256,
         input.pdfPath,
         JSON.stringify(stages),
+        input.idempotencyKey ?? null,
       );
     return this.getRun(input.id)!;
   }
@@ -128,20 +148,38 @@ export class Storage {
       checks: checkResultSchema.array().parse(evaluation.checks),
       allocations: allocationSchema.array().parse(evaluation.allocations),
       candidatePo: parsePoCandidates(row.candidates_json)[0]?.poNumber ?? null,
+      poCandidates: parsePoCandidates(row.candidates_json),
       bundleCandidates: bundleCandidateSchema
         .array()
         .parse(JSON.parse(row.bundle_candidates_json ?? "[]")),
     });
   }
 
-  listRuns(): RunSummary[] {
+  listRuns(input: {
+    state?: RunSummary["state"];
+    limit?: number;
+    cursor?: string;
+  } = {}) {
+    const limit = input.limit ?? 25;
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+    const conditions: string[] = [];
+    const parameters: Array<string | number> = [];
+    if (input.state) {
+      conditions.push("state = ?");
+      parameters.push(input.state);
+    }
+    if (cursor) {
+      conditions.push("(created_at < ? OR (created_at = ? AND id < ?))");
+      parameters.push(cursor.createdAt, cursor.createdAt, cursor.id);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const rows = this.db
       .prepare(
         `SELECT id, filename, state, decision, execution, primary_reason_code,
          ledger_invoice_id, created_at, updated_at
-         FROM runs ORDER BY created_at DESC LIMIT 50`,
+         FROM runs ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
       )
-      .all() as Array<{
+      .all(...parameters, limit + 1) as Array<{
       id: string;
       filename: string;
       state: RunSummary["state"];
@@ -152,8 +190,10 @@ export class Storage {
       created_at: string;
       updated_at: string;
     }>;
-    return runSummarySchema.array().parse(
-      rows.map((row) => ({
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit);
+    const items = runSummarySchema.array().parse(
+      page.map((row) => ({
         runId: row.id,
         filename: row.filename,
         state: row.state,
@@ -165,6 +205,49 @@ export class Storage {
         updatedAt: row.updated_at,
       })),
     );
+    const last = page.at(-1);
+    const metrics = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total_runs,
+         SUM(CASE WHEN state = 'POSTED' THEN 1 ELSE 0 END) AS posted_count,
+         SUM(CASE WHEN state IN ('NEEDS_REVIEW', 'AWAITING_PO_CONFIRMATION', 'AWAITING_BUNDLE_CONFIRMATION') THEN 1 ELSE 0 END) AS review_count
+         FROM runs`,
+      )
+      .get() as {
+      total_runs: number;
+      posted_count: number;
+      review_count: number;
+    };
+    return {
+      items,
+      nextCursor:
+        hasMore && last
+          ? encodeCursor({ createdAt: last.created_at, id: last.id })
+          : null,
+      metrics: {
+        totalRuns: metrics.total_runs,
+        postedCount: metrics.posted_count,
+        reviewCount: metrics.review_count,
+        autoClearRate:
+          metrics.total_runs === 0
+            ? "0.0"
+            : new Decimal(metrics.posted_count)
+                .div(metrics.total_runs)
+                .mul(100)
+                .toFixed(1),
+      },
+    };
+  }
+
+  getRunByIdempotencyKey(key: string) {
+    const row = this.db
+      .prepare("SELECT id FROM runs WHERE idempotency_key = ?")
+      .get(key) as { id: string } | undefined;
+    return row ? this.getRun(row.id) : null;
+  }
+
+  ping() {
+    return this.db.prepare("SELECT 1 AS ok").get() as { ok: number };
   }
 
   getPdfPath(id: string): string | null {
@@ -211,10 +294,9 @@ export class Storage {
       bundleDefinitions: this.db
         .prepare("SELECT * FROM bundle_definitions WHERE active = 1")
         .all(),
-      usedQuantities: this.db
+      priorAllocations: this.db
         .prepare(
-          `SELECT po_line_id, COALESCE(SUM(CAST(component_quantity AS REAL)), 0) AS quantity
-           FROM allocations GROUP BY po_line_id`,
+          "SELECT po_line_id, component_quantity, po_basis_amount FROM allocations",
         )
         .all(),
     };
@@ -229,84 +311,100 @@ export class Storage {
       : null;
   }
 
-  findPoCandidate(invoice: NormalizedInvoice) {
+  findPoCandidates(invoice: NormalizedInvoice): PoCandidate[] {
     const vendor = this.db
       .prepare("SELECT id FROM vendors WHERE normalized_name = ?")
       .get(normalize(invoice.vendor)) as { id: string } | undefined;
-    if (!vendor) return null;
+    if (!vendor) return [];
     const purchaseOrders = this.db
       .prepare(
         "SELECT * FROM purchase_orders WHERE vendor_id = ? AND status = 'OPEN' AND currency = ?",
       )
       .all(vendor.id, invoice.currency) as Array<{ po_number: string }>;
-    for (const po of purchaseOrders) {
-      const lines = this.db
-        .prepare("SELECT * FROM po_lines WHERE po_number = ?")
-        .all(po.po_number) as Array<{
-        normalized_sku: string;
-        normalized_description: string;
-        uom: string;
-        unit_price: string;
-      }>;
-      const matches = invoice.lines.every((line) =>
-        lines.some((poLine) => {
-          const basis = new Decimal(line.quantity).mul(poLine.unit_price);
-          const variance = new Decimal(line.amount).minus(basis).abs();
-          return (
-            poLine.normalized_sku === normalize(line.sku) &&
-            poLine.normalized_description === normalize(line.description) &&
-            poLine.uom === line.uom &&
-            variance.lte(5)
+    const context = this.getHappyContext();
+    return poCandidateSchema.array().parse(
+      purchaseOrders
+        .map((po) => {
+          const candidateInvoice = { ...invoice, poNumber: po.po_number };
+          let matchedLineCount: number;
+          let allLinesResolvable: boolean;
+          try {
+            evaluateInvoice(candidateInvoice, context);
+            matchedLineCount = invoice.lines.length;
+            allLinesResolvable = true;
+          } catch {
+            allLinesResolvable = false;
+            const lines = context.poLines as Array<{
+              po_number: string;
+              normalized_sku: string | null;
+              normalized_description: string;
+              uom: string;
+            }>;
+            matchedLineCount = invoice.lines.filter((line) =>
+              lines.some(
+                (poLine) =>
+                  poLine.po_number === po.po_number &&
+                  poLine.uom === line.uom &&
+                  (line.sku
+                    ? poLine.normalized_sku === normalize(line.sku)
+                    : poLine.normalized_description === normalize(line.description)),
+              ),
+            ).length;
+          }
+          const poLines = this.db
+            .prepare("SELECT * FROM po_lines WHERE po_number = ?")
+            .all(po.po_number) as Array<{
+              ordered_quantity: string;
+              unit_price: string;
+            }>;
+          const totalBasis = poLines.reduce(
+            (sum, line) =>
+              sum.plus(new Decimal(line.ordered_quantity).mul(line.unit_price)),
+            new Decimal(0),
           );
-        }),
-      );
-      if (matches) return po.po_number;
-    }
-    return null;
+          const priorBasis = this.db
+            .prepare(
+              `SELECT a.po_basis_amount FROM allocations a
+               JOIN po_lines p ON p.id = a.po_line_id WHERE p.po_number = ?`,
+            )
+            .all(po.po_number) as Array<{ po_basis_amount: string }>;
+          const remaining = priorBasis.reduce(
+            (value, row) => value.minus(row.po_basis_amount),
+            totalBasis,
+          );
+          return {
+            poNumber: po.po_number,
+            allLinesResolvable,
+            matchedLineCount,
+            remainingPoBasisValue: remaining.toFixed(2),
+            subtotalDifference: remaining.minus(invoice.subtotal).abs().toFixed(2),
+          };
+        })
+        .sort(
+          (left, right) =>
+            Number(right.allLinesResolvable) - Number(left.allLinesResolvable) ||
+            right.matchedLineCount - left.matchedLineCount ||
+            new Decimal(left.subtotalDifference).comparedTo(right.subtotalDifference) ||
+            normalize(left.poNumber).localeCompare(normalize(right.poNumber)),
+        )
+        .slice(0, 3),
+    );
   }
 
-  findBundleCandidate(invoice: NormalizedInvoice): BundleCandidate | null {
-    if (invoice.lines.length !== 1) return null;
-    const line = invoice.lines[0];
-    const poLines = this.db
-      .prepare("SELECT * FROM po_lines WHERE po_number = ? ORDER BY line_number")
-      .all(invoice.poNumber) as Array<{
-      id: string;
-      sku: string;
-      uom: string;
-      received_quantity: string;
-      unit_price: string;
-    }>;
-    if (poLines.length < 2) return null;
-    const components = poLines.map((poLine) => {
-      const quantity = poLine.received_quantity;
-      return {
-        poLineId: poLine.id,
-        sku: poLine.sku,
-        uom: poLine.uom,
-        quantity,
-        poBasisAmount: new Decimal(quantity).mul(poLine.unit_price).toFixed(2),
-      };
-    });
-    const total = components.reduce(
-      (sum, component) => sum.plus(component.poBasisAmount),
-      new Decimal(0),
+  findBundleCandidates(invoice: NormalizedInvoice): BundleCandidate[] {
+    const context = this.getHappyContext();
+    return buildUnknownBundleCandidates(
+      invoice,
+      context.poLines,
+      context.priorAllocations,
     );
-    if (!total.eq(line.amount)) return null;
-    return {
-      id: "BUNDLE-CANDIDATE-1",
-      invoiceLineIndex: 0,
-      bundleQuantity: line.quantity,
-      totalPoBasisAmount: total.toFixed(2),
-      components,
-    };
   }
 
   awaitPoConfirmation(
     id: string,
     invoice: NormalizedInvoice,
     checks: CheckResult[],
-    candidatePo: string,
+    candidates: PoCandidate[],
     nextAction: string,
   ) {
     this.db
@@ -318,7 +416,7 @@ export class Storage {
       .run(
         nextAction,
         JSON.stringify({ invoice, checks, allocations: [] }),
-        JSON.stringify([{ poNumber: candidatePo }]),
+        JSON.stringify(candidates),
         new Date().toISOString(),
         id,
       );
@@ -328,7 +426,7 @@ export class Storage {
     id: string,
     invoice: NormalizedInvoice,
     checks: CheckResult[],
-    candidate: BundleCandidate,
+    candidates: BundleCandidate[],
     nextAction: string,
   ) {
     this.db
@@ -340,7 +438,7 @@ export class Storage {
       .run(
         nextAction,
         JSON.stringify({ invoice, checks, allocations: [] }),
-        JSON.stringify([candidate]),
+        JSON.stringify(candidates),
         new Date().toISOString(),
         id,
       );
@@ -384,21 +482,20 @@ export class Storage {
         .get(vendor.id, normalize(invoice.invoiceNumber));
       if (duplicate) throw new Error("DUPLICATE");
       for (const allocation of allocations) {
-        const capacity = this.db
-          .prepare(
-            `SELECT p.ordered_quantity, p.received_quantity,
-             COALESCE(SUM(CAST(a.component_quantity AS REAL)), 0) AS used_quantity
-             FROM po_lines p LEFT JOIN allocations a ON a.po_line_id = p.id
-             WHERE p.id = ? GROUP BY p.id`,
+          const capacity = this.db
+            .prepare(
+            "SELECT ordered_quantity, received_quantity FROM po_lines WHERE id = ?",
           )
           .get(allocation.poLineId) as {
           ordered_quantity: string;
           received_quantity: string;
-          used_quantity: number;
         };
-        const after = new Decimal(capacity.used_quantity).plus(
-          allocation.quantity,
-        );
+        const prior = this.db
+          .prepare("SELECT component_quantity FROM allocations WHERE po_line_id = ?")
+          .all(allocation.poLineId) as Array<{ component_quantity: string }>;
+        const after = prior
+          .reduce((sum, row) => sum.plus(row.component_quantity), new Decimal(0))
+          .plus(allocation.quantity);
         if (
           after.gt(capacity.ordered_quantity) ||
           after.gt(capacity.received_quantity)
@@ -467,7 +564,7 @@ export class Storage {
         );
       return ledgerId;
     });
-    return transaction();
+    return transaction.immediate();
   }
 
   block(
@@ -500,6 +597,7 @@ export class Storage {
     });
     copyFileSync(this.seedPath, this.databasePath);
     this.db = this.open();
+    this.migrate();
   }
 
   close() {
@@ -507,14 +605,27 @@ export class Storage {
   }
 }
 
-function parsePoCandidates(value: string | null) {
-  if (!value) return [] as Array<{ poNumber: string }>;
-  const parsed = JSON.parse(value) as unknown;
-  if (!Array.isArray(parsed)) return [];
-  return parsed.flatMap((row) => {
-    const poNumber = (row as { poNumber?: unknown }).poNumber;
-    return typeof poNumber === "string" ? [{ poNumber }] : [];
-  });
+function parsePoCandidates(value: string | null): PoCandidate[] {
+  if (!value) return [];
+  return poCandidateSchema.array().parse(JSON.parse(value));
+}
+
+function encodeCursor(cursor: { createdAt: string; id: string }) {
+  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
+}
+
+function decodeCursor(value: string) {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
+      createdAt?: unknown;
+      id?: unknown;
+    };
+    if (typeof parsed.createdAt !== "string" || typeof parsed.id !== "string")
+      throw new Error("INVALID_CURSOR");
+    return { createdAt: parsed.createdAt, id: parsed.id };
+  } catch {
+    throw new Error("INVALID_CURSOR");
+  }
 }
 
 function normalize(value: string) {

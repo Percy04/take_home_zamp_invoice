@@ -33,6 +33,8 @@ export const invoiceLineSchema = z.object({
   description: z.string(),
   quantity: z.string(),
   uom: z.string(),
+  observedUnitPrice: z.string(),
+  observedAmount: z.string(),
   unitPrice: z.string(),
   amount: z.string(),
 });
@@ -43,6 +45,11 @@ export const normalizedInvoiceSchema = z.object({
   invoiceDate: z.iso.date(),
   poNumber: z.string(),
   currency: z.literal("USD"),
+  observedSubtotal: z.string().nullable(),
+  observedTax: z.string().nullable(),
+  observedTotal: z.string(),
+  taxTreatment: z.enum(["EXCLUSIVE", "INCLUSIVE", "ZERO"]),
+  taxRate: z.string().nullable(),
   subtotal: z.string(),
   tax: z.string(),
   total: z.string(),
@@ -79,7 +86,16 @@ export const bundleCandidateSchema = z.object({
   ),
 });
 
-export const runDetailSchema = z.object({
+export const poCandidateSchema = z.object({
+  poNumber: z.string().min(1),
+  allLinesResolvable: z.boolean(),
+  matchedLineCount: z.number().int().nonnegative(),
+  remainingPoBasisValue: z.string(),
+  subtotalDifference: z.string(),
+});
+
+export const runDetailSchema = z
+  .object({
   runId: z.uuid(),
   filename: z.string(),
   state: runStateSchema,
@@ -96,8 +112,32 @@ export const runDetailSchema = z.object({
   checks: z.array(checkResultSchema),
   allocations: z.array(allocationSchema),
   candidatePo: z.string().nullable(),
-  bundleCandidates: z.array(bundleCandidateSchema),
-});
+  poCandidates: z.array(poCandidateSchema),
+    bundleCandidates: z.array(bundleCandidateSchema),
+  })
+  .superRefine((run, context) => {
+    if (run.state === "POSTED" && (!run.ledgerId || run.execution !== "POSTED"))
+      context.addIssue({
+        code: "custom",
+        message: "Posted runs require a posted execution and ledger ID.",
+      });
+    if (
+      run.state === "AWAITING_PO_CONFIRMATION" &&
+      (!run.candidatePo || run.execution !== "AWAITING_CONFIRMATION")
+    )
+      context.addIssue({
+        code: "custom",
+        message: "Awaiting-PO runs require a candidate and confirmation execution.",
+      });
+    if (
+      run.state === "AWAITING_BUNDLE_CONFIRMATION" &&
+      (!run.bundleCandidates.length || run.execution !== "AWAITING_CONFIRMATION")
+    )
+      context.addIssue({
+        code: "custom",
+        message: "Awaiting-bundle runs require candidates and confirmation execution.",
+      });
+  });
 
 export const runSummarySchema = z.object({
   runId: z.uuid(),
@@ -109,6 +149,17 @@ export const runSummarySchema = z.object({
   ledgerId: z.string().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+});
+
+export const runListSchema = z.object({
+  items: z.array(runSummarySchema),
+  nextCursor: z.string().nullable(),
+  metrics: z.object({
+    totalRuns: z.number().int().nonnegative(),
+    postedCount: z.number().int().nonnegative(),
+    reviewCount: z.number().int().nonnegative(),
+    autoClearRate: z.string(),
+  }),
 });
 
 export const apiErrorSchema = z.object({
@@ -125,5 +176,7 @@ export type CheckResult = z.infer<typeof checkResultSchema>;
 export type NormalizedInvoice = z.infer<typeof normalizedInvoiceSchema>;
 export type Allocation = z.infer<typeof allocationSchema>;
 export type BundleCandidate = z.infer<typeof bundleCandidateSchema>;
+export type PoCandidate = z.infer<typeof poCandidateSchema>;
 export type RunDetail = z.infer<typeof runDetailSchema>;
 export type RunSummary = z.infer<typeof runSummarySchema>;
+export type RunList = z.infer<typeof runListSchema>;

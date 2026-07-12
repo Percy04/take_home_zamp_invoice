@@ -2,8 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Router } from "express";
+import { rateLimit } from "express-rate-limit";
 import multer from "multer";
 import { PDFDocument } from "pdf-lib";
+import { z } from "zod";
+import { runStateSchema } from "../../shared/contracts.js";
+import { env } from "./env.js";
 import { confirmBundle, confirmPo, processInvoice } from "./pipeline.js";
 import type { Storage } from "./storage.js";
 
@@ -26,25 +30,65 @@ const fixtureIds = new Set([
 
 export function createApi(storage?: Storage) {
   const api = Router();
+  const processingRuns = new Set<string>();
+  const writeLimit = rateLimit({
+    windowMs: 60_000,
+    limit: 30,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+  });
 
   api.get("/health", (_request, response) => {
-    response.json({
-      status: "ok",
-      database: storage ? "available" : "not-initialized",
-    });
+    try {
+      if (storage) storage.ping();
+      response.json({
+        status: "ok",
+        database: storage ? "available" : "not-initialized",
+      });
+    } catch {
+      response.status(503).json({ status: "not-ready", database: "unavailable" });
+    }
   });
 
   if (!storage) return api;
 
-  api.get("/runs", (_request, response) => {
-    response.json(storage.listRuns());
+  api.get("/runs", (request, response) => {
+    const parsed = z
+      .object({
+        state: runStateSchema.optional(),
+        limit: z.coerce.number().int().min(1).max(100).default(25),
+        cursor: z.string().min(1).optional(),
+      })
+      .strict()
+      .safeParse(request.query);
+    if (!parsed.success)
+      return response.status(400).json(error("INVALID_QUERY", "Run filters are invalid."));
+    try {
+      response.json(storage.listRuns(parsed.data));
+    } catch (caught) {
+      if (caught instanceof Error && caught.message === "INVALID_CURSOR")
+        return response.status(400).json(error("INVALID_CURSOR", "The pagination cursor is invalid."));
+      throw caught;
+    }
   });
 
   api.post(
     "/runs",
+    writeLimit,
     upload.single("invoice"),
     async (request, response, next) => {
       try {
+        const idempotencyKey = request.get("Idempotency-Key")?.trim();
+        if (idempotencyKey && idempotencyKey.length > 200)
+          return response.status(400).json(error("INVALID_IDEMPOTENCY_KEY", "Idempotency-Key is too long."));
+        if (idempotencyKey) {
+          const existing = storage.getRunByIdempotencyKey(idempotencyKey);
+          if (existing)
+            return response
+              .location(`/api/runs/${existing.runId}`)
+              .status(200)
+              .json(existing);
+        }
         const fixtureId =
           typeof request.body.fixtureId === "string"
             ? request.body.fixtureId
@@ -79,6 +123,7 @@ export function createApi(storage?: Storage) {
           filename,
           sha256: createHash("sha256").update(bytes).digest("hex"),
           pdfPath,
+          idempotencyKey,
         });
         response.location(`/api/runs/${runId}`).status(201).json(run);
       } catch (caught) {
@@ -87,67 +132,74 @@ export function createApi(storage?: Storage) {
     },
   );
 
-  api.post("/runs/:runId/process", async (request, response, next) => {
+  api.post("/runs/:runId/process", writeLimit, async (request, response, next) => {
     try {
-      const run = storage.getRun(request.params.runId);
+      const runId = validRunId(request.params.runId);
+      if (!runId)
+        return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
+      if (!emptyBody(request.body))
+        return response.status(400).json(error("INVALID_BODY", "This action accepts no request body.", runId));
+      const run = storage.getRun(runId);
       if (!run)
         return response
           .status(404)
           .json(error("RUN_NOT_FOUND", "Run not found."));
-      response.json(await processInvoice(request.params.runId, storage));
+      if (processingRuns.has(runId))
+        return response.status(409).json(error("RUN_ALREADY_PROCESSING", "This run is already processing.", runId));
+      processingRuns.add(runId);
+      try {
+        response.json(await processInvoice(runId, storage));
+      } finally {
+        processingRuns.delete(runId);
+      }
     } catch (caught) {
       next(caught);
     }
   });
 
-  api.post("/runs/:runId/confirm-po", async (request, response, next) => {
+  api.post("/runs/:runId/confirm-po", writeLimit, async (request, response, next) => {
     try {
-      const run = storage.getRun(request.params.runId);
+      const runId = validRunId(request.params.runId);
+      if (!runId)
+        return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
+      const body = z.object({ poNumber: z.string().trim().min(1) }).strict().safeParse(request.body);
+      if (!body.success)
+        return response.status(400).json(error("INVALID_CONFIRMATION", "Provide exactly one PO candidate.", runId));
+      const run = storage.getRun(runId);
       if (!run)
         return response
           .status(404)
           .json(error("RUN_NOT_FOUND", "Run not found."));
-      const poNumber =
-        typeof request.body?.poNumber === "string"
-          ? request.body.poNumber
-          : run.candidatePo;
-      if (!poNumber) {
-        return response
-          .status(400)
-          .json(error("INVALID_CONFIRMATION", "No PO candidate was selected."));
-      }
-      response.json(confirmPo(request.params.runId, storage, poNumber));
+      response.json(confirmPo(runId, storage, body.data.poNumber));
     } catch (caught) {
       next(caught);
     }
   });
 
-  api.post("/runs/:runId/confirm-bundle", async (request, response, next) => {
+  api.post("/runs/:runId/confirm-bundle", writeLimit, async (request, response, next) => {
     try {
-      const run = storage.getRun(request.params.runId);
+      const runId = validRunId(request.params.runId);
+      if (!runId)
+        return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
+      const body = z.object({ candidateId: z.string().trim().min(1) }).strict().safeParse(request.body);
+      if (!body.success)
+        return response.status(400).json(error("INVALID_CONFIRMATION", "Provide exactly one bundle candidate.", runId));
+      const run = storage.getRun(runId);
       if (!run)
         return response
           .status(404)
           .json(error("RUN_NOT_FOUND", "Run not found."));
-      const candidateId =
-        typeof request.body?.candidateId === "string"
-          ? request.body.candidateId
-          : run.bundleCandidates[0]?.id;
-      if (!candidateId) {
-        return response
-          .status(400)
-          .json(
-            error("INVALID_CONFIRMATION", "No bundle candidate was selected."),
-          );
-      }
-      response.json(confirmBundle(request.params.runId, storage, candidateId));
+      response.json(confirmBundle(runId, storage, body.data.candidateId));
     } catch (caught) {
       next(caught);
     }
   });
 
   api.get("/runs/:runId", (request, response) => {
-    const run = storage.getRun(request.params.runId);
+    const runId = validRunId(request.params.runId);
+    if (!runId)
+      return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
+    const run = storage.getRun(runId);
     if (!run)
       return response
         .status(404)
@@ -156,7 +208,10 @@ export function createApi(storage?: Storage) {
   });
 
   api.get("/runs/:runId/document", (request, response) => {
-    const pdfPath = storage.getPdfPath(request.params.runId);
+    const runId = validRunId(request.params.runId);
+    if (!runId)
+      return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
+    const pdfPath = storage.getPdfPath(runId);
     if (!pdfPath)
       return response
         .status(404)
@@ -168,7 +223,13 @@ export function createApi(storage?: Storage) {
     response.sendFile(path.resolve(pdfPath));
   });
 
-  api.post("/reset", (_request, response) => {
+  api.post("/reset", writeLimit, (request, response) => {
+    if (!env.ALLOW_DEMO_RESET)
+      return response.status(403).json(error("RESET_DISABLED", "Demo reset is disabled."));
+    if (!emptyBody(request.body))
+      return response.status(400).json(error("INVALID_BODY", "Reset accepts no request body."));
+    if (processingRuns.size)
+      return response.status(409).json(error("WRITE_IN_PROGRESS", "Reset is unavailable while a run is processing."));
     storage.reset();
     response.json({ status: "reset" });
   });
@@ -199,6 +260,19 @@ async function validatePdf(bytes: Buffer) {
 
 export class IntakeError extends Error {}
 
-export function error(code: string, message: string) {
-  return { error: { code, message } };
+export function error(code: string, message: string, runId?: string) {
+  return { error: { code, message, ...(runId ? { runId } : {}) } };
+}
+
+function validRunId(value: string | string[] | undefined) {
+  const parsed = z.uuid().safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function emptyBody(value: unknown) {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === "object" && Object.keys(value).length === 0)
+  );
 }

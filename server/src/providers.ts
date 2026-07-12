@@ -1,26 +1,31 @@
 import { readFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
 import path from "node:path";
+import DocumentIntelligence, {
+  getLongRunningPoller,
+  isUnexpected,
+} from "@azure-rest/ai-document-intelligence";
+import OpenAI from "openai";
+import { zodTextFormat } from "openai/helpers/zod";
 import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
 import { sourceRefSchema, type SourceRef } from "../../shared/contracts.js";
 import { env } from "./env.js";
 
 const lineMappingSchema = z.object({
-  sku: z.string(),
-  description: z.string(),
+  sku: z.string().nullable(),
+  description: z.string().nullable(),
   quantity: z.string(),
   uom: z.string(),
   unitPrice: z.string(),
   amount: z.string(),
 });
 
-const invoiceMappingSchema = z.object({
+export const invoiceMappingSchema = z.object({
   vendor: z.string(),
   invoiceNumber: z.string(),
   invoiceDate: z.string(),
-  poNumber: z.string(),
-  currency: z.string(),
+  poNumber: z.string().nullable(),
+  currency: z.string().nullable(),
   subtotal: z.string().nullable(),
   tax: z.string().nullable(),
   total: z.string(),
@@ -34,11 +39,11 @@ const lineMappingJsonSchema = {
   type: "object",
   properties: {
     sku: {
-      type: "string",
+      type: ["string", "null"],
       description: "Source ID for the invoice line SKU or product code.",
     },
     description: {
-      type: "string",
+      type: ["string", "null"],
       description: "Source ID for the invoice line description.",
     },
     quantity: {
@@ -71,12 +76,12 @@ const invoiceMappingJsonSchema = {
     },
     invoiceDate: { type: "string", description: "Source ID for invoice date." },
     poNumber: {
-      type: "string",
+      type: ["string", "null"],
       description: "Source ID for purchase order number.",
     },
-    currency: { type: "string", description: "Source ID for currency." },
-    subtotal: { type: "string", description: "Source ID for subtotal." },
-    tax: { type: "string", description: "Source ID for tax amount." },
+    currency: { type: ["string", "null"], description: "Source ID for currency." },
+    subtotal: { type: ["string", "null"], description: "Source ID for subtotal." },
+    tax: { type: ["string", "null"], description: "Source ID for tax amount." },
     total: { type: "string", description: "Source ID for invoice total." },
     lines: {
       type: "array",
@@ -120,6 +125,7 @@ type ProviderStage =
   | "AZURE_POLL"
   | "AZURE_RESULT"
   | "AZURE_EVIDENCE"
+  | "OPENAI_MAPPING"
   | "GEMINI_MAPPING"
   | "MAPPING_VALIDATION"
   | "RECORDED_PROVIDER";
@@ -153,103 +159,117 @@ export async function extractAndMapLive(bytes: Buffer) {
     env.AZURE_DOCUMENT_INTELLIGENCE_KEY
       ? null
       : "AZURE_DOCUMENT_INTELLIGENCE_KEY",
-    env.GEMINI_API_KEY ? null : "GEMINI_API_KEY",
+    env.MAPPING_PROVIDER === "openai" && !env.OPENAI_API_KEY
+      ? "OPENAI_API_KEY"
+      : null,
+    env.MAPPING_PROVIDER === "gemini" && !env.GEMINI_API_KEY
+      ? "GEMINI_API_KEY"
+      : null,
   ].filter(Boolean);
   if (
     !env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT ||
     !env.AZURE_DOCUMENT_INTELLIGENCE_KEY ||
-    !env.GEMINI_API_KEY
+    (env.MAPPING_PROVIDER === "openai"
+      ? !env.OPENAI_API_KEY
+      : !env.GEMINI_API_KEY)
   ) {
     throw new ProviderError("CONFIG", "Live providers are not configured.", {
       missing: missing.join(", "),
     });
   }
-  const endpoint = env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT.replace(/\/$/, "");
-  let analyzed: Response;
-  const analyzeUrl = `${endpoint}/documentintelligence/documentModels/prebuilt-invoice:analyze?api-version=2024-11-30`;
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      analyzed = await fetch(analyzeUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/pdf",
-          "Ocp-Apim-Subscription-Key": env.AZURE_DOCUMENT_INTELLIGENCE_KEY,
-        },
-        body: bytes.buffer.slice(
-          bytes.byteOffset,
-          bytes.byteOffset + bytes.byteLength,
-        ) as ArrayBuffer,
-        signal: AbortSignal.timeout(60_000),
+  const client = DocumentIntelligence(
+    env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT,
+    { key: env.AZURE_DOCUMENT_INTELLIGENCE_KEY },
+  );
+  let result: AzureResult;
+  try {
+    const initial = await client
+      .path("/documentModels/{modelId}:analyze", "prebuilt-invoice")
+      .post({
+        contentType: "application/json",
+        body: { base64Source: bytes.toString("base64") },
+        abortSignal: AbortSignal.timeout(60_000),
       });
-    } catch (caught) {
-      throw providerError(
-        "AZURE_ANALYZE",
-        "Azure analyze request failed.",
-        caught,
-      );
-    }
-    if (analyzed.status !== 429 || attempt >= 2) break;
-    await waitForRetry(analyzed, attempt);
+    if (isUnexpected(initial))
+      throw new ProviderError("AZURE_ANALYZE", "Azure analyze request failed.", {
+        status: initial.status,
+      });
+    const poller = getLongRunningPoller(client, initial);
+    result = (await withTimeout(
+      poller.pollUntilDone(),
+      60_000,
+      "Azure extraction timed out.",
+    )).body as unknown as AzureResult;
+  } catch (caught) {
+    if (caught instanceof ProviderError) throw caught;
+    throw providerError("AZURE_ANALYZE", "Azure analyze request failed.", caught);
   }
-  if (!analyzed.ok) {
-    throw new ProviderError("AZURE_ANALYZE", "Azure analyze request failed.", {
-      status: analyzed.status,
-      statusText: analyzed.statusText,
+  if (result.status !== "succeeded")
+    throw new ProviderError("AZURE_RESULT", "Azure extraction failed.", {
+      status: result.status ?? "unknown",
     });
-  }
-  const operation = analyzed.headers.get("operation-location");
-  if (!operation)
-    throw new ProviderError(
-      "AZURE_ANALYZE",
-      "Azure returned no operation location.",
-      { status: analyzed.status },
-    );
-
-  let result: AzureResult | undefined;
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    let polled: Response;
-    try {
-      polled = await fetch(operation, {
-        headers: {
-          "Ocp-Apim-Subscription-Key": env.AZURE_DOCUMENT_INTELLIGENCE_KEY,
-        },
-        signal: AbortSignal.timeout(5_000),
-      });
-    } catch (caught) {
-      throw providerError("AZURE_POLL", "Azure polling request failed.", caught, {
-        attempt,
-      });
-    }
-    if (!polled.ok) {
-      if (polled.status === 429) {
-        await waitForRetry(polled, attempt);
-        continue;
-      }
-      throw new ProviderError("AZURE_POLL", "Azure polling request failed.", {
-        attempt,
-        status: polled.status,
-        statusText: polled.statusText,
-      });
-    }
-    result = (await polled.json()) as AzureResult;
-    if (result.status === "succeeded") break;
-    if (result.status === "failed") {
-      throw new ProviderError("AZURE_RESULT", "Azure extraction failed.", {
-        attempt,
-        status: result.status,
-      });
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  if (result?.status !== "succeeded") {
-    throw new ProviderError("AZURE_RESULT", "Azure extraction timed out.", {
-      status: result?.status ?? "unknown",
-    });
-  }
   const evidence = buildSourceCatalogue(result);
-  const mapping = await mapWithGemini(evidence);
+  const mapping = await mapEvidenceWithRetry(evidence);
   validateMapping(mapping, evidence);
   return { evidence, mapping };
+}
+
+export async function mapEvidenceWithRetry(
+  evidence: SourceRef[],
+  provider = env.MAPPING_PROVIDER,
+) {
+  return withOneMappingRetry(() =>
+    provider === "openai"
+        ? mapWithOpenAI(evidence)
+        : mapWithGemini(evidence),
+  );
+}
+
+export async function withOneMappingRetry<T>(operation: () => Promise<T>) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (caught) {
+      if (attempt >= 1 || !isRetryableMappingError(caught)) throw caught;
+    }
+  }
+}
+
+async function mapWithOpenAI(evidence: SourceRef[]) {
+  if (!env.OPENAI_API_KEY)
+    throw new ProviderError("CONFIG", "OpenAI is not configured.");
+  try {
+    const client = new OpenAI({
+      apiKey: env.OPENAI_API_KEY,
+      timeout: 30_000,
+      maxRetries: 0,
+    });
+    const response = await client.responses.parse({
+      model: env.OPENAI_MODEL,
+      input: [
+        {
+          role: "system",
+          content:
+            "Map invoice fields only by selecting provided source IDs. Return IDs exactly as provided. Never infer, rewrite, calculate, or decide values.",
+        },
+        { role: "user", content: JSON.stringify(evidence) },
+      ],
+      text: { format: zodTextFormat(invoiceMappingSchema, "invoice_mapping") },
+    });
+    if (!response.output_parsed)
+      throw new ProviderError("OPENAI_MAPPING", "OpenAI returned no mapping.", {
+        model: env.OPENAI_MODEL,
+        evidenceCount: evidence.length,
+        malformed: true,
+      });
+    return invoiceMappingSchema.parse(response.output_parsed);
+  } catch (caught) {
+    if (caught instanceof ProviderError) throw caught;
+    throw providerError("OPENAI_MAPPING", "OpenAI mapping request failed.", caught, {
+      model: env.OPENAI_MODEL,
+      evidenceCount: evidence.length,
+    });
+  }
 }
 
 async function mapWithGemini(evidence: SourceRef[]) {
@@ -318,11 +338,12 @@ async function mapWithGemini(evidence: SourceRef[]) {
     throw providerError("GEMINI_MAPPING", "Gemini returned malformed mapping.", caught, {
       model: env.GEMINI_MODEL,
       evidenceCount: evidence.length,
+      malformed: true,
     });
   }
 }
 
-function buildSourceCatalogue(payload: AzureResult): SourceRef[] {
+export function buildSourceCatalogue(payload: AzureResult): SourceRef[] {
   const result = payload.analyzeResult;
   const fields = result?.documents?.[0]?.fields ?? {};
   const evidence: SourceRef[] = [];
@@ -429,8 +450,7 @@ async function recordingForDocument(bytes: Buffer) {
     updateMetadata: false,
   });
   const title = pdf.getTitle();
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
-  if (sha256 === "f00e5c72ed010b3e27369d575c85a148e8677a411d273c7a8ed42c164aca8e93")
+  if (!title || title === "untitled")
     return "happy_layout_c_scanned";
   if (title === "Invoice ACME-2026-001") return "happy";
   if (title === "Invoice ACME-2026-000") return "duplicate";
@@ -536,7 +556,7 @@ export function logProviderError(error: unknown) {
 
 export function providerFailureReason(error: unknown) {
   return error instanceof ProviderError &&
-    ["GEMINI_MAPPING", "MAPPING_VALIDATION"].includes(error.stage)
+    ["OPENAI_MAPPING", "GEMINI_MAPPING", "MAPPING_VALIDATION"].includes(error.stage)
     ? "MAPPING_FAILED"
     : "EXTRACTION_FAILED";
 }
@@ -597,10 +617,33 @@ async function safeResponseError(response: Response) {
   }
 }
 
-async function waitForRetry(response: Response, attempt: number) {
-  const retryAfter = Number(response.headers.get("retry-after"));
-  const delay = Number.isFinite(retryAfter)
-    ? retryAfter * 1000
-    : Math.min(5000, 750 * (attempt + 1));
-  await new Promise((resolve) => setTimeout(resolve, delay));
+function isRetryableMappingError(error: unknown) {
+  if (!(error instanceof ProviderError)) return true;
+  const status = error.diagnostics.status;
+  if (error.diagnostics.malformed) return true;
+  return (
+    typeof status !== "number" ||
+    status === 408 ||
+    status === 409 ||
+    status === 429 ||
+    status >= 500
+  );
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  milliseconds: number,
+  message: string,
+) {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), milliseconds);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }

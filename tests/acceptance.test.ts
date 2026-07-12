@@ -275,11 +275,13 @@ describe("happy-path vertical slice", () => {
     if (result.body.state === "AWAITING_PO_CONFIRMATION") {
       result = await request(app)
         .post(`/api/runs/${created.body.runId}/confirm-po`)
+        .send({ poNumber: result.body.candidatePo })
         .expect(200);
     }
     if (result.body.state === "AWAITING_BUNDLE_CONFIRMATION") {
       result = await request(app)
         .post(`/api/runs/${created.body.runId}/confirm-bundle`)
+        .send({ candidateId: result.body.bundleCandidates[0].id })
         .expect(200);
     }
 

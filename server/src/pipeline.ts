@@ -1,6 +1,8 @@
 import {
   ControlError,
+  evaluateConfirmedBundle,
   evaluateHappyPath,
+  NormalizationError,
   normalizeInvoice,
 } from "./controls.js";
 import { readFile } from "node:fs/promises";
@@ -48,28 +50,40 @@ export async function processInvoice(runId: string, storage: Storage) {
   let invoice;
   try {
     invoice = normalizeInvoice(evidence, mapping);
-  } catch {
+  } catch (caught) {
     storage.addStage(runId, "NORMALIZATION", "FAILED");
+    const reason =
+      caught instanceof NormalizationError
+        ? caught.reasonCode
+        : "MAPPING_FAILED";
     storage.block(
       runId,
-      "MAPPING_FAILED",
-      nextActionFor("MAPPING_FAILED"),
+      reason,
+      nextActionFor(reason),
     );
     return storage.getRun(runId)!;
   }
   storage.addStage(runId, "NORMALIZATION", "COMPLETED");
   if (!invoice.poNumber) {
-    const candidatePo = storage.findPoCandidate(invoice);
-    if (candidatePo) {
+    const candidates = storage.findPoCandidates(invoice);
+    if (candidates.length) {
       storage.awaitPoConfirmation(
         runId,
         invoice,
         [{ code: "MISSING_PO", passed: false, detail: "Invoice omitted its PO reference." }],
-        candidatePo,
+        candidates,
         nextActionFor("MISSING_PO"),
       );
       return storage.getRun(runId)!;
     }
+    storage.block(
+      runId,
+      "MISSING_PO",
+      nextActionFor("MISSING_PO"),
+      invoice,
+      [{ code: "MISSING_PO", passed: false, detail: "Invoice omitted its PO reference and no candidate is available." }],
+    );
+    return storage.getRun(runId)!;
   }
   let evaluation;
   try {
@@ -77,14 +91,14 @@ export async function processInvoice(runId: string, storage: Storage) {
   } catch (caught) {
     if (!(caught instanceof ControlError)) throw caught;
     if (caught.code === "LINE_MATCH") {
-      const candidate = storage.findBundleCandidate(invoice);
-      if (candidate) {
+      const candidates = storage.findBundleCandidates(invoice);
+      if (candidates.length) {
         storage.addStage(runId, "CONTROLS", "COMPLETED");
         storage.awaitBundleConfirmation(
           runId,
           invoice,
           caught.checks,
-          candidate,
+          candidates,
           nextActionFor("BUNDLE_MAPPING_REQUIRED"),
         );
         return storage.getRun(runId)!;
@@ -135,7 +149,35 @@ export function confirmPo(runId: string, storage: Storage, poNumber: string) {
   const invoice = storage.getEvaluation(runId)?.invoice;
   if (!invoice) throw new Error("RUN_EVALUATION_NOT_FOUND");
   const confirmedInvoice = { ...invoice, poNumber };
-  const evaluation = evaluateHappyPath(confirmedInvoice, storage.getHappyContext());
+  let evaluation;
+  try {
+    evaluation = evaluateHappyPath(confirmedInvoice, storage.getHappyContext());
+  } catch (caught) {
+    if (!(caught instanceof ControlError)) throw caught;
+    if (caught.code === "LINE_MATCH") {
+      const candidates = storage.findBundleCandidates(confirmedInvoice);
+      if (candidates.length) {
+        storage.addStage(runId, "CONFIRMATION", "COMPLETED");
+        storage.awaitBundleConfirmation(
+          runId,
+          confirmedInvoice,
+          caught.checks,
+          candidates,
+          nextActionFor("BUNDLE_MAPPING_REQUIRED"),
+        );
+        return storage.getRun(runId)!;
+      }
+    }
+    const reason = reasonFor(caught.code);
+    storage.block(
+      runId,
+      reason,
+      nextActionFor(reason),
+      confirmedInvoice,
+      caught.checks,
+    );
+    return storage.getRun(runId)!;
+  }
   storage.addStage(runId, "CONFIRMATION", "COMPLETED");
   storage.post(runId, confirmedInvoice, evaluation.checks, evaluation.allocations);
   storage.addStage(runId, "POSTING", "COMPLETED");
@@ -158,29 +200,34 @@ export function confirmBundle(
   if (!candidate) throw new Error("INVALID_CONFIRMATION");
   const invoice = storage.getEvaluation(runId)?.invoice;
   if (!invoice) throw new Error("RUN_EVALUATION_NOT_FOUND");
-  const checks: CheckResult[] = [
-    { code: "BUNDLE_MAPPING_CONFIRMED", passed: true, detail: "Reviewer confirmed the stored bundle decomposition." },
-  ];
-  const allocations: Allocation[] = candidate.components.map((component) => ({
-    invoiceLineIndex: candidate.invoiceLineIndex,
-    poLineId: component.poLineId,
-    poNumber: invoice.poNumber,
-    sku: component.sku,
-    quantity: component.quantity,
-    matchType: "BUNDLE_CONFIRMED",
-    bundleDefinitionId: null,
-    poBasisAmount: component.poBasisAmount,
-    actualNetAmount: component.poBasisAmount,
-    remainingOrderedQuantity: "0",
-    remainingReceivedQuantity: "0",
-  }));
+  let evaluation: { checks: CheckResult[]; allocations: Allocation[] };
+  try {
+    evaluation = evaluateConfirmedBundle(
+      invoice,
+      candidate,
+      storage.getHappyContext(),
+    );
+  } catch (caught) {
+    if (!(caught instanceof ControlError)) throw caught;
+    const reason = reasonFor(caught.code);
+    storage.block(
+      runId,
+      reason,
+      nextActionFor(reason),
+      invoice,
+      caught.checks,
+    );
+    return storage.getRun(runId)!;
+  }
   storage.addStage(runId, "CONFIRMATION", "COMPLETED");
-  storage.post(runId, invoice, checks, allocations);
+  storage.post(runId, invoice, evaluation.checks, evaluation.allocations);
   storage.addStage(runId, "POSTING", "COMPLETED");
   return storage.getRun(runId)!;
 }
 
 function reasonFor(checkCode: string) {
+  if (["UNSUPPORTED_STRUCTURE"].includes(checkCode)) return "UNSUPPORTED_STRUCTURE";
+  if (["TAX_BASIS"].includes(checkCode)) return "TAX_TREATMENT_UNRESOLVED";
   if (checkCode === "DUPLICATE") return "DUPLICATE";
   if (["VENDOR_MATCH", "PO_ELIGIBLE"].includes(checkCode))
     return "VENDOR_OR_PO_MISMATCH";

@@ -20,7 +20,12 @@ try {
   console.log("Live provider smoke test");
   console.log(`PDF: ${pdfPath}`);
   console.log(`Azure endpoint: ${redactEndpoint(env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT)}`);
-  console.log(`Gemini model: ${env.GEMINI_MODEL}`);
+  console.log(`Mapping provider: ${env.MAPPING_PROVIDER}`);
+  console.log(
+    `Mapping model: ${
+      env.MAPPING_PROVIDER === "openai" ? env.OPENAI_MODEL : env.GEMINI_MODEL
+    }`,
+  );
 
   const result = await extractAndMapLive(await readFile(pdfPath));
   console.log("Provider flow: succeeded");
