@@ -4,11 +4,22 @@
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "paths": {
+      "@/*": ["./frontend_v1/ap-resolve-console/src/*"]
+    },
     "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
     "types": ["node", "vite/client", "vitest/globals"]
   },
-  "include": ["client", "server", "shared", "scripts", "tests", "*.ts"]
+  "include": [
+    "client",
+    "frontend_v1/ap-resolve-console/src/main.tsx",
+    "server",
+    "shared",
+    "scripts",
+    "tests",
+    "*.ts"
+  ]
 }
