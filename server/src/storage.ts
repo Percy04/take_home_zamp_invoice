@@ -406,7 +406,7 @@ export class Storage {
           const candidateInvoice = { ...invoice, poNumber: po.po_number };
           let matchedLineCount: number;
           let allLinesResolvable: boolean;
-          let lines: PoCandidate["lines"] = [];
+          let lines: PoCandidate["lines"];
           try {
             const evaluation = evaluateInvoice(candidateInvoice, context);
             matchedLineCount = invoice.lines.length;
