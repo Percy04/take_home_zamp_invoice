@@ -3,6 +3,7 @@ import { PDFDocument } from "pdf-lib";
 import {
   buildSourceCatalogue,
   extractAndMap,
+  invoiceMappingSchemaForEvidence,
   preferReliableEvidence,
   ProviderError,
   validateMapping,
@@ -126,6 +127,56 @@ describe("Azure evidence catalogue", () => {
 });
 
 describe("mapping evidence validation", () => {
+  it("only permits mapper references present in the evidence catalogue", () => {
+    const ids = [
+      "field.VendorName",
+      "field.InvoiceId",
+      "field.InvoiceDate",
+      "field.InvoiceTotal",
+      "item.0.Description",
+      "item.0.Quantity",
+      "item.0.Unit",
+      "item.0.UnitPrice",
+      "item.0.Amount",
+    ];
+    const schema = invoiceMappingSchemaForEvidence(
+      ids.map((id) => ({
+        id,
+        content: id,
+        confidence: 1,
+        page: 1,
+        label: id,
+      })),
+    );
+
+    expect(
+      schema.safeParse({
+        vendor: "field.VendorName",
+        invoiceNumber: "field.InvoiceId",
+        invoiceDate: "field.InvoiceDate",
+        poNumber: null,
+        currency: null,
+        subtotal: null,
+        tax: null,
+        total: "field.InvoiceTotal",
+        taxNote: null,
+        lines: [
+          {
+            sku: null,
+            description: "item.0.Description",
+            quantity: "item.0.Quantity",
+            uom: "EA",
+            unitPrice: "item.0.UnitPrice",
+            amount: "item.0.Amount",
+            taxInclusion: null,
+            taxRate: null,
+            taxAmount: null,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it("reports the exact unknown source IDs", () => {
     const knownIds = [
       "field.InvoiceId",
