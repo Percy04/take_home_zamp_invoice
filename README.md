@@ -35,6 +35,20 @@ $env:NODE_ENV = "production"
 npm start
 ```
 
+## Manual pipeline workbook
+
+Run a single stage against a recorded fixture without changing the normal runtime database:
+
+```powershell
+npm run pipeline:workbook -- --fixture happy --step extract
+npm run pipeline:workbook -- --fixture happy --step normalize
+npm run pipeline:workbook -- --fixture happy --step controls
+npm run pipeline:workbook -- --fixture happy --step run
+npm run pipeline:workbook -- --fixture missing_po --step run --confirm PO-1002
+```
+
+Use `--step all` to print every stage. `--confirm` accepts a candidate PO number or bundle candidate ID after a review state. See the script header for fixture names.
+
 The production server exposes the client at `http://localhost:3000` and readiness at `http://localhost:3000/api/health`.
 
 Preserved deterministic assets:
