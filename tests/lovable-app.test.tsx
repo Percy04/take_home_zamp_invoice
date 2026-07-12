@@ -11,9 +11,15 @@ describe("main Lovable frontend", () => {
   it("renders the complete Lovable intake experience", async () => {
     render(<RouterProvider router={getRouter()} />);
 
-    expect(await screen.findByRole("heading", { name: "Upload an invoice" })).toBeVisible();
-    expect(screen.getByRole("region", { name: "Demo scenarios" })).toBeVisible();
-    expect(screen.getByRole("button", { name: /Unknown bundle/ })).toBeVisible();
-    expect(screen.getByRole("button", { name: /Mapping failed/ })).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "Upload an invoice" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "Demo scenarios" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /Unknown bundle/ }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: /Tax inclusive/ })).toBeVisible();
   });
 });

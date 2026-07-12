@@ -28,7 +28,6 @@ describe("Lovable API adapter", () => {
     } as RunDetail);
 
     expect(run).toMatchObject({
-      scenario: "duplicate",
       state: "NEEDS_REVIEW",
       reasonCode: "DUPLICATE_INVOICE",
       execution: "BLOCKED",

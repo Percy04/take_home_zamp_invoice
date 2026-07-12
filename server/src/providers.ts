@@ -689,6 +689,18 @@ async function recordingForDocument(bytes: Buffer) {
     updateMetadata: false,
   });
   const title = pdf.getTitle();
+  const scannedFixture =
+    title === "untitled" &&
+    pdf.getAuthor() === "anonymous" &&
+    pdf.getCreator() === "anonymous" &&
+    pdf
+      .getPage(0)
+      .node.Resources()
+      ?.toString()
+      .includes("/FormXob.59434872ae9880c0340555aef842a3a5");
+  // ponytail: the committed scan has no title; this exact embedded-image marker keeps
+  // recorded mode deterministic without treating arbitrary untitled PDFs as ACME.
+  if (scannedFixture) return "happy_layout_c_scanned";
   if (title === "Invoice ACME-2026-001") return "happy";
   if (title === "Invoice ACME-2026-000") return "duplicate";
   if (title === "Invoice DELTA-2026-010") return "receipt_capacity";
