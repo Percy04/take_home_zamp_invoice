@@ -863,6 +863,7 @@ button.reset-workspace:hover {
 }
 
 .run-layout {
+  grid-template-columns: minmax(0, 1fr);
   width: min(100%, 1480px);
   gap: 16px;
   padding: 24px 28px 40px;
@@ -2140,6 +2141,20 @@ button.reset-workspace:hover {
 }
 
 @media (max-width: 520px) {
+  .outcome-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .ledger-reference {
+    max-width: none;
+    text-align: left;
+  }
+
+  .decision-explanation li {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
   .dashboard-metrics {
     grid-template-columns: 1fr;
   }
