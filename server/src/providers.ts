@@ -700,6 +700,7 @@ async function recordingForDocument(bytes: Buffer) {
   if (title === "Invoice ACME-2026-001") return "happy";
   if (title === "Invoice ACME-2026-000") return "duplicate";
   if (title === "Invoice DELTA-2026-010") return "receipt_capacity";
+  if (title === "Invoice DELTA-2026-011") return "multiple_issues";
   if (title === "Invoice ACME-2026-003") return "bundle_known";
   if (title === "Invoice ACME-2026-005") return "tax_inclusive";
   if (title === "Invoice ACME-2026-002") return "missing_po";

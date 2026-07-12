@@ -10,6 +10,7 @@ export const fixtureIds = [
   "duplicate",
   "missing_po",
   "receipt_capacity",
+  "multiple_issues",
   "happy_layout_b",
   "happy_layout_c_scanned",
   "bundle_known",

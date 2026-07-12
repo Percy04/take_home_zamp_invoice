@@ -525,6 +525,45 @@
       },
       "pdf_sha256": "b74136776c8d83b170d22113a02bacc11f06d82ad4ccd9b9a8b2c7dcc2fcd20d"
     },
+    "multiple_issues": {
+      "expected": {
+        "allocation_delta": [],
+        "bundle_candidates": [],
+        "candidate_po": null,
+        "decision": "NEEDS_REVIEW",
+        "execution": "BLOCKED",
+        "ledger_delta": 0,
+        "normalized": {
+          "subtotal": "165.00",
+          "tax": "16.50",
+          "total": "181.50"
+        },
+        "reason_code": "MULTIPLE_ISSUES",
+        "run_state": "NEEDS_REVIEW"
+      },
+      "file": "data/fixtures/multiple_issues.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-08",
+        "invoice_number": "DELTA-2026-011",
+        "lines": [
+          {
+            "amount": "165.00",
+            "description": "Control Valve",
+            "quantity": "3",
+            "sku": "VAL-500",
+            "unit_price": "55.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": "PO-2001",
+        "subtotal": "165.00",
+        "tax": "16.50",
+        "total": "181.50",
+        "vendor": "Delta Components Ltd"
+      },
+      "pdf_sha256": "40db710096e9682063bba5df8f662fde469a43b780e9ebb465d84560ebf71118"
+    },
     "tax_inclusive": {
       "expected": {
         "allocation_delta": [
@@ -615,18 +654,10 @@
   },
   "schema_version": 2,
   "selection_policy": {
-    "forbidden_inputs": [
-      "filename",
-      "file_sha256"
-    ]
+    "forbidden_inputs": ["filename", "file_sha256"]
   },
   "source_reference_contract": {
-    "optional_azure_evidence": [
-      "key_value_pairs"
-    ],
-    "required": [
-      "path",
-      "source_kind"
-    ]
+    "optional_azure_evidence": ["key_value_pairs"],
+    "required": ["path", "source_kind"]
   }
 }

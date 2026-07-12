@@ -391,6 +391,39 @@ describe("happy-path vertical slice", () => {
     storage.close();
   });
 
+  it("processes the multiple-issues PDF through the standard upload pipeline", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-multiple-issues-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+    const created = await request(app)
+      .post("/api/runs")
+      .attach("invoice", path.resolve("data/fixtures/multiple_issues.pdf"))
+      .expect(201);
+    const processed = await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+
+    expect(processed.body).toMatchObject({
+      state: "NEEDS_REVIEW",
+      reasonCode: "MULTIPLE_ISSUES",
+      invoice: { invoiceNumber: "DELTA-2026-011" },
+      checks: expect.arrayContaining([
+        expect.objectContaining({
+          code: "PRICE_MATCH",
+          passed: false,
+          calculation: expect.objectContaining({ kind: "PRICE_VARIANCE" }),
+        }),
+        expect.objectContaining({
+          code: "RECEIPT_CAPACITY",
+          passed: false,
+          calculation: expect.objectContaining({ kind: "RECEIPT_CAPACITY" }),
+        }),
+      ]),
+    });
+    storage.close();
+  });
+
   it("awaits and confirms an unknown bundle decomposition on the same run", async () => {
     const runtime = mkdtempSync(path.join(tmpdir(), "zamp-phase-3-"));
     temporaryDirectories.push(runtime);
@@ -518,6 +551,7 @@ describe("happy-path vertical slice", () => {
     ["duplicate", "NEEDS_REVIEW", "DUPLICATE"],
     ["missing_po", "POSTED", null],
     ["receipt_capacity", "NEEDS_REVIEW", "RECEIPT_CAPACITY_EXCEEDED"],
+    ["multiple_issues", "NEEDS_REVIEW", "MULTIPLE_ISSUES"],
     ["happy_layout_b", "POSTED", null],
     ["happy_layout_c_scanned", "POSTED", null],
     ["bundle_known", "POSTED", null],
