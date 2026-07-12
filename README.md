@@ -2,7 +2,7 @@
 
 A full-stack TypeScript demo that extracts invoice evidence, applies deterministic AP controls, and either posts once to a synthetic ledger or blocks for review.
 
-Phase 1 adds a persisted happy-path slice: PDF intake, Azure evidence extraction, Gemini source mapping, deterministic direct matching and controls, atomic SQLite posting, durable run URLs, and the processing/result UI. The canonical architecture and delivery contract is in [BUILD_SPEC_TYPESCRIPT.md](BUILD_SPEC_TYPESCRIPT.md); [BUILD_SPEC.md](BUILD_SPEC.md) remains the detailed business-rule and fixture contract.
+The demo includes PDF intake, Azure evidence extraction, selectable OpenAI or Gemini structured source mapping, deterministic AP controls, reviewer confirmation, atomic SQLite posting, dashboard history, durable run URLs, and recorded offline fixtures. The canonical architecture and delivery contract is in [BUILD_SPEC_TYPESCRIPT.md](BUILD_SPEC_TYPESCRIPT.md); [BUILD_SPEC.md](BUILD_SPEC.md) remains the detailed business-rule and fixture contract.
 
 ## Setup
 
@@ -13,7 +13,7 @@ npm ci
 Copy-Item .env.example .env
 ```
 
-Fill in the Azure and Gemini provider credentials in `.env` for uploaded PDFs. Deterministic tests use the committed happy-path recording and never call providers.
+The default `PROVIDER_MODE=recorded` uses committed evidence and consumes no Azure, OpenAI, or Gemini credits. For uploaded live PDFs, set `PROVIDER_MODE=live`, Azure credentials, choose `MAPPING_PROVIDER=openai` or `gemini`, and configure only that mapper's key.
 
 Run the Vite client and Express API in separate terminals:
 
@@ -29,6 +29,7 @@ npm run typecheck
 npm test
 npm run lint
 npm run build
+npm run build:demo-data
 npm run verify:live -- data/fixtures/happy.pdf
 $env:NODE_ENV = "production"
 npm start
@@ -42,3 +43,7 @@ Preserved deterministic assets:
 - `data/recordings/`: recorded Azure responses and normalized source catalogues for offline tests.
 - `data/seed.sqlite`: immutable seed database.
 - `data/cases.json`: exact expected outcomes and accounting deltas.
+
+`npm run build:demo-data` materializes the canonical synthetic data into `tmp/demo-data` using TypeScript. It regenerates digital PDFs from `cases.json`, retains the committed image-only scan baseline, copies the immutable seed, and emits matching hashes.
+
+Deployment and rehearsal instructions are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), [docs/DEMO_REHEARSAL.md](docs/DEMO_REHEARSAL.md), and [docs/SUBMISSION_CHECKLIST.md](docs/SUBMISSION_CHECKLIST.md).

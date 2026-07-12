@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: zamp-ap-resolution-demo
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: RUNTIME_DIR
+        value: /var/data/zamp
+      - key: PROVIDER_MODE
+        value: recorded
+      - key: ALLOW_DEMO_RESET
+        value: "true"
+    disk:
+      name: zamp-runtime
+      mountPath: /var/data
+      sizeGB: 1
