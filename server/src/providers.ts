@@ -38,102 +38,6 @@ export const invoiceMappingSchema = z.object({
 
 export type InvoiceMapping = z.infer<typeof invoiceMappingSchema>;
 
-const lineMappingJsonSchema = {
-  type: "object",
-  properties: {
-    sku: {
-      type: ["string", "null"],
-      description: "Source ID for the invoice line SKU or product code.",
-    },
-    description: {
-      type: ["string", "null"],
-      description: "Source ID for the invoice line description.",
-    },
-    quantity: {
-      type: "string",
-      description: "Source ID for the invoice line quantity.",
-    },
-    uom: {
-      type: "string",
-      description: "Source ID for the invoice line unit of measure.",
-    },
-    unitPrice: {
-      type: "string",
-      description: "Source ID for the invoice line unit price.",
-    },
-    amount: {
-      type: "string",
-      description: "Source ID for the invoice line net or line amount.",
-    },
-    taxInclusion: {
-      type: ["string", "null"],
-      description:
-        "Source ID explicitly stating whether this line includes tax.",
-    },
-    taxRate: {
-      type: ["string", "null"],
-      description: "Source ID for the tax rate associated with this line.",
-    },
-    taxAmount: {
-      type: ["string", "null"],
-      description: "Source ID for the tax amount associated with this line.",
-    },
-  },
-  required: [
-    "sku",
-    "description",
-    "quantity",
-    "uom",
-    "unitPrice",
-    "amount",
-    "taxInclusion",
-    "taxRate",
-    "taxAmount",
-  ],
-};
-
-const invoiceMappingJsonSchema = {
-  type: "object",
-  properties: {
-    vendor: { type: "string", description: "Source ID for vendor name." },
-    invoiceNumber: {
-      type: "string",
-      description: "Source ID for invoice number.",
-    },
-    invoiceDate: { type: "string", description: "Source ID for invoice date." },
-    poNumber: {
-      type: ["string", "null"],
-      description: "Source ID for purchase order number.",
-    },
-    currency: {
-      type: ["string", "null"],
-      description: "Source ID for currency.",
-    },
-    subtotal: {
-      type: ["string", "null"],
-      description: "Source ID for subtotal.",
-    },
-    tax: { type: ["string", "null"], description: "Source ID for tax amount." },
-    total: { type: "string", description: "Source ID for invoice total." },
-    lines: {
-      type: "array",
-      items: lineMappingJsonSchema,
-      minItems: 1,
-    },
-  },
-  required: [
-    "vendor",
-    "invoiceNumber",
-    "invoiceDate",
-    "poNumber",
-    "currency",
-    "subtotal",
-    "tax",
-    "total",
-    "lines",
-  ],
-};
-
 type AzureField = {
   content?: string;
   confidence?: number;
@@ -200,6 +104,92 @@ export class ProviderError extends Error {
   ) {
     super(message);
   }
+}
+
+export function invoiceMappingSchemaForEvidence(evidence: SourceRef[]) {
+  const ids = [...new Set(evidence.map((source) => source.id))];
+  if (!ids.length) throw new Error("Evidence is required for source mapping.");
+  const sourceId = z.enum(ids as [string, ...string[]]);
+  const optionalSourceId = sourceId.nullable();
+  const line = z.object({
+    sku: optionalSourceId,
+    description: optionalSourceId,
+    quantity: sourceId,
+    uom: sourceId,
+    unitPrice: sourceId,
+    amount: sourceId,
+    taxInclusion: optionalSourceId.optional(),
+    taxRate: optionalSourceId.optional(),
+    taxAmount: optionalSourceId.optional(),
+  });
+  return z.object({
+    vendor: sourceId,
+    invoiceNumber: sourceId,
+    invoiceDate: sourceId,
+    poNumber: optionalSourceId,
+    currency: optionalSourceId,
+    subtotal: optionalSourceId,
+    tax: optionalSourceId,
+    total: sourceId,
+    taxNote: optionalSourceId.optional(),
+    lines: z.array(line).min(1),
+  });
+}
+
+function invoiceMappingJsonSchemaForEvidence(evidence: SourceRef[]) {
+  const ids = [...new Set(evidence.map((source) => source.id))];
+  const sourceId = { type: "string", enum: ids };
+  const optionalSourceId = { type: ["string", "null"], enum: [...ids, null] };
+  const line = {
+    type: "object",
+    properties: {
+      sku: optionalSourceId,
+      description: optionalSourceId,
+      quantity: sourceId,
+      uom: sourceId,
+      unitPrice: sourceId,
+      amount: sourceId,
+      taxInclusion: optionalSourceId,
+      taxRate: optionalSourceId,
+      taxAmount: optionalSourceId,
+    },
+    required: [
+      "sku",
+      "description",
+      "quantity",
+      "uom",
+      "unitPrice",
+      "amount",
+      "taxInclusion",
+      "taxRate",
+      "taxAmount",
+    ],
+  };
+  return {
+    type: "object",
+    properties: {
+      vendor: sourceId,
+      invoiceNumber: sourceId,
+      invoiceDate: sourceId,
+      poNumber: optionalSourceId,
+      currency: optionalSourceId,
+      subtotal: optionalSourceId,
+      tax: optionalSourceId,
+      total: sourceId,
+      lines: { type: "array", items: line, minItems: 1 },
+    },
+    required: [
+      "vendor",
+      "invoiceNumber",
+      "invoiceDate",
+      "poNumber",
+      "currency",
+      "subtotal",
+      "tax",
+      "total",
+      "lines",
+    ],
+  };
 }
 
 export async function extractAndMap(bytes: Buffer): Promise<{
@@ -327,7 +317,12 @@ async function mapWithOpenAI(evidence: SourceRef[]) {
         },
         { role: "user", content: JSON.stringify(evidence) },
       ],
-      text: { format: zodTextFormat(invoiceMappingSchema, "invoice_mapping") },
+      text: {
+        format: zodTextFormat(
+          invoiceMappingSchemaForEvidence(evidence),
+          "invoice_mapping",
+        ),
+      },
     });
     if (!response.output_parsed)
       throw new ProviderError("OPENAI_MAPPING", "OpenAI returned no mapping.", {
@@ -380,7 +375,7 @@ async function mapWithGemini(evidence: SourceRef[]) {
           ],
           generationConfig: {
             responseMimeType: "application/json",
-            responseSchema: invoiceMappingJsonSchema,
+            responseSchema: invoiceMappingJsonSchemaForEvidence(evidence),
           },
         }),
         signal: AbortSignal.timeout(30_000),
