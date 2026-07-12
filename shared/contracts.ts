@@ -37,6 +37,51 @@ export const stageEventSchema = z.object({
   at: z.iso.datetime(),
 });
 
+export const reasonCodeSchema = z.enum([
+  "DOCUMENT_UNREADABLE",
+  "EXTRACTION_FAILED",
+  "LOW_CONFIDENCE",
+  "MAPPING_FAILED",
+  "MISSING_REQUIRED_FIELD",
+  "AMBIGUOUS_DATE",
+  "TAX_TREATMENT_UNRESOLVED",
+  "VENDOR_OR_PO_MISMATCH",
+  "MISSING_PO",
+  "BUNDLE_MAPPING_REQUIRED",
+  "LINE_MATCH_FAILED",
+  "DUPLICATE",
+  "RECEIPT_CAPACITY_EXCEEDED",
+  "PO_CAPACITY_EXCEEDED",
+  "PRICE_VARIANCE_EXCEEDED",
+  "MULTIPLE_ISSUES",
+  "TOTAL_MISMATCH",
+  "UNSUPPORTED_STRUCTURE",
+  "PROCESSING_ERROR",
+]);
+
+export const checkCalculationSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("PRICE_VARIANCE"),
+    sku: z.string(),
+    uom: z.string(),
+    quantity: z.string(),
+    invoiceUnitPrice: z.string(),
+    poUnitPrice: z.string(),
+    varianceAmount: z.string(),
+    variancePercent: z.string(),
+    tolerancePercent: z.string(),
+  }),
+  z.object({
+    kind: z.literal("RECEIPT_CAPACITY"),
+    sku: z.string(),
+    uom: z.string(),
+    requestedQuantity: z.string(),
+    receivedAvailability: z.string(),
+    orderedAvailability: z.string(),
+    shortfall: z.string(),
+  }),
+]);
+
 export const checkResultSchema = z.object({
   code: z.string().min(1),
   passed: z.boolean(),
@@ -54,6 +99,7 @@ export const checkResultSchema = z.object({
   expected: z.string().nullable().optional(),
   actual: z.string().nullable().optional(),
   sourceIds: z.array(z.string().min(1)).optional(),
+  calculation: checkCalculationSchema.optional(),
 });
 
 export const derivationSchema = z.object({
@@ -213,7 +259,7 @@ export const runDetailSchema = z
     execution: z
       .enum(["POSTED", "BLOCKED", "AWAITING_CONFIRMATION"])
       .nullable(),
-    reasonCode: z.string().nullable(),
+    reasonCode: reasonCodeSchema.nullable(),
     nextAction: z.string().nullable(),
     ledgerId: z.string().nullable(),
     createdAt: z.iso.datetime(),
@@ -266,7 +312,7 @@ export const runSummarySchema = z.object({
   state: runStateSchema,
   decision: z.enum(["AUTO_CLEARED", "NEEDS_REVIEW"]).nullable(),
   execution: z.enum(["POSTED", "BLOCKED", "AWAITING_CONFIRMATION"]).nullable(),
-  reasonCode: z.string().nullable(),
+  reasonCode: reasonCodeSchema.nullable(),
   ledgerId: z.string().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),

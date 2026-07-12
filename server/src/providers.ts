@@ -14,26 +14,26 @@ import { env } from "./env.js";
 const lineMappingSchema = z.object({
   sku: z.string().nullable(),
   description: z.string().nullable(),
-  quantity: z.string(),
+  quantity: z.string().nullable(),
   uom: z.string().nullable(),
-  unitPrice: z.string(),
-  amount: z.string(),
+  unitPrice: z.string().nullable(),
+  amount: z.string().nullable(),
   taxInclusion: z.string().nullable().optional(),
   taxRate: z.string().nullable().optional(),
   taxAmount: z.string().nullable().optional(),
 });
 
 export const invoiceMappingSchema = z.object({
-  vendor: z.string(),
-  invoiceNumber: z.string(),
-  invoiceDate: z.string(),
+  vendor: z.string().nullable(),
+  invoiceNumber: z.string().nullable(),
+  invoiceDate: z.string().nullable(),
   poNumber: z.string().nullable(),
   currency: z.string().nullable(),
   subtotal: z.string().nullable(),
   tax: z.string().nullable(),
-  total: z.string(),
+  total: z.string().nullable(),
   taxNote: z.string().nullable().optional(),
-  lines: z.array(lineMappingSchema).min(1),
+  lines: z.array(lineMappingSchema),
 });
 
 export type InvoiceMapping = z.infer<typeof invoiceMappingSchema>;
@@ -108,56 +108,46 @@ export class ProviderError extends Error {
 
 export function invoiceMappingSchemaForEvidence(evidence: SourceRef[]) {
   const ids = [...new Set(evidence.map((source) => source.id))];
-  const uomIds = unitSourceIds(evidence);
   if (!ids.length) throw new Error("Evidence is required for source mapping.");
   const sourceId = z.enum(ids as [string, ...string[]]);
   const optionalSourceId = sourceId.nullable();
-  const uomSourceId = uomIds.length
-    ? z.enum(uomIds as [string, ...string[]]).nullable()
-    : z.null();
   const line = z.object({
     sku: optionalSourceId,
     description: optionalSourceId,
-    quantity: sourceId,
-    uom: uomSourceId,
-    unitPrice: sourceId,
-    amount: sourceId,
+    quantity: optionalSourceId,
+    uom: optionalSourceId,
+    unitPrice: optionalSourceId,
+    amount: optionalSourceId,
     taxInclusion: optionalSourceId.optional(),
     taxRate: optionalSourceId.optional(),
     taxAmount: optionalSourceId.optional(),
   });
   return z.object({
-    vendor: sourceId,
-    invoiceNumber: sourceId,
-    invoiceDate: sourceId,
+    vendor: optionalSourceId,
+    invoiceNumber: optionalSourceId,
+    invoiceDate: optionalSourceId,
     poNumber: optionalSourceId,
     currency: optionalSourceId,
     subtotal: optionalSourceId,
     tax: optionalSourceId,
-    total: sourceId,
+    total: optionalSourceId,
     taxNote: optionalSourceId.optional(),
-    lines: z.array(line).min(1),
+    lines: z.array(line),
   });
 }
 
 function invoiceMappingJsonSchemaForEvidence(evidence: SourceRef[]) {
   const ids = [...new Set(evidence.map((source) => source.id))];
-  const uomIds = unitSourceIds(evidence);
-  const sourceId = { type: "string", enum: ids };
   const optionalSourceId = { type: ["string", "null"], enum: [...ids, null] };
-  const optionalUomSourceId = {
-    type: ["string", "null"],
-    enum: [...uomIds, null],
-  };
   const line = {
     type: "object",
     properties: {
       sku: optionalSourceId,
       description: optionalSourceId,
-      quantity: sourceId,
-      uom: optionalUomSourceId,
-      unitPrice: sourceId,
-      amount: sourceId,
+      quantity: optionalSourceId,
+      uom: optionalSourceId,
+      unitPrice: optionalSourceId,
+      amount: optionalSourceId,
       taxInclusion: optionalSourceId,
       taxRate: optionalSourceId,
       taxAmount: optionalSourceId,
@@ -177,15 +167,16 @@ function invoiceMappingJsonSchemaForEvidence(evidence: SourceRef[]) {
   return {
     type: "object",
     properties: {
-      vendor: sourceId,
-      invoiceNumber: sourceId,
-      invoiceDate: sourceId,
+      vendor: optionalSourceId,
+      invoiceNumber: optionalSourceId,
+      invoiceDate: optionalSourceId,
       poNumber: optionalSourceId,
       currency: optionalSourceId,
       subtotal: optionalSourceId,
       tax: optionalSourceId,
-      total: sourceId,
-      lines: { type: "array", items: line, minItems: 1 },
+      total: optionalSourceId,
+      taxNote: optionalSourceId,
+      lines: { type: "array", items: line },
     },
     required: [
       "vendor",
@@ -196,19 +187,10 @@ function invoiceMappingJsonSchemaForEvidence(evidence: SourceRef[]) {
       "subtotal",
       "tax",
       "total",
+      "taxNote",
       "lines",
     ],
   };
-}
-
-function unitSourceIds(evidence: SourceRef[]) {
-  return evidence
-    .filter(
-      (source) =>
-        /^(UNIT|UOM|UNIT OF MEASURE)$/i.test(source.label.trim()) ||
-        /^(EA|EACH|PC|PCS|KIT)$/i.test(source.content.trim()),
-    )
-    .map((source) => source.id);
 }
 
 export async function extractAndMap(bytes: Buffer): Promise<{

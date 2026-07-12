@@ -127,6 +127,53 @@ describe("Azure evidence catalogue", () => {
 });
 
 describe("mapping evidence validation", () => {
+  it("permits partial mappings and any evidenced unit of measure", () => {
+    const evidence = [
+      "field.VendorName",
+      "field.InvoiceId",
+      "field.InvoiceDate",
+      "field.InvoiceTotal",
+      "item.0.Description",
+      "item.0.Quantity",
+      "item.0.Unit",
+      "item.0.UnitPrice",
+      "item.0.Amount",
+    ].map((id) => ({
+      id,
+      content: id,
+      confidence: 1,
+      page: 1,
+      label: id,
+    }));
+
+    expect(
+      invoiceMappingSchemaForEvidence(evidence).safeParse({
+        vendor: null,
+        invoiceNumber: null,
+        invoiceDate: null,
+        poNumber: null,
+        currency: null,
+        subtotal: null,
+        tax: null,
+        total: null,
+        taxNote: null,
+        lines: [
+          {
+            sku: null,
+            description: "item.0.Description",
+            quantity: "item.0.Quantity",
+            uom: "item.0.Unit",
+            unitPrice: "item.0.UnitPrice",
+            amount: "item.0.Amount",
+            taxInclusion: null,
+            taxRate: null,
+            taxAmount: null,
+          },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
   it("only permits mapper references present in the evidence catalogue", () => {
     const ids = [
       "field.VendorName",
