@@ -149,32 +149,38 @@ describe("mapping evidence validation", () => {
       })),
     );
 
+    const mapping = {
+      vendor: "field.VendorName",
+      invoiceNumber: "field.InvoiceId",
+      invoiceDate: "field.InvoiceDate",
+      poNumber: null,
+      currency: null,
+      subtotal: null,
+      tax: null,
+      total: "field.InvoiceTotal",
+      taxNote: null,
+      lines: [
+        {
+          sku: null,
+          description: "item.0.Description",
+          quantity: "item.0.Quantity",
+          uom: "EA",
+          unitPrice: "item.0.UnitPrice",
+          amount: "item.0.Amount",
+          taxInclusion: null,
+          taxRate: null,
+          taxAmount: null,
+        },
+      ],
+    };
+
+    expect(schema.safeParse(mapping).success).toBe(false);
     expect(
       schema.safeParse({
-        vendor: "field.VendorName",
-        invoiceNumber: "field.InvoiceId",
-        invoiceDate: "field.InvoiceDate",
-        poNumber: null,
-        currency: null,
-        subtotal: null,
-        tax: null,
-        total: "field.InvoiceTotal",
-        taxNote: null,
-        lines: [
-          {
-            sku: null,
-            description: "item.0.Description",
-            quantity: "item.0.Quantity",
-            uom: "EA",
-            unitPrice: "item.0.UnitPrice",
-            amount: "item.0.Amount",
-            taxInclusion: null,
-            taxRate: null,
-            taxAmount: null,
-          },
-        ],
+        ...mapping,
+        lines: [{ ...mapping.lines[0], uom: null }],
       }).success,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("reports the exact unknown source IDs", () => {
