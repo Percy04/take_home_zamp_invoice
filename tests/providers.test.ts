@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSourceCatalogue,
+  preferReliableEvidence,
   ProviderError,
   validateMapping,
 } from "../server/src/providers.js";
+import type { SourceRef } from "../shared/contracts.js";
 
 describe("Azure evidence catalogue", () => {
   it("preserves fields, tax details, tables, OCR confidence, and key-value evidence", () => {
@@ -159,5 +161,80 @@ describe("mapping evidence validation", () => {
         }),
       }),
     );
+  });
+
+  it("replaces a low-confidence source only when a reliable equivalent is unique", () => {
+    const mapping = {
+      vendor: "field.VendorName",
+      invoiceNumber: "field.InvoiceId",
+      invoiceDate: "field.InvoiceDate",
+      poNumber: "field.OrderNumber",
+      currency: null,
+      subtotal: null,
+      tax: null,
+      total: "field.InvoiceTotal",
+      taxNote: null,
+      lines: [
+        {
+          sku: "item.0.ProductCode",
+          description: "item.0.Description",
+          quantity: "item.0.Quantity",
+          uom: "item.0.Unit",
+          unitPrice: "item.0.UnitPrice",
+          amount: "item.0.Amount",
+        },
+      ],
+    };
+    const values: Record<string, string> = {
+      "field.OrderNumber": "PO-1001",
+      "item.0.ProductCode": "WID-100",
+    };
+    const ids = [
+      "field.VendorName",
+      "field.InvoiceId",
+      "field.InvoiceDate",
+      "field.OrderNumber",
+      "field.InvoiceTotal",
+      "item.0.ProductCode",
+      "item.0.Description",
+      "item.0.Quantity",
+      "item.0.Unit",
+      "item.0.UnitPrice",
+      "item.0.Amount",
+    ];
+    const evidence: SourceRef[] = ids.map((id) => ({
+      id,
+      content: values[id] ?? id,
+      confidence:
+        id === "field.OrderNumber" || id === "item.0.ProductCode" ? 0.5 : 1,
+      page: 1,
+      label: id,
+      sourceKind: id.startsWith("item")
+        ? ("ITEM" as const)
+        : ("FIELD" as const),
+    }));
+    evidence.push(
+      {
+        id: "key_value.0.value",
+        content: "PO-1001",
+        confidence: 0.94,
+        page: 1,
+        label: "Key-value value",
+        sourceKind: "KEY_VALUE",
+      },
+      {
+        id: "table.0.r1.c0",
+        content: "WID-100",
+        confidence: null,
+        page: 1,
+        label: "Table cell",
+        sourceKind: "TABLE",
+      },
+    );
+
+    expect(preferReliableEvidence(mapping, evidence)).toMatchObject({
+      poNumber: "key_value.0.value",
+      lines: [{ sku: "table.0.r1.c0" }],
+    });
   });
 });

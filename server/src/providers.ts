@@ -294,7 +294,7 @@ export async function mapEvidenceWithRetry(
         ? await mapWithOpenAI(evidence)
         : await mapWithGemini(evidence);
     validateMapping(mapping, evidence);
-    return mapping;
+    return preferReliableEvidence(mapping, evidence);
   });
 }
 
@@ -581,6 +581,77 @@ export function validateMapping(
       },
     );
   }
+}
+
+export function preferReliableEvidence(
+  mapping: InvoiceMapping,
+  evidence: SourceRef[],
+): InvoiceMapping {
+  const byId = new Map(evidence.map((source) => [source.id, source]));
+  const replace = (id: string | null | undefined) => {
+    if (!id) return id ?? null;
+    const selected = byId.get(id);
+    if (
+      !selected ||
+      selected.confidence === null ||
+      selected.confidence >= 0.75
+    )
+      return id;
+    const content = selected.content.normalize("NFKC").trim();
+    const candidates = evidence
+      .filter(
+        (candidate) =>
+          candidate.id !== id &&
+          candidate.content.normalize("NFKC").trim() === content &&
+          (candidate.confidence === null || candidate.confidence >= 0.75),
+      )
+      .sort(
+        (left, right) =>
+          evidencePriority(left) - evidencePriority(right) ||
+          left.id.localeCompare(right.id),
+      );
+    const bestPriority = candidates[0] ? evidencePriority(candidates[0]) : null;
+    const best = candidates.filter(
+      (candidate) => evidencePriority(candidate) === bestPriority,
+    );
+    return best.length === 1 ? best[0]!.id : id;
+  };
+  return invoiceMappingSchema.parse({
+    ...mapping,
+    vendor: replace(mapping.vendor),
+    invoiceNumber: replace(mapping.invoiceNumber),
+    invoiceDate: replace(mapping.invoiceDate),
+    poNumber: replace(mapping.poNumber),
+    currency: replace(mapping.currency),
+    subtotal: replace(mapping.subtotal),
+    tax: replace(mapping.tax),
+    total: replace(mapping.total),
+    taxNote: replace(mapping.taxNote),
+    lines: mapping.lines.map((line) => ({
+      ...line,
+      sku: replace(line.sku),
+      description: replace(line.description),
+      quantity: replace(line.quantity),
+      uom: replace(line.uom),
+      unitPrice: replace(line.unitPrice),
+      amount: replace(line.amount),
+      taxInclusion: replace(line.taxInclusion),
+      taxRate: replace(line.taxRate),
+      taxAmount: replace(line.taxAmount),
+    })),
+  });
+}
+
+function evidencePriority(source: SourceRef) {
+  return {
+    FIELD: 0,
+    ITEM: 0,
+    TAX: 0,
+    KEY_VALUE: 1,
+    TABLE: 2,
+    OCR_LINE: 3,
+    RECORDED: 4,
+  }[source.sourceKind ?? "RECORDED"];
 }
 
 async function extractAndMapRecorded(bytes: Buffer): Promise<{
