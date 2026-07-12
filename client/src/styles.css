@@ -1,8 +1,13 @@
 :root {
   color: #16211c;
-  background: #eef2ef;
+  background: #f4f6f5;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
     sans-serif;
   font-synthesis: none;
 }
@@ -33,8 +38,8 @@ button,
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
-  padding: 0 14px;
+  border-radius: 8px;
+  padding: 0 16px;
   color: white;
   background: #19684f;
   font-weight: 800;
@@ -88,18 +93,35 @@ h2 {
   top: 0;
   z-index: 10;
   display: flex;
-  min-height: 58px;
+  min-height: 64px;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  border-bottom: 1px solid #d7dfd9;
-  background: #10251e;
-  padding: 0 28px;
-  color: white;
+  border-bottom: 1px solid #dde4df;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 0 32px;
+  color: #17201d;
+  backdrop-filter: blur(12px);
 }
 
 .brand {
-  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.brand-mark {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: white;
+  background: #176b50;
+  font-size: 12px;
 }
 
 .app-topbar nav {
@@ -108,20 +130,25 @@ h2 {
 }
 
 .app-topbar nav a {
-  border: 1px solid #38564c;
-  border-radius: 999px;
-  padding: 7px 10px;
-  color: #dce8e2;
+  border-radius: 7px;
+  padding: 8px 11px;
+  color: #5f6d66;
   font-size: 14px;
   font-weight: 750;
 }
 
+.app-topbar nav a:hover,
+.app-topbar nav a.active {
+  color: #154f3d;
+  background: #edf5f1;
+}
+
 .console-main {
   display: grid;
-  gap: 18px;
+  gap: 22px;
   width: min(100%, 1180px);
   margin: 0 auto;
-  padding: 28px;
+  padding: 36px 28px 48px;
 }
 
 .page-heading {
@@ -165,8 +192,9 @@ h2 {
 .metric,
 .mode-panel {
   border: 1px solid #d7dfd9;
-  border-radius: 8px;
-  background: #fbfcfb;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 1px 2px rgba(16, 37, 30, 0.03);
 }
 
 .surface {
@@ -201,8 +229,18 @@ h2 {
 }
 
 .metric {
+  position: relative;
   min-width: 0;
-  padding: 16px;
+  padding: 18px 20px;
+  overflow: hidden;
+}
+
+.metric::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: #aeb9b3;
+  content: "";
 }
 
 .metric span {
@@ -217,18 +255,34 @@ h2 {
 .metric strong {
   display: block;
   overflow-wrap: anywhere;
-  font-size: 22px;
+  font-size: 26px;
   line-height: 1.2;
 }
 
 .metric.ok {
-  border-color: #8fc8b7;
-  background: #e8f5ef;
+  border-color: #d7dfd9;
+  background: white;
+}
+
+.metric.ok::before {
+  background: #23805f;
 }
 
 .metric.warn {
-  border-color: #e1ba79;
-  background: #fff7e8;
+  border-color: #d7dfd9;
+  background: white;
+}
+
+.metric.warn::before {
+  background: #d48a22;
+}
+
+.metric.bad::before {
+  background: #b9473f;
+}
+
+.dashboard-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .metric.bad {
@@ -330,6 +384,100 @@ input[type="file"] {
 .status-badge.neutral {
   color: #435047;
   background: #eef2ef;
+}
+
+.table-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 6px;
+}
+
+.table-toolbar h2,
+.table-toolbar p {
+  margin-bottom: 0;
+}
+
+.table-toolbar label {
+  display: grid;
+  gap: 7px;
+  min-width: 190px;
+  color: #5f6d66;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.dashboard-table {
+  padding: 0;
+  overflow: hidden;
+}
+
+.dashboard-table .table-toolbar {
+  padding: 20px 22px 16px;
+}
+
+.dashboard-table table {
+  border-top: 1px solid #e4e9e6;
+}
+
+.dashboard-table th {
+  padding: 11px 16px;
+  color: #69766f;
+  background: #f7f9f8;
+  font-size: 11px;
+  letter-spacing: 0.035em;
+}
+
+.dashboard-table td {
+  height: 66px;
+  padding: 11px 16px;
+  color: #39453f;
+  font-size: 14px;
+}
+
+.dashboard-table tbody tr:hover {
+  background: #fafcfb;
+}
+
+.invoice-cell a {
+  display: block;
+  max-width: 260px;
+  overflow: hidden;
+  color: #154f3d;
+  font-weight: 750;
+  text-overflow: ellipsis;
+}
+
+.invoice-cell span,
+.not-available {
+  color: #8a9690;
+}
+
+.invoice-cell span {
+  display: block;
+  margin-top: 3px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+}
+
+.date-cell {
+  color: #66736c !important;
+}
+
+.empty-state,
+.table-message {
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.empty-state p {
+  margin: 6px 0 0;
+}
+
+.dashboard-table .pagination-row {
+  margin-top: 0;
+  padding: 14px 20px;
 }
 
 .table-wrap {
@@ -581,6 +729,28 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .page-heading.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .page-heading.compact .button-link {
+    justify-self: start;
+  }
+
+  .console-main,
+  .dashboard-table {
+    min-width: 0;
+  }
+
+  .dashboard-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .table-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .confirmation-panel {
     align-items: stretch;
     flex-direction: column;
@@ -588,6 +758,12 @@ select {
 
   h1 {
     font-size: 32px;
+  }
+}
+
+@media (max-width: 520px) {
+  .dashboard-metrics {
+    grid-template-columns: 1fr;
   }
 }
 @import "tailwindcss";

@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   BrowserRouter,
   Link,
+  NavLink,
   Route,
   Routes,
   useNavigate,
@@ -138,7 +139,9 @@ function InvoicePage() {
               ))}
             </div>
 
-            {file && <p className="muted selected-file">Selected: {file.name}</p>}
+            {file && (
+              <p className="muted selected-file">Selected: {file.name}</p>
+            )}
             {fileError && <p className="error">{fileError}</p>}
             {create.error && <p className="error">{create.error.message}</p>}
           </section>
@@ -206,26 +209,58 @@ function DashboardPage() {
         <div className="page-heading compact">
           <div>
             <p className="eyebrow">Run history</p>
-            <h1 id="dashboard-title">Dashboard</h1>
+            <h1 id="dashboard-title">Operations dashboard</h1>
+            <p className="summary">
+              Monitor invoice outcomes and quickly find runs that need
+              attention.
+            </p>
           </div>
           <Link className="button-link" to="/">
-            New invoice
+            <span aria-hidden="true">+</span> New invoice
           </Link>
         </div>
 
         {runs.data && (
-          <section className="metric-grid" aria-label="Dashboard metrics">
-            <Metric label="Total runs" value={String(runs.data.metrics.totalRuns)} />
-            <Metric label="Posted" value={String(runs.data.metrics.postedCount)} tone="ok" />
-            <Metric label="Needs review" value={String(runs.data.metrics.reviewCount)} tone="warn" />
-            <Metric label="Auto-clear rate" value={`${runs.data.metrics.autoClearRate}%`} />
+          <section
+            className="metric-grid dashboard-metrics"
+            aria-label="Dashboard metrics"
+          >
+            <Metric
+              label="Total runs"
+              value={String(runs.data.metrics.totalRuns)}
+            />
+            <Metric
+              label="Posted successfully"
+              value={String(runs.data.metrics.postedCount)}
+              tone="ok"
+            />
+            <Metric
+              label="Needs attention"
+              value={String(runs.data.metrics.reviewCount)}
+              tone="warn"
+            />
+            <Metric
+              label="Auto-clear rate"
+              value={`${runs.data.metrics.autoClearRate}%`}
+            />
           </section>
         )}
 
-        <section className="surface" aria-label="Recent runs">
-          <div className="filter-row">
+        <section
+          className="surface dashboard-table"
+          aria-labelledby="recent-runs-title"
+        >
+          <div className="table-toolbar">
+            <div>
+              <h2 id="recent-runs-title">Recent runs</h2>
+              <p className="muted">
+                {runs.data
+                  ? `${runs.data.items.length} ${runs.data.items.length === 1 ? "result" : "results"} on this page`
+                  : "Loading invoice history..."}
+              </p>
+            </div>
             <label>
-              <span>State</span>
+              <span>Filter by status</span>
               <select
                 value={state}
                 onChange={(event) => {
@@ -238,14 +273,25 @@ function DashboardPage() {
                 <option value="POSTED">Posted</option>
                 <option value="NEEDS_REVIEW">Needs review</option>
                 <option value="AWAITING_PO_CONFIRMATION">Awaiting PO</option>
-                <option value="AWAITING_BUNDLE_CONFIRMATION">Awaiting bundle</option>
+                <option value="AWAITING_BUNDLE_CONFIRMATION">
+                  Awaiting bundle
+                </option>
                 <option value="PROCESSING">Processing</option>
               </select>
             </label>
           </div>
-          {runs.isPending && <p className="muted">Loading runs...</p>}
+          {runs.isPending && (
+            <p className="table-message muted">Loading runs...</p>
+          )}
           {runs.error && <p className="error">{runs.error.message}</p>}
-          {runs.data?.items.length === 0 && <p className="muted">No runs yet.</p>}
+          {runs.data?.items.length === 0 && (
+            <div className="empty-state">
+              <strong>No matching runs</strong>
+              <p className="muted">
+                Try another status or process a new invoice.
+              </p>
+            </div>
+          )}
           {runs.data && runs.data.items.length > 0 && (
             <div className="table-wrap">
               <table>
@@ -261,13 +307,32 @@ function DashboardPage() {
                 <tbody>
                   {runs.data.items.map((run) => (
                     <tr key={run.runId}>
-                      <td>
+                      <td className="invoice-cell">
                         <Link to={`/runs/${run.runId}`}>{run.filename}</Link>
+                        <span>{run.runId.slice(0, 8)}</span>
                       </td>
-                      <td>{run.state}</td>
-                      <td>{run.decision ?? "-"}</td>
-                      <td>{run.reasonCode ?? "-"}</td>
-                      <td>{new Date(run.updatedAt).toLocaleString()}</td>
+                      <td>
+                        <span
+                          className={`status-badge ${stateTone(run.state)}`}
+                        >
+                          {formatLabel(run.state)}
+                        </span>
+                      </td>
+                      <td>
+                        {run.decision ? (
+                          formatLabel(run.decision)
+                        ) : (
+                          <span className="not-available">—</span>
+                        )}
+                      </td>
+                      <td>
+                        {run.reasonCode ? (
+                          formatLabel(run.reasonCode)
+                        ) : (
+                          <span className="not-available">—</span>
+                        )}
+                      </td>
+                      <td className="date-cell">{formatDate(run.updatedAt)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -384,24 +449,26 @@ function RunPage() {
           </section>
         )}
 
-        {detail.state === "AWAITING_PO_CONFIRMATION" &&
-          detail.candidatePo && (
-            <section className="surface confirmation-panel" aria-label="PO confirmation">
-              <div>
-                <p className="eyebrow">Reviewer action</p>
-                <h2>Confirm PO {detail.candidatePo}</h2>
-              </div>
-              <button
-                disabled={poConfirmation.isPending}
-                onClick={() => poConfirmation.mutate(detail.candidatePo!)}
-              >
-                {poConfirmation.isPending ? "Confirming..." : "Confirm PO"}
-              </button>
-              {poConfirmation.error && (
-                <p className="error">{poConfirmation.error.message}</p>
-              )}
-            </section>
-          )}
+        {detail.state === "AWAITING_PO_CONFIRMATION" && detail.candidatePo && (
+          <section
+            className="surface confirmation-panel"
+            aria-label="PO confirmation"
+          >
+            <div>
+              <p className="eyebrow">Reviewer action</p>
+              <h2>Confirm PO {detail.candidatePo}</h2>
+            </div>
+            <button
+              disabled={poConfirmation.isPending}
+              onClick={() => poConfirmation.mutate(detail.candidatePo!)}
+            >
+              {poConfirmation.isPending ? "Confirming..." : "Confirm PO"}
+            </button>
+            {poConfirmation.error && (
+              <p className="error">{poConfirmation.error.message}</p>
+            )}
+          </section>
+        )}
 
         {detail.state === "AWAITING_BUNDLE_CONFIRMATION" &&
           detail.bundleCandidates[0] && (
@@ -414,7 +481,9 @@ function RunPage() {
                 <h2>Confirm bundle decomposition</h2>
                 <p className="muted">
                   {detail.bundleCandidates[0].components
-                    .map((component) => `${component.quantity} ${component.sku}`)
+                    .map(
+                      (component) => `${component.quantity} ${component.sku}`,
+                    )
                     .join(", ")}
                 </p>
               </div>
@@ -424,7 +493,9 @@ function RunPage() {
                   bundleConfirmation.mutate(detail.bundleCandidates[0]!.id)
                 }
               >
-                {bundleConfirmation.isPending ? "Confirming..." : "Confirm bundle"}
+                {bundleConfirmation.isPending
+                  ? "Confirming..."
+                  : "Confirm bundle"}
               </button>
               {bundleConfirmation.error && (
                 <p className="error">{bundleConfirmation.error.message}</p>
@@ -433,7 +504,10 @@ function RunPage() {
           )}
 
         <div className="run-grid">
-          <section className="surface document-panel" aria-labelledby="document">
+          <section
+            className="surface document-panel"
+            aria-labelledby="document"
+          >
             <div className="section-head">
               <div>
                 <p className="eyebrow">Source document</p>
@@ -441,7 +515,9 @@ function RunPage() {
               </div>
               <span className="status-badge neutral">Stored</span>
             </div>
-            <Suspense fallback={<p className="muted">Loading PDF preview...</p>}>
+            <Suspense
+              fallback={<p className="muted">Loading PDF preview...</p>}
+            >
               <PdfPreview
                 url={`/api/runs/${detail.runId}/document`}
                 filename={detail.filename}
@@ -479,18 +555,32 @@ function RunPage() {
                 <dl className="facts">
                   <Fact label="Vendor" value={detail.invoice.vendor} />
                   <Fact label="PO" value={detail.invoice.poNumber} />
-                  <Fact label="Subtotal" value={`$${detail.invoice.subtotal}`} />
+                  <Fact
+                    label="Subtotal"
+                    value={`$${detail.invoice.subtotal}`}
+                  />
                   <Fact
                     label="Observed subtotal"
-                    value={detail.invoice.observedSubtotal ? `$${detail.invoice.observedSubtotal}` : "Not stated"}
+                    value={
+                      detail.invoice.observedSubtotal
+                        ? `$${detail.invoice.observedSubtotal}`
+                        : "Not stated"
+                    }
                   />
                   <Fact label="Tax" value={`$${detail.invoice.tax}`} />
                   <Fact
                     label="Observed tax"
-                    value={detail.invoice.observedTax ? `$${detail.invoice.observedTax}` : "Derived / zero"}
+                    value={
+                      detail.invoice.observedTax
+                        ? `$${detail.invoice.observedTax}`
+                        : "Derived / zero"
+                    }
                   />
                   <Fact label="Total" value={`$${detail.invoice.total}`} />
-                  <Fact label="Tax treatment" value={detail.invoice.taxTreatment} />
+                  <Fact
+                    label="Tax treatment"
+                    value={detail.invoice.taxTreatment}
+                  />
                 </dl>
               </section>
             )}
@@ -542,12 +632,22 @@ function RunPage() {
             </div>
             <div className="table-wrap">
               <table>
-                <thead><tr><th>PO</th><th>Lines matched</th><th>Remaining basis</th><th>Difference</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>PO</th>
+                    <th>Lines matched</th>
+                    <th>Remaining basis</th>
+                    <th>Difference</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {detail.poCandidates.map((candidate) => (
                     <tr key={candidate.poNumber}>
                       <td>{candidate.poNumber}</td>
-                      <td>{candidate.matchedLineCount}{candidate.allLinesResolvable ? " (all)" : ""}</td>
+                      <td>
+                        {candidate.matchedLineCount}
+                        {candidate.allLinesResolvable ? " (all)" : ""}
+                      </td>
                       <td>${candidate.remainingPoBasisValue}</td>
                       <td>${candidate.subtotalDifference}</td>
                     </tr>
@@ -595,7 +695,11 @@ function RunPage() {
               </div>
               <ul className="evidence">
                 {detail.evidence
-                  .filter((source) => source.label !== "OCR line" || source.content.length < 160)
+                  .filter(
+                    (source) =>
+                      source.label !== "OCR line" ||
+                      source.content.length < 160,
+                  )
                   .slice(0, 18)
                   .map((source) => (
                     <li key={source.id}>
@@ -623,11 +727,16 @@ function ConsoleShell({ children }: { children: React.ReactNode }) {
     <div className="app-shell">
       <header className="app-topbar">
         <Link className="brand" to="/">
-          AP Resolution Agent
+          <span className="brand-mark" aria-hidden="true">
+            AP
+          </span>
+          <span>Resolution Agent</span>
         </Link>
         <nav aria-label="Primary">
-          <Link to="/">Console</Link>
-          <Link to="/dashboard">Dashboard</Link>
+          <NavLink to="/" end>
+            Console
+          </NavLink>
+          <NavLink to="/dashboard">Dashboard</NavLink>
         </nav>
       </header>
       {children}
@@ -666,6 +775,28 @@ function fixtureLabel(fixtureId: FixtureId) {
     .split("_")
     .map((part) => part[0].toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatLabel(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function stateTone(state: string): "neutral" | "ok" | "warn" | "bad" {
+  if (state === "POSTED") return "ok";
+  if (state === "PROCESSING") return "neutral";
+  if (state.startsWith("AWAITING")) return "warn";
+  return "bad";
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function StatusPage({ children }: { children: React.ReactNode }) {
