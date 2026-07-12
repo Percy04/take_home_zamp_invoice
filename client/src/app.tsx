@@ -12,7 +12,9 @@ import {
   Routes,
   useNavigate,
   useParams,
+  useSearchParams,
 } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import {
   confirmBundle,
   confirmPo,
@@ -25,6 +27,7 @@ import {
 } from "./api";
 
 const queryClient = new QueryClient();
+const PdfPreview = lazy(() => import("./pdf-preview"));
 
 export function App() {
   return (
@@ -43,6 +46,7 @@ export function App() {
 function InvoicePage() {
   const navigate = useNavigate();
   const [file, setFile] = useState<File>();
+  const [fileError, setFileError] = useState<string>();
   const create = useMutation({
     mutationFn: createRun,
     onSuccess: (run) => navigate(`/runs/${run.runId}`),
@@ -62,10 +66,11 @@ function InvoicePage() {
           </div>
           <div className="mode-panel" role="note">
             <span className="label">Current scope</span>
-            <strong>Phase 1 happy-path slice</strong>
+            <strong>Complete demo workflow</strong>
             <p>
-              Use synthetic data only. In live mode the PDF goes to Azure and
-              extracted evidence goes to Gemini.
+              Use synthetic data only. In live mode the PDF goes to Azure;
+              compact extracted evidence—not the PDF—goes to the configured
+              OpenAI or Gemini mapper.
             </p>
           </div>
         </div>
@@ -91,7 +96,23 @@ function InvoicePage() {
               <input
                 type="file"
                 accept="application/pdf,.pdf"
-                onChange={(event) => setFile(event.target.files?.[0])}
+                onChange={(event) => {
+                  const selected = event.target.files?.[0];
+                  if (
+                    selected &&
+                    selected.type !== "application/pdf" &&
+                    !selected.name.toLowerCase().endsWith(".pdf")
+                  ) {
+                    setFile(undefined);
+                    setFileError("Choose a PDF file.");
+                  } else if (selected && selected.size > 10 * 1024 * 1024) {
+                    setFile(undefined);
+                    setFileError("The PDF must be 10 MiB or smaller.");
+                  } else {
+                    setFile(selected);
+                    setFileError(undefined);
+                  }
+                }}
               />
             </label>
 
@@ -118,6 +139,7 @@ function InvoicePage() {
             </div>
 
             {file && <p className="muted selected-file">Selected: {file.name}</p>}
+            {fileError && <p className="error">{fileError}</p>}
             {create.error && <p className="error">{create.error.message}</p>}
           </section>
 
@@ -150,7 +172,7 @@ function InvoicePage() {
                   <td>
                     <span className="status-badge warn">Config needed</span>
                   </td>
-                  <td>Requires Azure and Gemini env vars.</td>
+                  <td>Requires Azure plus OpenAI or Gemini env vars.</td>
                 </tr>
                 <tr>
                   <td>Reviewer flows</td>
@@ -169,9 +191,13 @@ function InvoicePage() {
 }
 
 function DashboardPage() {
+  const [search, setSearch] = useSearchParams();
+  const state = search.get("state") ?? "";
+  const cursor = search.get("cursor") ?? "";
   const runs = useQuery({
-    queryKey: ["runs"],
-    queryFn: listRuns,
+    queryKey: ["runs", state, cursor],
+    queryFn: () =>
+      listRuns({ state: state || undefined, cursor: cursor || undefined }),
   });
 
   return (
@@ -187,11 +213,40 @@ function DashboardPage() {
           </Link>
         </div>
 
+        {runs.data && (
+          <section className="metric-grid" aria-label="Dashboard metrics">
+            <Metric label="Total runs" value={String(runs.data.metrics.totalRuns)} />
+            <Metric label="Posted" value={String(runs.data.metrics.postedCount)} tone="ok" />
+            <Metric label="Needs review" value={String(runs.data.metrics.reviewCount)} tone="warn" />
+            <Metric label="Auto-clear rate" value={`${runs.data.metrics.autoClearRate}%`} />
+          </section>
+        )}
+
         <section className="surface" aria-label="Recent runs">
+          <div className="filter-row">
+            <label>
+              <span>State</span>
+              <select
+                value={state}
+                onChange={(event) => {
+                  const next = new URLSearchParams();
+                  if (event.target.value) next.set("state", event.target.value);
+                  setSearch(next);
+                }}
+              >
+                <option value="">All states</option>
+                <option value="POSTED">Posted</option>
+                <option value="NEEDS_REVIEW">Needs review</option>
+                <option value="AWAITING_PO_CONFIRMATION">Awaiting PO</option>
+                <option value="AWAITING_BUNDLE_CONFIRMATION">Awaiting bundle</option>
+                <option value="PROCESSING">Processing</option>
+              </select>
+            </label>
+          </div>
           {runs.isPending && <p className="muted">Loading runs...</p>}
           {runs.error && <p className="error">{runs.error.message}</p>}
-          {runs.data?.length === 0 && <p className="muted">No runs yet.</p>}
-          {runs.data && runs.data.length > 0 && (
+          {runs.data?.items.length === 0 && <p className="muted">No runs yet.</p>}
+          {runs.data && runs.data.items.length > 0 && (
             <div className="table-wrap">
               <table>
                 <thead>
@@ -204,7 +259,7 @@ function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {runs.data.map((run) => (
+                  {runs.data.items.map((run) => (
                     <tr key={run.runId}>
                       <td>
                         <Link to={`/runs/${run.runId}`}>{run.filename}</Link>
@@ -217,6 +272,34 @@ function DashboardPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          {runs.data && (cursor || runs.data.nextCursor) && (
+            <div className="pagination-row">
+              <button
+                className="secondary"
+                disabled={!cursor}
+                onClick={() => {
+                  const next = new URLSearchParams();
+                  if (state) next.set("state", state);
+                  setSearch(next);
+                }}
+              >
+                First page
+              </button>
+              <button
+                className="secondary"
+                disabled={!runs.data.nextCursor}
+                onClick={() => {
+                  const next = new URLSearchParams();
+                  if (state) next.set("state", state);
+                  if (runs.data.nextCursor)
+                    next.set("cursor", runs.data.nextCursor);
+                  setSearch(next);
+                }}
+              >
+                Next page
+              </button>
             </div>
           )}
         </section>
@@ -237,11 +320,17 @@ function RunPage() {
   const refetchRun = run.refetch;
   const poConfirmation = useMutation({
     mutationFn: (poNumber: string) => confirmPo(runId, poNumber),
-    onSuccess: (result) => queryClient.setQueryData(["run", runId], result),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["run", runId] });
+      await queryClient.invalidateQueries({ queryKey: ["runs"] });
+    },
   });
   const bundleConfirmation = useMutation({
     mutationFn: (candidateId: string) => confirmBundle(runId, candidateId),
-    onSuccess: (result) => queryClient.setQueryData(["run", runId], result),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["run", runId] });
+      await queryClient.invalidateQueries({ queryKey: ["runs"] });
+    },
   });
 
   useEffect(() => {
@@ -352,11 +441,12 @@ function RunPage() {
               </div>
               <span className="status-badge neutral">Stored</span>
             </div>
-            <iframe
-              className="pdf-preview"
-              src={`/api/runs/${detail.runId}/document`}
-              title={`Original invoice: ${detail.filename}`}
-            />
+            <Suspense fallback={<p className="muted">Loading PDF preview...</p>}>
+              <PdfPreview
+                url={`/api/runs/${detail.runId}/document`}
+                filename={detail.filename}
+              />
+            </Suspense>
           </section>
 
           <aside className="side-stack">
@@ -382,16 +472,25 @@ function RunPage() {
               <section className="surface" aria-labelledby="normalized">
                 <div className="section-head">
                   <div>
-                    <p className="eyebrow">Invoice</p>
-                    <h2 id="normalized">Normalized values</h2>
+                    <p className="eyebrow">Invoice evidence</p>
+                    <h2 id="normalized">Observed and normalized</h2>
                   </div>
                 </div>
                 <dl className="facts">
                   <Fact label="Vendor" value={detail.invoice.vendor} />
                   <Fact label="PO" value={detail.invoice.poNumber} />
                   <Fact label="Subtotal" value={`$${detail.invoice.subtotal}`} />
+                  <Fact
+                    label="Observed subtotal"
+                    value={detail.invoice.observedSubtotal ? `$${detail.invoice.observedSubtotal}` : "Not stated"}
+                  />
                   <Fact label="Tax" value={`$${detail.invoice.tax}`} />
+                  <Fact
+                    label="Observed tax"
+                    value={detail.invoice.observedTax ? `$${detail.invoice.observedTax}` : "Derived / zero"}
+                  />
                   <Fact label="Total" value={`$${detail.invoice.total}`} />
+                  <Fact label="Tax treatment" value={detail.invoice.taxTreatment} />
                 </dl>
               </section>
             )}
@@ -425,6 +524,32 @@ function RunPage() {
                       <td>${allocation.actualNetAmount}</td>
                       <td>${allocation.poBasisAmount}</td>
                       <td>{allocation.remainingReceivedQuantity}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {detail.poCandidates.length > 0 && (
+          <section className="surface" aria-labelledby="po-candidates">
+            <div className="section-head">
+              <div>
+                <p className="eyebrow">Reviewer evidence</p>
+                <h2 id="po-candidates">PO candidates</h2>
+              </div>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>PO</th><th>Lines matched</th><th>Remaining basis</th><th>Difference</th></tr></thead>
+                <tbody>
+                  {detail.poCandidates.map((candidate) => (
+                    <tr key={candidate.poNumber}>
+                      <td>{candidate.poNumber}</td>
+                      <td>{candidate.matchedLineCount}{candidate.allLinesResolvable ? " (all)" : ""}</td>
+                      <td>${candidate.remainingPoBasisValue}</td>
+                      <td>${candidate.subtotalDifference}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -470,12 +595,8 @@ function RunPage() {
               </div>
               <ul className="evidence">
                 {detail.evidence
-                  .filter(
-                    (source) =>
-                      source.id.startsWith("field.") ||
-                      source.id.startsWith("item."),
-                  )
-                  .slice(0, 12)
+                  .filter((source) => source.label !== "OCR line" || source.content.length < 160)
+                  .slice(0, 18)
                   .map((source) => (
                     <li key={source.id}>
                       <strong>{source.label}</strong>

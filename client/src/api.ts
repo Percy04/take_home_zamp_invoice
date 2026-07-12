@@ -1,8 +1,8 @@
 import {
   runDetailSchema,
-  runSummarySchema,
+  runListSchema,
   type RunDetail,
-  type RunSummary,
+  type RunList,
 } from "../../shared/contracts";
 
 export const fixtureIds = [
@@ -22,8 +22,13 @@ export type FixtureId = (typeof fixtureIds)[number];
 async function runRequest(url: string, init?: RequestInit): Promise<RunDetail> {
   const response = await fetch(url, init);
   if (!response.ok) {
-    const body = (await response.json()) as { error?: { message?: string } };
-    throw new Error(body.error?.message ?? "The request failed.");
+    const body = (await response.json()) as {
+      error?: { message?: string; code?: string };
+    };
+    throw new ApiRequestError(
+      body.error?.message ?? "The request failed.",
+      body.error?.code,
+    );
   }
   return runDetailSchema.parse(await response.json());
 }
@@ -32,16 +37,33 @@ export function createRun(input: File | FixtureId) {
   const body = new FormData();
   if (input instanceof File) body.append("invoice", input);
   else body.append("fixtureId", input);
-  return runRequest("/api/runs", { method: "POST", body });
+  return runRequest("/api/runs", {
+    method: "POST",
+    headers: { "Idempotency-Key": crypto.randomUUID() },
+    body,
+  });
 }
 
-export async function listRuns(): Promise<RunSummary[]> {
-  const response = await fetch("/api/runs");
+export async function listRuns(filters: {
+  state?: string;
+  cursor?: string;
+  limit?: number;
+} = {}): Promise<RunList> {
+  const query = new URLSearchParams();
+  if (filters.state) query.set("state", filters.state);
+  if (filters.cursor) query.set("cursor", filters.cursor);
+  if (filters.limit) query.set("limit", String(filters.limit));
+  const response = await fetch(`/api/runs?${query}`);
   if (!response.ok) {
-    const body = (await response.json()) as { error?: { message?: string } };
-    throw new Error(body.error?.message ?? "The request failed.");
+    const body = (await response.json()) as {
+      error?: { message?: string; code?: string };
+    };
+    throw new ApiRequestError(
+      body.error?.message ?? "The request failed.",
+      body.error?.code,
+    );
   }
-  return runSummarySchema.array().parse(await response.json());
+  return runListSchema.parse(await response.json());
 }
 
 export function processRun(runId: string) {
@@ -66,4 +88,13 @@ export function confirmBundle(runId: string, candidateId: string) {
 
 export function getRun(runId: string) {
   return runRequest(`/api/runs/${runId}`);
+}
+
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
 }

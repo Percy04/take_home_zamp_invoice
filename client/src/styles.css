@@ -390,6 +390,45 @@ th {
   border: 1px solid #d7dfd9;
   border-radius: 6px;
   background: white;
+  overflow: auto;
+  padding: 12px;
+}
+
+.pdf-preview canvas {
+  margin: 0 auto;
+}
+
+.pdf-controls,
+.filter-row,
+.pagination-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.pdf-controls,
+.pagination-row {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.filter-row {
+  margin-bottom: 14px;
+}
+
+.filter-row label {
+  display: grid;
+  gap: 6px;
+  color: #263a31;
+  font-weight: 800;
+}
+
+select {
+  border: 1px solid #c9d3cc;
+  border-radius: 6px;
+  padding: 9px 12px;
+  background: white;
 }
 
 .side-stack {
@@ -551,3 +590,4 @@ th {
     font-size: 32px;
   }
 }
+@import "tailwindcss";
