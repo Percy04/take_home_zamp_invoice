@@ -91,8 +91,17 @@ describe("happy-path vertical slice", () => {
           expect.objectContaining({
             code: "RECEIPT_CAPACITY",
             passed: false,
-            expected: "2 received units available for VAL-500",
-            actual: "3 invoice units requested for VAL-500",
+            expected: "2 EA received available for VAL-500",
+            actual: "3 EA requested for VAL-500",
+            calculation: {
+              kind: "RECEIPT_CAPACITY",
+              sku: "VAL-500",
+              uom: "EA",
+              requestedQuantity: "3",
+              receivedAvailability: "2",
+              orderedAvailability: "6",
+              shortfall: "1",
+            },
           }),
         ]),
       );
@@ -352,9 +361,32 @@ describe("happy-path vertical slice", () => {
       .filter((check: { passed: boolean }) => !check.passed)
       .map((check: { code: string }) => check.code);
 
-    expect(processed.body.reasonCode).toBe("PRICE_VARIANCE_EXCEEDED");
+    expect(processed.body.reasonCode).toBe("MULTIPLE_ISSUES");
     expect(failedCodes).toEqual(
       expect.arrayContaining(["PRICE_MATCH", "RECEIPT_CAPACITY"]),
+    );
+    expect(processed.body.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "PRICE_MATCH",
+          calculation: expect.objectContaining({
+            kind: "PRICE_VARIANCE",
+            sku: "WID-100",
+            invoiceUnitPrice: "100.00",
+            poUnitPrice: "50.00",
+            varianceAmount: "400.00",
+          }),
+        }),
+        expect.objectContaining({
+          code: "RECEIPT_CAPACITY",
+          calculation: expect.objectContaining({
+            kind: "RECEIPT_CAPACITY",
+            requestedQuantity: "8",
+            receivedAvailability: "0",
+            shortfall: "8",
+          }),
+        }),
+      ]),
     );
     storage.close();
   });

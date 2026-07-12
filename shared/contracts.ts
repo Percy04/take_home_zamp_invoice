@@ -149,6 +149,7 @@ export const allocationSchema = z.object({
   poLineId: z.string(),
   poNumber: z.string(),
   sku: z.string(),
+  uom: z.string().optional(),
   quantity: z.string(),
   matchType: z.enum(["DIRECT", "BUNDLE_MASTER", "BUNDLE_CONFIRMED"]),
   bundleDefinitionId: z.string().nullable(),

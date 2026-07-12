@@ -499,12 +499,39 @@ export function evaluateInvoice(
           ? new Decimal(0)
           : new Decimal(Infinity)
         : invoicePrice.minus(poPrice).abs().div(poPrice);
+      const variance = invoicePrice.minus(poPrice).abs();
+      const pricePasses = ratio.lte("0.01");
       record(
         "PRICE_MATCH",
-        ratio.lte("0.01"),
-        `${line.sku || line.description} is within the 1% unit-price tolerance.`,
+        pricePasses,
+        pricePasses
+          ? `${line.sku || line.description} is within the 1% unit-price tolerance.`
+          : `${line.sku || line.description}: invoice $${money(invoicePrice)} per ${line.uom}; PO $${money(poPrice)}; variance ${poPrice.isZero() ? "not applicable" : `${money(ratio.mul(100))}%`} (1.00% tolerance).`,
+        {
+          category: "MATCHING",
+          expected: `$${money(poPrice)} per ${line.uom}`,
+          actual: `$${money(invoicePrice)} per ${line.uom}`,
+          sourceIds: Object.values(line.sourceIds),
+          ...(pricePasses
+            ? {}
+            : {
+                calculation: {
+                  kind: "PRICE_VARIANCE" as const,
+                  sku: line.sku || line.description,
+                  uom: line.uom,
+                  quantity: line.quantity,
+                  invoiceUnitPrice: money(invoicePrice),
+                  poUnitPrice: money(poPrice),
+                  varianceAmount: money(variance.mul(quantity)),
+                  variancePercent: poPrice.isZero()
+                    ? "N/A"
+                    : money(ratio.mul(100)),
+                  tolerancePercent: "1.00",
+                },
+              }),
+        },
       );
-      directVariances.push(invoicePrice.minus(poPrice).abs().mul(quantity));
+      directVariances.push(variance.mul(quantity));
       allocations.push(
         allocationFor({
           invoiceLineIndex,
@@ -612,8 +639,7 @@ export function evaluateInvoice(
       .lte("0.01"),
     "Subtotal plus tax equals total.",
   );
-  const failed = checks.find((check) => !check.passed);
-  if (failed) throw new ControlError(failed.code, failed.detail, checks);
+  throwForFailedControls(checks);
   return { checks, allocations };
 }
 
@@ -707,8 +733,7 @@ export function evaluateConfirmedBundle(
   });
   checkCapacities(allocations, checks);
   checkPoValueCapacity(po, poLines, priorAllocations, allocations, checks);
-  const failed = checks.find((check) => !check.passed);
-  if (failed) throw new ControlError(failed.code, failed.detail, checks);
+  throwForFailedControls(checks);
   return { checks, allocations };
 }
 
@@ -837,6 +862,20 @@ export function normalize(value: string) {
     .replace(/[^A-Z0-9]/g, "");
 }
 
+function throwForFailedControls(checks: CheckResult[]) {
+  const failed = checks.filter((check) => !check.passed);
+  if (!failed.length) return;
+  const independentCodes = [...new Set(failed.map((check) => check.code))];
+  const first = failed[0]!;
+  if (independentCodes.length > 1)
+    throw new ControlError(
+      "MULTIPLE_ISSUES",
+      `${independentCodes.length} independent controls failed.`,
+      checks,
+    );
+  throw new ControlError(first.code, first.detail, checks);
+}
+
 function allocationFor(input: {
   invoiceLineIndex: number;
   line: NormalizedInvoice["lines"][number];
@@ -870,6 +909,7 @@ function allocationFor(input: {
     poLineId: input.poLine.id,
     poNumber: input.poLine.po_number,
     sku: input.poLine.sku ?? "",
+    uom: input.line.uom,
     quantity: input.quantity.toString(),
     matchType: input.matchType,
     bundleDefinitionId: input.bundleDefinitionId,
@@ -897,18 +937,45 @@ function checkCapacities(allocations: Allocation[], checks: CheckResult[]) {
     new Decimal(row.remainingReceivedQuantity).lt(0),
   );
   const receiptPasses = !receiptFailure;
+  const requested = receiptFailure
+    ? new Decimal(receiptFailure.quantity)
+    : null;
+  const receivedAvailability = receiptFailure
+    ? new Decimal(receiptFailure.availableReceivedQuantity ?? 0)
+    : null;
+  const orderedAvailability = receiptFailure
+    ? new Decimal(receiptFailure.availableOrderedQuantity ?? 0)
+    : null;
+  const shortfall = requested
+    ? Decimal.max(requested.minus(receivedAvailability!), 0)
+    : null;
   checks.push({
     code: "RECEIPT_CAPACITY",
     passed: receiptPasses,
-    detail: "Allocated quantities fit remaining receipts.",
+    detail: receiptFailure
+      ? `Requested ${requested} ${receiptFailure.uom ?? "units"}; received availability ${receivedAvailability} ${receiptFailure.uom ?? "units"}; shortfall ${shortfall} ${receiptFailure.uom ?? "units"}; ordered capacity ${orderedAvailability!.gte(requested!) ? "remains sufficient" : "is also insufficient"}.`
+      : "Allocated quantities fit remaining receipts.",
     category: "CAPACITY",
     expected: receiptFailure
-      ? `${new Decimal(receiptFailure.remainingReceivedQuantity).plus(receiptFailure.quantity).toString()} received units available for ${receiptFailure.sku}`
+      ? `${receivedAvailability} ${receiptFailure.uom ?? "units"} received available for ${receiptFailure.sku}`
       : null,
     actual: receiptFailure
-      ? `${receiptFailure.quantity} invoice units requested for ${receiptFailure.sku}`
+      ? `${requested} ${receiptFailure.uom ?? "units"} requested for ${receiptFailure.sku}`
       : null,
     sourceIds: receiptFailure?.sourceIds ?? [],
+    ...(receiptFailure
+      ? {
+          calculation: {
+            kind: "RECEIPT_CAPACITY" as const,
+            sku: receiptFailure.sku,
+            uom: receiptFailure.uom ?? "",
+            requestedQuantity: requested!.toString(),
+            receivedAvailability: receivedAvailability!.toString(),
+            orderedAvailability: orderedAvailability!.toString(),
+            shortfall: shortfall!.toString(),
+          },
+        }
+      : {}),
   });
   const orderFailure = allocations.find((row) =>
     new Decimal(row.remainingOrderedQuantity).lt(0),

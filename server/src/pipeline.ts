@@ -313,6 +313,7 @@ export function rejectBundle(runId: string, storage: Storage) {
 }
 
 function reasonFor(checkCode: string) {
+  if (checkCode === "MULTIPLE_ISSUES") return "MULTIPLE_ISSUES";
   if (["UNSUPPORTED_STRUCTURE"].includes(checkCode))
     return "UNSUPPORTED_STRUCTURE";
   if (["TAX_BASIS"].includes(checkCode)) return "TAX_TREATMENT_UNRESOLVED";
@@ -356,6 +357,8 @@ function nextActionFor(reasonCode: string) {
         "Amend the PO or correct the invoice before retrying.",
       PRICE_VARIANCE_EXCEEDED:
         "Review the invoice price against the PO or bundle definition.",
+      MULTIPLE_ISSUES:
+        "Resolve every failed control before submitting this invoice again.",
       TOTAL_MISMATCH: "Correct the invoice arithmetic.",
       UNSUPPORTED_STRUCTURE: "Route it to the normal manual AP process.",
       PROCESSING_ERROR:
