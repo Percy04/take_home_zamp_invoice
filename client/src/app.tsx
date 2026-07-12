@@ -950,11 +950,24 @@ function ValueComparison({ invoice }: { invoice: RunDetail["invoice"] }) {
 function DecisionExplanation({ detail }: { detail: RunDetail }) {
   if (detail.state === "PROCESSING") return null;
   if (detail.state !== "POSTED") {
+    const failed = detail.checks.find((check) => !check.passed);
     return (
       <section className="decision-explanation review">
         <h3>Why this needs review</h3>
         <strong>{formatReason(detail.reasonCode ?? detail.state)}</strong>
         <p>{reasonExplanation(detail)}</p>
+        {failed?.expected && failed.actual && (
+          <dl className="exception-facts">
+            <div>
+              <dt>Expected</dt>
+              <dd>{failed.expected}</dd>
+            </div>
+            <div>
+              <dt>Observed</dt>
+              <dd>{failed.actual}</dd>
+            </div>
+          </dl>
+        )}
       </section>
     );
   }

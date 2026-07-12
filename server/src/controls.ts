@@ -356,8 +356,13 @@ export function evaluateInvoice(
   const bundleDefinitions = context.bundleDefinitions as BundleDefinitionRow[];
   const priorAllocations = context.priorAllocations as PriorAllocationRow[];
   const checks: CheckResult[] = [];
-  const check = (code: string, passed: boolean, detail: string) => {
-    checks.push({ code, passed, detail });
+  const check = (
+    code: string,
+    passed: boolean,
+    detail: string,
+    metadata: Partial<CheckResult> = {},
+  ) => {
+    checks.push({ ...metadata, code, passed, detail });
     if (!passed) throw new ControlError(code, detail, [...checks]);
   };
 
@@ -382,6 +387,12 @@ export function evaluateInvoice(
         row.normalized_invoice_number === normalize(invoice.invoiceNumber),
     ),
     "Invoice number has not already been posted for this vendor.",
+    {
+      category: "DUPLICATE",
+      expected: "A new invoice number for this vendor",
+      actual: invoice.invoiceNumber,
+      sourceIds: [invoice.fieldSources.invoiceNumber].filter(Boolean),
+    },
   );
 
   const poMatches = purchaseOrders.filter(
@@ -792,13 +803,22 @@ function allocationFor(input: {
 }
 
 function checkCapacities(allocations: Allocation[], checks: CheckResult[]) {
-  const receiptPasses = allocations.every((row) =>
-    new Decimal(row.remainingReceivedQuantity).gte(0),
+  const receiptFailure = allocations.find((row) =>
+    new Decimal(row.remainingReceivedQuantity).lt(0),
   );
+  const receiptPasses = !receiptFailure;
   checks.push({
     code: "RECEIPT_CAPACITY",
     passed: receiptPasses,
     detail: "Allocated quantities fit remaining receipts.",
+    category: "CAPACITY",
+    expected: receiptFailure
+      ? `${new Decimal(receiptFailure.remainingReceivedQuantity).plus(receiptFailure.quantity).toString()} received units available for ${receiptFailure.sku}`
+      : null,
+    actual: receiptFailure
+      ? `${receiptFailure.quantity} invoice units requested for ${receiptFailure.sku}`
+      : null,
+    sourceIds: receiptFailure?.sourceIds ?? [],
   });
   if (!receiptPasses)
     throw new ControlError(
@@ -806,13 +826,22 @@ function checkCapacities(allocations: Allocation[], checks: CheckResult[]) {
       "Quantity exceeds received capacity.",
       checks,
     );
-  const orderPasses = allocations.every((row) =>
-    new Decimal(row.remainingOrderedQuantity).gte(0),
+  const orderFailure = allocations.find((row) =>
+    new Decimal(row.remainingOrderedQuantity).lt(0),
   );
+  const orderPasses = !orderFailure;
   checks.push({
     code: "ORDERED_CAPACITY",
     passed: orderPasses,
     detail: "Allocated quantities fit remaining ordered capacity.",
+    category: "CAPACITY",
+    expected: orderFailure
+      ? `${new Decimal(orderFailure.remainingOrderedQuantity).plus(orderFailure.quantity).toString()} ordered units available for ${orderFailure.sku}`
+      : null,
+    actual: orderFailure
+      ? `${orderFailure.quantity} invoice units requested for ${orderFailure.sku}`
+      : null,
+    sourceIds: orderFailure?.sourceIds ?? [],
   });
   if (!orderPasses)
     throw new ControlError(
@@ -853,6 +882,10 @@ function checkPoValueCapacity(
     code: "PO_VALUE_CAPACITY",
     passed,
     detail: "PO-basis value fits remaining ordered value.",
+    category: "CAPACITY",
+    expected: `At most $${money(total.minus(priorBasis))} remaining PO value`,
+    actual: `$${money(currentBasis)} invoice PO-basis value`,
+    sourceIds: current.flatMap((row) => row.sourceIds ?? []),
   });
   if (!passed)
     throw new ControlError(

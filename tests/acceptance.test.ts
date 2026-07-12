@@ -85,6 +85,17 @@ describe("happy-path vertical slice", () => {
       nextAction: expect.stringMatching(nextAction),
       ledgerId: null,
     });
+    if (reasonCode === "RECEIPT_CAPACITY_EXCEEDED")
+      expect(processed.body.checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "RECEIPT_CAPACITY",
+            passed: false,
+            expected: "2 received units available for VAL-500",
+            actual: "3 invoice units requested for VAL-500",
+          }),
+        ]),
+      );
 
     const database = new Database(path.join(runtime, "runtime.sqlite"), {
       readonly: true,
@@ -113,8 +124,14 @@ describe("happy-path vertical slice", () => {
       {
         invoice: { subtotal: "300.00", tax: "0.00", total: "300.00" },
         allocations: [
-          { matchType: "BUNDLE_MASTER", bundleDefinitionId: "BUNDLE-ACME-KIT-300" },
-          { matchType: "BUNDLE_MASTER", bundleDefinitionId: "BUNDLE-ACME-KIT-300" },
+          {
+            matchType: "BUNDLE_MASTER",
+            bundleDefinitionId: "BUNDLE-ACME-KIT-300",
+          },
+          {
+            matchType: "BUNDLE_MASTER",
+            bundleDefinitionId: "BUNDLE-ACME-KIT-300",
+          },
         ],
       },
     ],
