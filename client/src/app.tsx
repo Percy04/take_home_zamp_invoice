@@ -168,26 +168,18 @@ function DashboardPage() {
 
   return (
     <ConsoleShell>
-      <main
-        className="console-main dashboard-layout"
-        aria-labelledby="dashboard-title"
-      >
-        <div className="page-heading compact">
+      <main className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8" aria-labelledby="dashboard-title">
+        <header className="flex flex-wrap items-end justify-between gap-4 pb-4">
           <div>
-            <p className="eyebrow">Accounts payable</p>
-            <h1 id="dashboard-title">Invoices</h1>
-            <p className="summary">
-              Review processing outcomes and resolve invoices that need
-              attention.
-            </p>
+            <p className="eyebrow">Activity</p>
+            <h1 id="dashboard-title" className="mt-1 text-2xl font-semibold tracking-tight">Invoices</h1>
+            <p className="mt-1 max-w-2xl text-[13px] text-[var(--muted-foreground)]">Review processing outcomes and resolve invoices that need attention.</p>
           </div>
-        </div>
+          <Link to="/" className="rounded bg-[var(--primary)] px-3 py-1.5 text-[13px] font-semibold text-[var(--primary-foreground)]">Upload invoice</Link>
+        </header>
 
         {runs.data && (
-          <section
-            className="metric-grid dashboard-metrics"
-            aria-label="Dashboard metrics"
-          >
+          <section className="panel mb-4 grid grid-cols-2 divide-y divide-[var(--border)] sm:grid-cols-4 sm:divide-x sm:divide-y-0" aria-label="Dashboard metrics">
             <Metric
               label="All invoices"
               value={String(runs.data.metrics.totalRuns)}
@@ -209,22 +201,12 @@ function DashboardPage() {
           </section>
         )}
 
-        <section
-          className="surface dashboard-table"
-          aria-labelledby="recent-runs-title"
-        >
-          <div className="table-toolbar">
-            <div>
-              <h2 id="recent-runs-title">Invoice activity</h2>
-              <p className="muted">
-                {runs.data
-                  ? `${runs.data.items.length} ${runs.data.items.length === 1 ? "invoice" : "invoices"}`
-                  : "Loading invoice history..."}
-              </p>
-            </div>
-            <label>
-              <span>Status</span>
+        <div className="panel mb-4 flex flex-wrap items-center gap-2 p-2">
+            <label className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+              <span className="sr-only">Status</span>
               <select
+                aria-label="Status"
+                className="rounded border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-[13px] text-[var(--foreground)]"
                 value={state}
                 onChange={(event) => {
                   const next = new URLSearchParams();
@@ -232,7 +214,7 @@ function DashboardPage() {
                   setSearch(next);
                 }}
               >
-                <option value="">All states</option>
+                <option value="">All statuses</option>
                 <option value="POSTED">Posted</option>
                 <option value="NEEDS_REVIEW">Needs review</option>
                 <option value="AWAITING_PO_CONFIRMATION">Awaiting PO</option>
@@ -242,61 +224,53 @@ function DashboardPage() {
                 <option value="PROCESSING">Processing</option>
               </select>
             </label>
+            <span className="ml-auto px-2 text-xs text-[var(--muted-foreground)]">
+              {runs.data ? `${runs.data.items.length} ${runs.data.items.length === 1 ? "invoice" : "invoices"}` : "Loading invoice history…"}
+            </span>
           </div>
+
+        <section className="panel overflow-hidden" aria-labelledby="recent-runs-title">
+          <h2 id="recent-runs-title" className="sr-only">Invoice activity</h2>
           {runs.isPending && (
-            <p className="table-message muted">Loading runs...</p>
+            <p className="px-4 py-10 text-center text-[13px] text-[var(--muted-foreground)]">Loading invoices…</p>
           )}
-          {runs.error && <p className="error">{runs.error.message}</p>}
+          {runs.error && <p className="p-4 text-[var(--destructive)]">{runs.error.message}</p>}
           {runs.data?.items.length === 0 && (
-            <div className="empty-state">
-              <strong>No matching runs</strong>
-              <p className="muted">
-                Try another status or process a new invoice.
-              </p>
+            <div className="px-4 py-12 text-center">
+              <strong className="text-[13.5px] font-medium">No invoices match this view</strong>
+              <p className="mt-1 text-[12.5px] text-[var(--muted-foreground)]">Try a different filter or upload a new invoice.</p>
             </div>
           )}
           {runs.data && runs.data.items.length > 0 && (
-            <div className="table-wrap">
-              <table>
-                <thead>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead className="bg-[var(--surface-muted)] text-[11.5px] uppercase tracking-wide text-[var(--muted-foreground)]">
                   <tr>
-                    <th>Invoice</th>
-                    <th>Amount</th>
-                    <th>Status</th>
-                    <th>Updated</th>
+                    <th className="px-3 py-2.5">Invoice</th>
+                    <th className="px-3 py-2.5">Vendor</th>
+                    <th className="px-3 py-2.5 text-right">Amount</th>
+                    <th className="px-3 py-2.5">Status</th>
+                    <th className="px-3 py-2.5">Primary reason</th>
+                    <th className="px-3 py-2.5">Updated</th>
                     <th className="sr-only">Open</th>
                   </tr>
                 </thead>
                 <tbody>
                   {runs.data.items.map((run) => (
-                    <tr key={run.runId}>
-                      <td className="invoice-cell">
-                        <Link to={`/runs/${run.runId}`}>
-                          {run.invoiceNumber ?? run.filename}
-                        </Link>
-                        <span>{run.vendor ?? run.filename}</span>
+                    <tr key={run.runId} className="border-t border-[var(--border)] hover:bg-[var(--surface-muted)]">
+                      <td className="px-3 py-2.5 align-top">
+                        <Link className="font-medium hover:text-[var(--primary)] hover:underline" to={`/runs/${run.runId}`}>{run.invoiceNumber ?? run.filename}</Link>
+                        <div className="max-w-[220px] truncate text-[11.5px] text-[var(--muted-foreground)]">{run.filename}</div>
                       </td>
-                      <td className="amount-cell">
-                        {run.total ? `$${run.total}` : "—"}
+                      <td className="px-3 py-2.5 align-top text-[12.5px]">{run.vendor ?? "—"}</td>
+                      <td className="px-3 py-2.5 text-right align-top tabular-nums">{run.total ? `$${run.total}` : "—"}</td>
+                      <td className="px-3 py-2.5 align-top"><span className={`status-badge ${stateTone(run.state)}`}>{formatLabel(run.state)}</span></td>
+                      <td className="px-3 py-2.5 align-top text-[12.5px] text-[var(--muted-foreground)]">
+                        {run.reasonCode ? formatReason(run.reasonCode) : run.state === "PROCESSING" ? "Processing…" : "—"}
                       </td>
-                      <td className="status-cell">
-                        <span
-                          className={`status-badge ${stateTone(run.state)}`}
-                        >
-                          {formatLabel(run.state)}
-                        </span>
-                        {run.reasonCode ? (
-                          <span>{formatReason(run.reasonCode)}</span>
-                        ) : null}
-                      </td>
-                      <td className="date-cell">{formatDate(run.updatedAt)}</td>
-                      <td className="row-action">
-                        <Link
-                          to={`/runs/${run.runId}`}
-                          aria-label={`Open ${run.filename}`}
-                        >
-                          <span aria-hidden="true">→</span>
-                        </Link>
+                      <td className="px-3 py-2.5 align-top text-xs text-[var(--muted-foreground)]">{formatDate(run.updatedAt)}</td>
+                      <td className="px-3 py-2.5 text-right align-top">
+                        <Link className="text-[12.5px] font-medium text-[var(--primary)] hover:underline" to={`/runs/${run.runId}`} aria-label={`Open ${run.filename}`}>Open →</Link>
                       </td>
                     </tr>
                   ))}
@@ -305,9 +279,9 @@ function DashboardPage() {
             </div>
           )}
           {runs.data && (cursor || runs.data.nextCursor) && (
-            <div className="pagination-row">
+            <div className="flex items-center justify-end gap-1 border-t border-[var(--border)] px-3 py-2">
               <button
-                className="secondary"
+                className="secondary min-h-0 px-2 py-1 text-xs"
                 disabled={!cursor}
                 onClick={() => {
                   const next = new URLSearchParams();
@@ -318,7 +292,7 @@ function DashboardPage() {
                 First page
               </button>
               <button
-                className="secondary"
+                className="secondary min-h-0 px-2 py-1 text-xs"
                 disabled={!runs.data.nextCursor}
                 onClick={() => {
                   const next = new URLSearchParams();
@@ -899,9 +873,9 @@ function Metric({
   tone?: "neutral" | "ok" | "warn" | "bad";
 }) {
   return (
-    <div className={`metric ${tone}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className="px-4 py-3">
+      <span className="text-[11px] uppercase tracking-wider text-[var(--muted-foreground)]">{label}</span>
+      <strong className={`mt-1 block text-xl font-semibold tabular-nums ${tone === "warn" ? "text-[var(--warning)]" : tone === "ok" ? "text-[var(--success)]" : ""}`}>{value}</strong>
     </div>
   );
 }
