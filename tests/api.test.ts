@@ -23,6 +23,9 @@ describe("GET /api/health", () => {
       status: "ok",
       database: "not-initialized",
     });
+    expect(response.headers["content-security-policy"]).toContain(
+      "font-src 'self' https://fonts.gstatic.com",
+    );
   });
 });
 
