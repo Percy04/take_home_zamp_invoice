@@ -54,7 +54,7 @@ The production server exposes the client at `http://localhost:3000` and readines
 
 Preserved deterministic assets:
 
-- `data/fixtures/`: nine acceptance and regression invoice PDFs.
+- `data/fixtures/`: ten acceptance and regression invoice PDFs.
 - `data/recordings/`: recorded Azure responses and normalized source catalogues for offline tests.
 - `data/seed.sqlite`: immutable seed database.
 - `data/cases.json`: exact expected outcomes and accounting deltas.
