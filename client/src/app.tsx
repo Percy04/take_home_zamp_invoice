@@ -26,6 +26,7 @@ import {
   processRun,
   type FixtureId,
 } from "./api";
+import type { RunDetail, SourceRef } from "../../shared/contracts";
 
 const queryClient = new QueryClient();
 const PdfPreview = lazy(() => import("./pdf-preview"));
@@ -399,6 +400,7 @@ function RunPage() {
     return <StatusPage>{run.error?.message ?? "Run not found."}</StatusPage>;
   const detail = run.data;
   const isPosted = detail.state === "POSTED";
+  const outcome = describeOutcome(detail);
 
   return (
     <ConsoleShell>
@@ -421,28 +423,29 @@ function RunPage() {
         </div>
 
         <section
-          className="decision-strip run-summary-bar"
-          aria-label="Run decision"
+          className={`outcome-panel ${outcome.tone}`}
+          aria-labelledby="outcome-title"
         >
-          <Metric
-            label="Decision"
-            value={formatLabel(detail.decision ?? "PROCESSING")}
-            tone={isPosted ? "ok" : detail.reasonCode ? "bad" : "warn"}
-          />
-          <Metric label="State" value={formatLabel(detail.state)} />
-          <Metric
-            label="Execution"
-            value={formatLabel(detail.execution ?? "PENDING")}
-          />
-          <Metric label="Ledger" value={detail.ledgerId ?? "No mutation"} />
+          <span className="outcome-icon" aria-hidden="true">
+            {outcome.icon}
+          </span>
+          <div>
+            <p className="eyebrow">Invoice result</p>
+            <h2 id="outcome-title">{outcome.title}</h2>
+            <p>{outcome.description}</p>
+            {detail.nextAction && !isPosted && (
+              <p className="outcome-action">
+                <strong>Next step:</strong> {detail.nextAction}
+              </p>
+            )}
+          </div>
+          {detail.ledgerId && (
+            <div className="ledger-reference">
+              <span>Ledger reference</span>
+              <strong>{detail.ledgerId}</strong>
+            </div>
+          )}
         </section>
-
-        {detail.reasonCode && (
-          <section className="surface alert" aria-label="Review reason">
-            <strong>{detail.reasonCode}</strong>
-            <p>{detail.nextAction}</p>
-          </section>
-        )}
 
         {detail.state === "AWAITING_PO_CONFIRMATION" && detail.candidatePo && (
           <section
@@ -535,35 +538,38 @@ function RunPage() {
                     </strong>
                   </div>
                   <span className={`status-badge ${stateTone(detail.state)}`}>
-                    {isPosted ? "Ready" : formatLabel(detail.state)}
-                  </span>
-                </div>
-                <div
-                  className="review-tabs"
-                  role="tablist"
-                  aria-label="Invoice details"
-                >
-                  <button type="button" role="tab" aria-selected="true">
-                    Overview
-                  </button>
-                  <span role="tab" aria-selected="false">
-                    Line items
-                  </span>
-                  <span role="tab" aria-selected="false">
-                    Audit trail
+                    {isPosted ? "Approved" : formatLabel(detail.state)}
                   </span>
                 </div>
                 <h3 className="fact-group-title">Invoice details</h3>
                 <dl className="facts">
-                  <Fact label="Vendor" value={detail.invoice.vendor} />
-                  <Fact
+                  <SourceFact
+                    label="Vendor"
+                    value={detail.invoice.vendor}
+                    sourceId={detail.invoice.fieldSources.vendor}
+                    evidence={detail.evidence}
+                  />
+                  <SourceFact
                     label="Invoice #"
                     value={detail.invoice.invoiceNumber}
+                    sourceId={detail.invoice.fieldSources.invoiceNumber}
+                    evidence={detail.evidence}
+                  />
+                  <SourceFact
+                    label="Invoice date"
+                    value={formatDateOnly(detail.invoice.invoiceDate)}
+                    sourceId={detail.invoice.fieldSources.invoiceDate}
+                    evidence={detail.evidence}
                   />
                 </dl>
                 <h3 className="fact-group-title">Purchase order match</h3>
                 <dl className="facts">
-                  <Fact label="PO number" value={detail.invoice.poNumber} />
+                  <SourceFact
+                    label="PO number"
+                    value={detail.invoice.poNumber}
+                    sourceId={detail.invoice.fieldSources.poNumber}
+                    evidence={detail.evidence}
+                  />
                   <Fact
                     label="Match status"
                     value={
@@ -574,14 +580,7 @@ function RunPage() {
                   />
                 </dl>
                 <h3 className="fact-group-title">Payment summary</h3>
-                <dl className="facts payment-facts">
-                  <Fact
-                    label="Subtotal"
-                    value={`$${detail.invoice.subtotal}`}
-                  />
-                  <Fact label="Tax" value={`$${detail.invoice.tax}`} />
-                  <Fact label="Total" value={`$${detail.invoice.total}`} />
-                </dl>
+                <ValueComparison invoice={detail.invoice} />
                 <div className="validation-summary">
                   <span>
                     <strong>
@@ -590,10 +589,11 @@ function RunPage() {
                     checks passed
                   </span>
                   <span>
-                    <strong>{detail.evidence.length}</strong>
-                    evidence fields
+                    <strong>{detail.allocations.length}</strong>
+                    lines matched
                   </span>
                 </div>
+                <DecisionExplanation detail={detail} />
               </section>
             )}
 
@@ -624,29 +624,42 @@ function RunPage() {
           <section className="surface" aria-labelledby="comparison">
             <div className="section-head">
               <div>
-                <p className="eyebrow">Accounting effect</p>
-                <h2 id="comparison">Invoice to PO comparison</h2>
+                <p className="eyebrow">Matching</p>
+                <h2 id="comparison">How invoice lines matched</h2>
               </div>
             </div>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>SKU</th>
-                    <th>Quantity</th>
+                    <th>Invoice line</th>
+                    <th>Matched PO line</th>
+                    <th>Qty</th>
                     <th>Invoice net</th>
                     <th>PO basis</th>
                     <th>Received left</th>
+                    <th>Result</th>
                   </tr>
                 </thead>
                 <tbody>
                   {detail.allocations.map((allocation) => (
                     <tr key={allocation.poLineId}>
-                      <td>{allocation.sku}</td>
+                      <td>
+                        <strong>
+                          {detail.invoice?.lines[allocation.invoiceLineIndex]
+                            ?.description ?? allocation.sku}
+                        </strong>
+                      </td>
+                      <td>
+                        {allocation.poNumber} · {allocation.sku}
+                      </td>
                       <td>{allocation.quantity}</td>
                       <td>${allocation.actualNetAmount}</td>
                       <td>${allocation.poBasisAmount}</td>
                       <td>{allocation.remainingReceivedQuantity}</td>
+                      <td>
+                        <span className="status-badge ok">Matched</span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -691,15 +704,19 @@ function RunPage() {
           </section>
         )}
 
-        <div className="run-grid bottom-grid">
-          {detail.checks.length > 0 && (
-            <section className="surface" aria-labelledby="controls">
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Controls</p>
-                  <h2 id="controls">Check results</h2>
-                </div>
-              </div>
+        {detail.checks.length > 0 && (
+          <details className="surface audit-details">
+            <summary>
+              <span>
+                <strong>Control details</strong>
+                <small>
+                  {detail.checks.filter((check) => check.passed).length} of{" "}
+                  {detail.checks.length} checks passed
+                </small>
+              </span>
+              <span aria-hidden="true">⌄</span>
+            </summary>
+            <div className="audit-details-body">
               <ul className="checks">
                 {detail.checks.map((check, index) => (
                   <li key={`${check.code}-${index}`}>
@@ -709,47 +726,15 @@ function RunPage() {
                       {check.passed ? "Pass" : "Fail"}
                     </span>
                     <div>
-                      <strong>{check.code}</strong>
+                      <strong>{formatLabel(check.code)}</strong>
                       <p>{check.detail}</p>
                     </div>
                   </li>
                 ))}
               </ul>
-            </section>
-          )}
-
-          {detail.evidence.length > 0 && (
-            <section className="surface" aria-labelledby="evidence">
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Provider evidence</p>
-                  <h2 id="evidence">Extracted fields</h2>
-                </div>
-              </div>
-              <ul className="evidence">
-                {detail.evidence
-                  .filter(
-                    (source) =>
-                      source.label !== "OCR line" ||
-                      source.content.length < 160,
-                  )
-                  .slice(0, 18)
-                  .map((source) => (
-                    <li key={source.id}>
-                      <strong>{source.label}</strong>
-                      <p>{source.content}</p>
-                      <span>
-                        Page {source.page ?? "-"} -{" "}
-                        {source.confidence === null
-                          ? "confidence -"
-                          : `${Math.round(source.confidence * 100)}%`}
-                      </span>
-                    </li>
-                  ))}
-              </ul>
-            </section>
-          )}
-        </div>
+            </div>
+          </details>
+        )}
       </main>
     </ConsoleShell>
   );
@@ -812,6 +797,139 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SourceFact({
+  label,
+  value,
+  sourceId,
+  evidence,
+}: {
+  label: string;
+  value: string;
+  sourceId?: string;
+  evidence: SourceRef[];
+}) {
+  const source = evidence.find((item) => item.id === sourceId);
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>
+        {value}
+        {source && (
+          <span className="source-hint">
+            {source.page ? `Page ${source.page}` : "Document"}
+            {source.confidence !== null &&
+              ` · ${Math.round(source.confidence * 100)}% confidence`}
+          </span>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+function ValueComparison({ invoice }: { invoice: RunDetail["invoice"] }) {
+  if (!invoice) return null;
+  const changed =
+    invoice.observedSubtotal !== invoice.subtotal ||
+    invoice.observedTax !== invoice.tax ||
+    invoice.lines.some(
+      (line) =>
+        line.observedAmount !== line.amount ||
+        line.observedUnitPrice !== line.unitPrice,
+    );
+  if (!changed) {
+    return (
+      <dl className="facts payment-facts">
+        <Fact label="Subtotal" value={`$${invoice.subtotal}`} />
+        <Fact label="Tax" value={`$${invoice.tax}`} />
+        <Fact label="Total" value={`$${invoice.total}`} />
+      </dl>
+    );
+  }
+  return (
+    <div className="value-comparison">
+      <div className="value-comparison-head">
+        <span />
+        <strong>Observed</strong>
+        <strong>Accounting value</strong>
+      </div>
+      <div>
+        <span>Subtotal</span>
+        <span>
+          {invoice.observedSubtotal
+            ? `$${invoice.observedSubtotal}`
+            : "Not stated"}
+        </span>
+        <strong>${invoice.subtotal}</strong>
+      </div>
+      <div>
+        <span>Tax</span>
+        <span>
+          {invoice.observedTax ? `$${invoice.observedTax}` : "Included"}
+        </span>
+        <strong>${invoice.tax}</strong>
+      </div>
+      <div>
+        <span>Total</span>
+        <span>${invoice.observedTotal}</span>
+        <strong>${invoice.total}</strong>
+      </div>
+    </div>
+  );
+}
+
+function DecisionExplanation({ detail }: { detail: RunDetail }) {
+  if (detail.state === "PROCESSING") return null;
+  if (detail.state !== "POSTED") {
+    return (
+      <section className="decision-explanation review">
+        <h3>Why this needs review</h3>
+        <strong>{formatReason(detail.reasonCode ?? detail.state)}</strong>
+        <p>{reasonExplanation(detail)}</p>
+      </section>
+    );
+  }
+  const poBasis = detail.allocations.reduce(
+    (sum, allocation) => sum + Number(allocation.poBasisAmount),
+    0,
+  );
+  return (
+    <section className="decision-explanation approved">
+      <h3>How it was approved</h3>
+      <ul>
+        <li>
+          <strong>Vendor matched</strong>
+          <span>An approved vendor record matched exactly.</span>
+        </li>
+        <li>
+          <strong>Purchase order matched</strong>
+          <span>
+            {detail.invoice?.poNumber} is open and belongs to this vendor.
+          </span>
+        </li>
+        <li>
+          <strong>{detail.allocations.length} lines matched</strong>
+          <span>
+            Invoice items matched PO lines by SKU, description, and UOM.
+          </span>
+        </li>
+        <li>
+          <strong>Amounts reconciled</strong>
+          <span>
+            Invoice net ${detail.invoice?.subtotal} matches PO basis $
+            {poBasis.toFixed(2)}.
+          </span>
+        </li>
+        <li>
+          <strong>Receipt capacity passed</strong>
+          <span>
+            Allocated quantities are within ordered and received capacity.
+          </span>
+        </li>
+      </ul>
+    </section>
+  );
+}
+
 function fixtureLabel(fixtureId: FixtureId) {
   return fixtureId
     .split("_")
@@ -840,6 +958,59 @@ function formatReason(value: string) {
   );
 }
 
+function describeOutcome(detail: RunDetail) {
+  if (detail.state === "POSTED")
+    return {
+      title: "Approved and posted",
+      description:
+        "The invoice, purchase order, receipts, and accounting controls all passed.",
+      tone: "ok",
+      icon: "✓",
+    };
+  if (detail.state === "PROCESSING")
+    return {
+      title: "Processing invoice",
+      description:
+        "Reading the document and validating it against purchasing records.",
+      tone: "neutral",
+      icon: "…",
+    };
+  if (detail.state.startsWith("AWAITING"))
+    return {
+      title: "Confirmation required",
+      description: formatReason(detail.reasonCode ?? detail.state),
+      tone: "warn",
+      icon: "!",
+    };
+  return {
+    title: "Needs review",
+    description: formatReason(detail.reasonCode ?? detail.state),
+    tone: "bad",
+    icon: "!",
+  };
+}
+
+function reasonExplanation(detail: RunDetail) {
+  switch (detail.reasonCode) {
+    case "DUPLICATE":
+      return `Invoice ${detail.invoice?.invoiceNumber ?? "number"} is already posted for this vendor. Nothing was posted again.`;
+    case "RECEIPT_CAPACITY_EXCEEDED":
+      return "The invoice quantity is greater than the remaining received quantity on the purchase order. Nothing was posted.";
+    case "MISSING_PO":
+      return "No purchase order was found on the invoice. Confirm the stored candidate before posting.";
+    case "BUNDLE_MAPPING_REQUIRED":
+      return "The invoice contains an unknown bundle. Confirm the proposed component decomposition before posting.";
+    case "MAPPING_FAILED":
+      return "Required invoice fields could not be linked reliably to the extracted document values.";
+    case "EXTRACTION_FAILED":
+      return "The document could not be read reliably. Check the PDF quality and try again.";
+    default:
+      return (
+        detail.nextAction ?? "Review the failed control before continuing."
+      );
+  }
+}
+
 function stateTone(state: string): "neutral" | "ok" | "warn" | "bad" {
   if (state === "POSTED") return "ok";
   if (state === "PROCESSING") return "neutral";
@@ -852,6 +1023,12 @@ function formatDate(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatDateOnly(value: string) {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
+    new Date(`${value}T00:00:00`),
+  );
 }
 
 function StatusPage({ children }: { children: React.ReactNode }) {
