@@ -1,10 +1,18 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getRouter } from "../frontend_v1/ap-resolve-console/src/router";
 import * as store from "../frontend_v1/ap-resolve-console/src/lib/store";
+import * as api from "../frontend_v1/ap-resolve-console/src/lib/api";
+import type { Run } from "../frontend_v1/ap-resolve-console/src/lib/types";
 
 vi.mock("react-pdf", () => ({
   pdfjs: { GlobalWorkerOptions: {} },
@@ -22,8 +30,7 @@ afterEach(() => {
 });
 
 describe("active activity layout", () => {
-  it("shows an empty workspace with an add-invoice action after reset", async () => {
-    window.history.replaceState({}, "", "/dashboard");
+  it("uses the dashboard as home and uploads invoices from a modal", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -31,17 +38,47 @@ describe("active activity layout", () => {
           JSON.stringify({
             items: [],
             nextCursor: null,
-            metrics: { totalRuns: 0, postedCount: 0, reviewCount: 0, autoClearRate: "0.0" },
+            metrics: {
+              totalRuns: 0,
+              postedCount: 0,
+              reviewCount: 0,
+              autoClearRate: "0.0",
+            },
           }),
           { headers: { "Content-Type": "application/json" } },
         ),
       ),
     );
 
-    render(<RouterProvider router={getRouter()} />);
+    vi.spyOn(api, "createRun").mockResolvedValue({
+      runId: "11111111-1111-4111-8111-111111111111",
+    } as Run);
+    const router = getRouter();
+    render(<RouterProvider router={router} />);
 
     expect(await screen.findByText("Workspace is empty")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Add invoice" })).toHaveAttribute("href", "/");
+    expect(screen.queryByText("Intake")).not.toBeInTheDocument();
+    expect(screen.queryByText("Activity")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add invoice" }));
+    expect(screen.getByRole("dialog")).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Upload an invoice" }),
+    ).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Invoice PDF"), {
+      target: {
+        files: [
+          new File(["invoice"], "invoice.pdf", { type: "application/pdf" }),
+        ],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Upload and process" }));
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        "/runs/11111111-1111-4111-8111-111111111111",
+      ),
+    );
     expect(screen.queryByText("Loading invoices…")).not.toBeInTheDocument();
   });
 

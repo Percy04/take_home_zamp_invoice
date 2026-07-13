@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getRouter } from "../frontend_v1/ap-resolve-console/src/router";
 
 vi.mock("react-pdf", () => ({
@@ -14,21 +14,41 @@ vi.mock("react-pdf", () => ({
 }));
 
 describe("main Lovable frontend", () => {
-  beforeEach(() => window.history.replaceState({}, "", "/"));
+  afterEach(() => vi.unstubAllGlobals());
 
-  it("renders the complete Lovable intake experience", async () => {
+  beforeEach(() => {
+    window.history.replaceState({}, "", "/");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            items: [],
+            nextCursor: null,
+            metrics: {
+              totalRuns: 0,
+              postedCount: 0,
+              reviewCount: 0,
+              autoClearRate: "0.0",
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+  });
+
+  it("uses one dashboard with an invoice upload modal", async () => {
     render(<RouterProvider router={getRouter()} />);
 
     expect(
-      await screen.findByRole("heading", { name: "Upload an invoice" }),
+      await screen.findByRole("heading", { name: "Recent invoice runs" }),
     ).toBeVisible();
+    expect(screen.queryByText("Intake")).not.toBeInTheDocument();
+    expect(screen.queryByText("Activity")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add invoice" }));
     expect(
-      screen.getByRole("region", { name: "Prepared invoices" }),
+      screen.getByRole("dialog", { name: "Upload an invoice" }),
     ).toBeVisible();
-    expect(
-      screen.getByRole("button", { name: /Unknown bundle/ }),
-    ).toBeVisible();
-    expect(screen.getByRole("button", { name: /Tax inclusive/ })).toBeVisible();
-    expect(screen.queryByText(/demo/i)).not.toBeInTheDocument();
   });
 });
