@@ -112,6 +112,8 @@ describe("active decision evidence", () => {
     expect(new Set([...issueCards].map((card) => card.className))).toHaveLength(
       1,
     );
+    expect(issueCards[0]).toHaveClass("border-border", "bg-surface");
+    expect(issueCards[0]?.className).not.toMatch(/destructive/);
     expect(issueCards[0]?.parentElement).toHaveClass("space-y-2");
     expect(screen.queryByRole("columnheader")).not.toBeInTheDocument();
     expect(screen.queryByText("Capacity check")).not.toBeInTheDocument();
