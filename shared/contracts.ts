@@ -328,6 +328,7 @@ export const runSummarySchema = z.object({
   filename: z.string(),
   vendor: z.string().nullable(),
   invoiceNumber: z.string().nullable(),
+  poNumber: z.string().nullable().optional(),
   total: z.string().nullable(),
   currency: z.literal("USD").nullable(),
   state: runStateSchema,

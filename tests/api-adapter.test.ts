@@ -1,8 +1,34 @@
 import { describe, expect, it } from "vitest";
-import type { RunDetail } from "../shared/contracts";
-import { toUiRun } from "../frontend_v1/ap-resolve-console/src/lib/api-adapter";
+import type { RunDetail, RunSummary } from "../shared/contracts";
+import { toUiRun, toUiSummary } from "../frontend_v1/ap-resolve-console/src/lib/api-adapter";
 
 describe("Lovable API adapter", () => {
+  it("keeps supplier context in activity summaries", () => {
+    const run = toUiSummary({
+      runId: "11111111-1111-4111-8111-111111111111",
+      filename: "bundle_unknown.pdf",
+      vendor: "Acme Industrial Supplies LLC",
+      invoiceNumber: "ACME-2026-001",
+      poNumber: "PO-1001",
+      total: "990.00",
+      currency: "USD",
+      state: "AWAITING_BUNDLE_CONFIRMATION",
+      decision: "NEEDS_REVIEW",
+      execution: "AWAITING_CONFIRMATION",
+      reasonCode: "BUNDLE_MAPPING_REQUIRED",
+      ledgerId: null,
+      createdAt: "2026-07-12T00:00:00.000Z",
+      updatedAt: "2026-07-12T00:01:00.000Z",
+    } as RunSummary);
+
+    expect(run.invoice).toMatchObject({
+      vendor: "Acme Industrial Supplies LLC",
+      invoiceNumber: "ACME-2026-001",
+      poNumber: "PO-1001",
+      normalizedTotal: 990,
+    });
+  });
+
   it("maps backend runs into the Lovable UI contract", () => {
     const run = toUiRun({
       runId: "11111111-1111-4111-8111-111111111111",

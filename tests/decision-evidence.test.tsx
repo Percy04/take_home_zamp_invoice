@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DecisionEvidence } from "../frontend_v1/ap-resolve-console/src/components/DecisionEvidence";
 import * as api from "../frontend_v1/ap-resolve-console/src/lib/api";
+import { reviewSummary } from "../frontend_v1/ap-resolve-console/src/lib/review-issues";
 import type { Run } from "../frontend_v1/ap-resolve-console/src/lib/types";
 
 vi.mock("../frontend_v1/ap-resolve-console/src/lib/api", () => ({
@@ -58,13 +59,24 @@ describe("DecisionEvidence", () => {
         postedAt: "2026-07-12T12:00:00.000Z",
         originalLines: [],
       },
+      checks: [
+        {
+          code: "DUPLICATE",
+          name: "Duplicate control",
+          category: "DUPLICATE",
+          pass: false,
+          explanation: "Matches an existing posting.",
+        },
+      ],
     };
 
     render(<DecisionEvidence run={run} />);
 
-    expect(screen.getByText("Duplicate invoice")).toBeVisible();
+    expect(screen.getByText("Possible duplicate invoice")).toBeVisible();
+    expect(screen.getByText(/matches a previously posted ledger entry/i)).toBeVisible();
     expect(screen.getAllByText("✓ identical")).toHaveLength(4);
-    expect(screen.getByText("LEDGER-bf1055b6")).toBeVisible();
+    expect(screen.getByText(/ACME-2026-001 · posted Jul 12, 2026/)).toBeVisible();
+    expect(screen.queryByText("Duplicate control")).not.toBeInTheDocument();
     expect(
       screen.queryByText(
         "This invoice matches an existing ledger posting. It was not posted again.",
@@ -101,7 +113,7 @@ describe("DecisionEvidence", () => {
     expect(screen.queryByText("Invoice date")).not.toBeInTheDocument();
   });
 
-  it("groups date ambiguity and a missing PO number under invoice data", () => {
+  it("keeps an ambiguous date as an extraction issue without adding a PO decision", () => {
     const run: Run = {
       ...base,
       state: "NEEDS_REVIEW",
@@ -111,7 +123,7 @@ describe("DecisionEvidence", () => {
 
     render(<DecisionEvidence run={run} />);
 
-    expect(screen.getByRole("heading", { name: "Invoice data issues · 2" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Document extraction issue" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "Field" })).toBeVisible();
     expect(screen.getByText("Ambiguous")).toBeVisible();
     expect(screen.getByText("09.01.2025")).toBeVisible();
@@ -194,12 +206,13 @@ describe("DecisionEvidence", () => {
 
     render(<DecisionEvidence run={run} />);
 
-    expect(screen.getByRole("heading", { name: "Purchase order missing" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Select the purchase order" })).toBeVisible();
+    expect(screen.getByText(/does not identify a purchase order/i)).toBeVisible();
     expect(screen.getAllByText("This invoice").at(-1)).toBeVisible();
     expect(screen.getByText("Available to invoice")).toBeVisible();
     expect(screen.queryByText("Received avail.")).not.toBeInTheDocument();
     expect(screen.queryByText("Ordered avail.")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Purchase order missing")).toHaveLength(1);
+    expect(screen.getAllByText("Select the purchase order")).toHaveLength(1);
     expect(
       screen.queryByText("Suggested PO line matches this invoice item and has enough quantity to invoice."),
     ).not.toBeInTheDocument();
@@ -236,13 +249,27 @@ describe("DecisionEvidence", () => {
           ],
         },
       ],
+      checks: [
+        {
+          code: "LINE_MATCH",
+          name: "Line match",
+          category: "LINE_MATCH",
+          pass: false,
+          explanation: "The item requires a component mapping.",
+        },
+      ],
     };
     vi.mocked(api.confirmBundle).mockRejectedValueOnce(
       new Error("The requested run action is not valid."),
     );
     render(<DecisionEvidence run={run} />);
 
-    expect(screen.getAllByText("Bundle decomposition required")).toHaveLength(1);
+    expect(screen.getAllByText("Invoice item needs a component mapping")).toHaveLength(1);
+    expect(screen.queryByText("Select the purchase order")).not.toBeInTheDocument();
+    expect(screen.queryByText("Line match")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/not a direct PO line; its quantity and value align/i),
+    ).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Confirm decomposition" }));
 
@@ -279,10 +306,56 @@ describe("DecisionEvidence", () => {
 
     render(<DecisionEvidence run={run} />);
 
-    expect(screen.getByText("Quantity low confidence")).toBeVisible();
+    expect(screen.getByText("Quantity")).toBeVisible();
     expect(screen.getByText("Low confidence")).toBeVisible();
     expect(screen.getByText("8 pcs")).toBeVisible();
     expect(screen.getByText("62%")).toBeVisible();
     expect(screen.getByText("OCR line · page 1")).toBeVisible();
+  });
+
+  it("removes bundle actions after a decomposition is rejected", () => {
+    const run: Run = {
+      ...base,
+      state: "NEEDS_REVIEW",
+      reasonCode: "UNKNOWN_BUNDLE",
+      nextAction: "The proposed decomposition was rejected. Route this invoice for manual AP review.",
+      checks: [
+        {
+          code: "LINE_MATCH",
+          name: "Line match",
+          category: "LINE_MATCH",
+          pass: false,
+          explanation: "The item requires a component mapping.",
+        },
+      ],
+      bundleCandidates: [
+        {
+          candidateId: "BUNDLE-CANDIDATE-1",
+          invoiceItemDescription: "Maintenance Pack",
+          invoiceQuantity: 1,
+          poNumber: "PO-1005",
+          totalPoBasis: 300,
+          components: [],
+        },
+      ],
+    };
+
+    render(<DecisionEvidence run={run} />);
+
+    expect(screen.getByText(/manual review required/i)).toBeVisible();
+    expect(screen.getByText(/proposed decomposition was rejected/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Reject decomposition" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Line match")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["DUPLICATE_INVOICE", "This invoice matches a previously posted ledger entry and cannot be posted again."],
+    ["PRICE_VARIANCE_EXCEEDED", "The invoice price differs from the purchase order beyond the allowed tolerance."],
+    ["RECEIPT_CAPACITY_EXCEEDED", "The invoice quantity is greater than the goods received and available to invoice."],
+    ["MULTIPLE_ISSUES", "More than one independent control requires a reviewer decision."],
+  ] as const)("explains why %s needs a business decision", (reasonCode, explanation) => {
+    const summary = reviewSummary({ ...base, state: "NEEDS_REVIEW", reasonCode });
+
+    expect(summary?.explanation).toBe(explanation);
   });
 });

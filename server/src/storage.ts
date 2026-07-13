@@ -190,10 +190,11 @@ export class Storage {
       .prepare(
         `SELECT id, filename, state, decision, execution, primary_reason_code,
          ledger_invoice_id, created_at, updated_at,
-         json_extract(evaluation_json, '$.invoice.vendor') AS vendor,
-         json_extract(evaluation_json, '$.invoice.invoiceNumber') AS invoice_number,
-         json_extract(evaluation_json, '$.invoice.total') AS total,
-         json_extract(evaluation_json, '$.invoice.currency') AS currency
+         COALESCE(json_extract(evaluation_json, '$.invoice.vendor'), json_extract(evaluation_json, '$.invoicePreview.vendor')) AS vendor,
+         COALESCE(json_extract(evaluation_json, '$.invoice.invoiceNumber'), json_extract(evaluation_json, '$.invoicePreview.invoiceNumber')) AS invoice_number,
+         COALESCE(json_extract(evaluation_json, '$.invoice.poNumber'), json_extract(evaluation_json, '$.invoicePreview.poNumber')) AS po_number,
+         COALESCE(json_extract(evaluation_json, '$.invoice.total'), json_extract(evaluation_json, '$.invoicePreview.total')) AS total,
+         COALESCE(json_extract(evaluation_json, '$.invoice.currency'), json_extract(evaluation_json, '$.invoicePreview.currency')) AS currency
          FROM runs ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
       )
       .all(...parameters, limit + 1) as Array<{
@@ -206,6 +207,7 @@ export class Storage {
       ledger_invoice_id: string | null;
       vendor: string | null;
       invoice_number: string | null;
+      po_number: string | null;
       total: string | null;
       currency: "USD" | null;
       created_at: string;
@@ -219,6 +221,7 @@ export class Storage {
         filename: row.filename,
         vendor: row.vendor,
         invoiceNumber: row.invoice_number,
+        poNumber: row.po_number,
         total: row.total,
         currency: row.currency,
         state: row.state,
