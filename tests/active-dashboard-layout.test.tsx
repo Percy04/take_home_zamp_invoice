@@ -9,10 +9,10 @@ import {
 } from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getRouter } from "../frontend_v1/ap-resolve-console/src/router";
-import * as store from "../frontend_v1/ap-resolve-console/src/lib/store";
-import * as api from "../frontend_v1/ap-resolve-console/src/lib/api";
-import type { Run } from "../frontend_v1/ap-resolve-console/src/lib/types";
+import { getRouter } from "../client/src/router";
+import * as store from "../client/src/lib/store";
+import * as api from "../client/src/lib/api";
+import type { Run } from "../client/src/lib/types";
 
 vi.mock("react-pdf", () => ({
   pdfjs: { GlobalWorkerOptions: {} },

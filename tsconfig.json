@@ -5,7 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "paths": {
-      "@/*": ["./frontend_v1/ap-resolve-console/src/*"]
+      "@/*": ["./client/src/*"]
     },
     "jsx": "react-jsx",
     "strict": true,
@@ -15,7 +15,6 @@
   },
   "include": [
     "client",
-    "frontend_v1/ap-resolve-console/src/main.tsx",
     "server",
     "shared",
     "scripts",

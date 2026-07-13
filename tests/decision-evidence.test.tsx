@@ -2,15 +2,15 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DecisionEvidence } from "../frontend_v1/ap-resolve-console/src/components/DecisionEvidence";
-import * as api from "../frontend_v1/ap-resolve-console/src/lib/api";
+import { DecisionEvidence } from "../client/src/components/DecisionEvidence";
+import * as api from "../client/src/lib/api";
 import {
   reviewIssues,
   reviewSummary,
-} from "../frontend_v1/ap-resolve-console/src/lib/review-issues";
-import type { Run } from "../frontend_v1/ap-resolve-console/src/lib/types";
+} from "../client/src/lib/review-issues";
+import type { Run } from "../client/src/lib/types";
 
-vi.mock("../frontend_v1/ap-resolve-console/src/lib/api", () => ({
+vi.mock("../client/src/lib/api", () => ({
   confirmBundle: vi.fn(),
   rejectBundle: vi.fn(),
 }));

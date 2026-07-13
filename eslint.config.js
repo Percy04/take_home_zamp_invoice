@@ -15,4 +15,8 @@ export default tseslint.config(
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
   },
+  {
+    files: ["client/src/routes/**/*.tsx"],
+    rules: { "react-refresh/only-export-components": "off" },
+  },
 );

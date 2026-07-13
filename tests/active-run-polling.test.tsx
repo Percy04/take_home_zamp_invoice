@@ -3,12 +3,12 @@ import "@testing-library/jest-dom/vitest";
 import { render, waitFor } from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getRouter } from "../frontend_v1/ap-resolve-console/src/router";
-import * as store from "../frontend_v1/ap-resolve-console/src/lib/store";
-import type { Run } from "../frontend_v1/ap-resolve-console/src/lib/types";
-import * as api from "../frontend_v1/ap-resolve-console/src/lib/api";
+import { getRouter } from "../client/src/router";
+import * as store from "../client/src/lib/store";
+import type { Run } from "../client/src/lib/types";
+import * as api from "../client/src/lib/api";
 
-vi.mock("../frontend_v1/ap-resolve-console/src/lib/api", () => ({
+vi.mock("../client/src/lib/api", () => ({
   getRun: vi.fn(),
   processRun: vi.fn(),
   resetWorkspace: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("../frontend_v1/ap-resolve-console/src/lib/api", () => ({
 }));
 
 vi.mock(
-  "../frontend_v1/ap-resolve-console/src/components/DocumentPreview",
+  "../client/src/components/DocumentPreview",
   () => ({
     DocumentPreview: () => <div>Source document</div>,
   }),

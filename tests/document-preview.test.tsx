@@ -2,8 +2,8 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { DocumentPreview } from "../frontend_v1/ap-resolve-console/src/components/DocumentPreview";
-import type { Run } from "../frontend_v1/ap-resolve-console/src/lib/types";
+import { DocumentPreview } from "../client/src/components/DocumentPreview";
+import type { Run } from "../client/src/lib/types";
 
 vi.mock("react-pdf", () => ({
   pdfjs: { GlobalWorkerOptions: {} },

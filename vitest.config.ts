@@ -4,7 +4,7 @@ import path from "node:path";
 export default defineConfig({
   resolve: {
     alias: {
-      "@": path.resolve("frontend_v1/ap-resolve-console/src"),
+      "@": path.resolve("client/src"),
       react: path.resolve("node_modules/react"),
       "react-dom": path.resolve("node_modules/react-dom"),
     },

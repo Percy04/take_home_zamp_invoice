@@ -2,8 +2,8 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { DecisionEvidence } from "../frontend_v1/ap-resolve-console/src/components/DecisionEvidence";
-import type { Run } from "../frontend_v1/ap-resolve-console/src/lib/types";
+import { DecisionEvidence } from "../client/src/components/DecisionEvidence";
+import type { Run } from "../client/src/lib/types";
 
 const run = {
   runId: "11111111-1111-4111-8111-111111111111",
@@ -47,7 +47,7 @@ const run = {
     {
       code: "PRICE_MATCH",
       name: "Price variance",
-      category: "MATCHING",
+      category: "PRICE",
       pass: false,
       explanation: "Aggregate direct-line price variance is at most $5.00.",
     },

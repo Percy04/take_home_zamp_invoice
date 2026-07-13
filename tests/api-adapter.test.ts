@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunDetail, RunSummary } from "../shared/contracts";
-import { toUiRun, toUiSummary } from "../frontend_v1/ap-resolve-console/src/lib/api-adapter";
+import { toUiRun, toUiSummary } from "../client/src/lib/api-adapter";
 
 describe("Lovable API adapter", () => {
   it("keeps supplier context in activity summaries", () => {
