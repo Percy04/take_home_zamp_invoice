@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
+import { readFile } from "node:fs/promises";
 import {
   buildSourceCatalogue,
   extractAndMap,
@@ -22,6 +23,24 @@ describe("recorded provider", () => {
     ).rejects.toMatchObject({
       stage: "RECORDED_PROVIDER",
     });
+  });
+
+  it("replays the scanned-invoice AI re-read deterministically", async () => {
+    const result = await extractAndMap(
+      await readFile("data/fixtures/happy_layout_c_scanned.pdf"),
+    );
+
+    expect(result.aiRechecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "lines.0.quantity",
+          originalOcrValue: "8 pcs",
+          aiValue: "8",
+          model: "recorded-fixture",
+          outcome: "resolved",
+        }),
+      ]),
+    );
   });
 });
 
@@ -355,7 +374,7 @@ describe("mapping evidence validation", () => {
 
     expect(preferReliableEvidence(mapping, evidence)).toMatchObject({
       poNumber: "key_value.0.value",
-      lines: [{ sku: "table.0.r1.c0" }],
+      lines: [{ sku: "item.0.ProductCode" }],
     });
   });
 });

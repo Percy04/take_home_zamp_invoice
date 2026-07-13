@@ -292,9 +292,13 @@ type AiPageReader = (
   fields: LowConfidenceField[],
 ) => Promise<Record<string, string | null>>;
 
-const aiRecheckResponseSchema = z.object({
-  values: z.record(z.string(), z.string().nullable()),
-});
+function aiRecheckResponseSchemaFor(fields: LowConfidenceField[]) {
+  return z.object({
+    values: z.object(
+      Object.fromEntries(fields.map((field) => [field.field, z.string().nullable()])),
+    ),
+  });
+}
 
 /** Re-read each affected PDF page once; the response can only replace extraction values. */
 export async function recheckLowConfidenceFields(
@@ -302,6 +306,7 @@ export async function recheckLowConfidenceFields(
   evidence: SourceRef[],
   mapping: InvoiceMapping,
   readPage: AiPageReader = readPageWithConfiguredAi,
+  model = configuredModel(),
 ): Promise<{
   evidence: SourceRef[];
   mapping: InvoiceMapping;
@@ -317,7 +322,7 @@ export async function recheckLowConfidenceFields(
   const byPage = new Map<number, LowConfidenceField[]>();
   for (const field of fields) {
     if (!field.source.page) {
-      rechecks.push(recheckRecord(field, null, "needs_review"));
+      rechecks.push(recheckRecord(field, null, "needs_review", model));
       continue;
     }
     const pageFields = byPage.get(field.source.page) ?? [];
@@ -335,7 +340,7 @@ export async function recheckLowConfidenceFields(
     for (const field of pageFields) {
       const value = values?.[field.field]?.trim() || null;
       const outcome = value ? "resolved" : "needs_review";
-      rechecks.push(recheckRecord(field, value, outcome));
+      rechecks.push(recheckRecord(field, value, outcome, model));
       if (!value) continue;
       const id = `ai_recheck.${field.field}`;
       replacements.set(field.field, id);
@@ -464,6 +469,7 @@ function recheckRecord(
   field: LowConfidenceField,
   aiValue: string | null,
   outcome: AiRecheck["outcome"],
+  model: string | null,
 ): AiRecheck {
   return {
     field: field.field,
@@ -472,7 +478,7 @@ function recheckRecord(
     sourceId: field.source.id,
     page: field.source.page,
     aiValue,
-    model: field.source.page ? configuredModel() : null,
+    model: field.source.page ? model : null,
     attemptedAt: new Date().toISOString(),
     outcome,
   };
@@ -482,6 +488,7 @@ async function readPageWithConfiguredAi(
   pagePdf: Buffer,
   fields: LowConfidenceField[],
 ): Promise<Record<string, string | null>> {
+  const responseSchema = aiRecheckResponseSchemaFor(fields);
   const prompt = `Read only these invoice extraction fields from the attached PDF page: ${fields
     .map(
       (field) =>
@@ -515,12 +522,12 @@ async function readPageWithConfiguredAi(
         },
       ],
       text: {
-        format: zodTextFormat(aiRecheckResponseSchema, "invoice_reread"),
+        format: zodTextFormat(responseSchema, "invoice_reread"),
       },
     });
     if (!response.output_parsed)
       throw new ProviderError("AI_RECHECK", "AI returned no re-read values.");
-    return aiRecheckResponseSchema.parse(response.output_parsed).values;
+    return responseSchema.parse(response.output_parsed).values;
   }
 
   if (!env.GEMINI_API_KEY)
@@ -555,7 +562,13 @@ async function readPageWithConfiguredAi(
             properties: {
               values: {
                 type: "object",
-                additionalProperties: { type: ["string", "null"] },
+                properties: Object.fromEntries(
+                  fields.map((field) => [
+                    field.field,
+                    { type: ["string", "null"] },
+                  ]),
+                ),
+                required: fields.map((field) => field.field),
               },
             },
             required: ["values"],
@@ -572,7 +585,7 @@ async function readPageWithConfiguredAi(
   const output = extractGeminiOutput(await response.json());
   if (!output)
     throw new ProviderError("AI_RECHECK", "Gemini returned no re-read values.");
-  return aiRecheckResponseSchema.parse(JSON.parse(output)).values;
+  return responseSchema.parse(JSON.parse(output)).values;
 }
 
 async function singlePagePdf(bytes: Buffer, page: number) {
@@ -608,7 +621,7 @@ export async function mapEvidenceWithRetry(
         ? await mapWithOpenAI(evidence)
         : await mapWithGemini(evidence);
     validateMapping(mapping, evidence);
-    return preferReliableEvidence(mapping, evidence);
+    return mapping;
   });
 }
 
@@ -922,7 +935,7 @@ export function preferReliableEvidence(
         (candidate) =>
           candidate.id !== id &&
           candidate.content.normalize("NFKC").trim() === content &&
-          (candidate.confidence === null || candidate.confidence >= 0.75),
+          candidate.confidence !== null && candidate.confidence >= 0.75,
       )
       .sort(
         (left, right) =>
@@ -1003,8 +1016,34 @@ async function extractAndMapRecorded(bytes: Buffer): Promise<{
       amount: `case.lines.${index}.amount`,
     })),
   };
+  if (recording === "happy_layout_c_scanned") {
+    mapping.poNumber = "field.PurchaseOrder";
+    mapping.lines = mapping.lines.map((line, index) => ({
+      ...line,
+      sku: `item.${index}.ProductCode`,
+      quantity: `item.${index}.Quantity`,
+    }));
+  }
   validateMapping(mapping, evidence);
-  return { evidence, mapping, originalMapping: mapping, aiRechecks: [] };
+  return recording === "happy_layout_c_scanned"
+    ? recheckLowConfidenceFields(
+        bytes,
+        evidence,
+        mapping,
+        async (_page, fields) => recordedRecheckValues(fields),
+        "recorded-fixture",
+      )
+    : { evidence, mapping, originalMapping: mapping, aiRechecks: [] };
+}
+
+function recordedRecheckValues(fields: LowConfidenceField[]) {
+  const values: Record<string, string> = {
+    poNumber: "PO-1001",
+    "lines.0.sku": "WID-100",
+    "lines.0.quantity": "8",
+    "lines.1.quantity": "5",
+  };
+  return Object.fromEntries(fields.map((field) => [field.field, values[field.field] ?? null]));
 }
 
 async function recordingForDocument(bytes: Buffer) {
