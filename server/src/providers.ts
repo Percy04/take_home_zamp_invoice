@@ -41,6 +41,37 @@ export const invoiceMappingSchema = z.object({
 });
 
 export type InvoiceMapping = z.infer<typeof invoiceMappingSchema>;
+/** Text read directly from the full-document vision response, before it becomes evidence IDs. */
+declare const fullInvoiceExtractionBrand: unique symbol;
+export type InvoiceExtraction = InvoiceMapping & {
+  readonly [fullInvoiceExtractionBrand]: true;
+};
+const fullInvoiceExtractionSchema = invoiceMappingSchema.transform(
+  (value) => value as InvoiceExtraction,
+);
+
+const mappingHeaderFields = [
+  "vendor",
+  "invoiceNumber",
+  "invoiceDate",
+  "poNumber",
+  "currency",
+  "subtotal",
+  "tax",
+  "total",
+  "taxNote",
+] as const;
+const mappingLineFields = [
+  "sku",
+  "description",
+  "quantity",
+  "uom",
+  "unitPrice",
+  "amount",
+  "taxInclusion",
+  "taxRate",
+  "taxAmount",
+] as const;
 
 type AzureField = {
   content?: string;
@@ -279,7 +310,11 @@ export async function extractAndMapLive(bytes: Buffer) {
     });
   const evidence = buildSourceCatalogue(result, true);
   if (!evidence.length)
-    return recheckMissingFieldsWithFullDocument(bytes, evidence, emptyInvoiceMapping());
+    return recheckMissingFieldsWithFullDocument(
+      bytes,
+      evidence,
+      emptyInvoiceMapping(),
+    );
   const mapping = await mapEvidenceWithRetry(evidence);
   const reread = await recheckLowConfidenceFields(bytes, evidence, mapping);
   const fullDocument = await recheckMissingFieldsWithFullDocument(
@@ -304,12 +339,14 @@ type AiPageReader = (
   fields: LowConfidenceField[],
 ) => Promise<Record<string, string | null>>;
 
-type AiFullDocumentReader = (documentPdf: Buffer) => Promise<InvoiceMapping>;
+type AiFullDocumentReader = (documentPdf: Buffer) => Promise<InvoiceExtraction>;
 
 function aiRecheckResponseSchemaFor(fields: LowConfidenceField[]) {
   return z.object({
     values: z.object(
-      Object.fromEntries(fields.map((field) => [field.field, z.string().nullable()])),
+      Object.fromEntries(
+        fields.map((field) => [field.field, z.string().nullable()]),
+      ),
     ),
   });
 }
@@ -403,18 +440,22 @@ export async function recheckMissingFieldsWithFullDocument(
   if (!needsFullDocumentFallback(mapping))
     return { evidence, mapping, originalMapping: mapping, aiRechecks: [] };
 
-  let extracted: InvoiceMapping | null = null;
+  let attempted: InvoiceExtraction | null = null;
   try {
-    extracted = invoiceMappingSchema.parse(await readDocument(bytes));
+    attempted = fullInvoiceExtractionSchema.parse(await readDocument(bytes));
   } catch {
     // One attempt per document: preserve the missing values and its audit record.
   }
+  const extracted =
+    attempted && completeInvoiceExtraction(attempted) ? attempted : null;
 
   const byId = new Map(evidence.map((source) => [source.id, source]));
   const records: AiRecheck[] = [];
   const replacements = new Map<string, string>();
-  const values = extracted ? mappedEvidenceFields(extracted) : [];
-  const extractedByField = new Map(values.map(({ field, id }) => [field, id ?? null]));
+  const values = attempted ? extractedValueFields(attempted) : [];
+  const extractedByField = new Map(
+    values.map(({ field, value }) => [field, value ?? null]),
+  );
 
   for (const { field, id } of fullDocumentTargets(mapping, extracted)) {
     const value = extractedByField.get(field)?.trim() || null;
@@ -428,13 +469,14 @@ export async function recheckMissingFieldsWithFullDocument(
       aiValue: value,
       model,
       attemptedAt: new Date().toISOString(),
-      outcome: value ? "resolved" : "needs_review",
+      outcome: extracted && value ? "resolved" : "needs_review",
     });
-    if (value) replacements.set(field, `ai_full_document.${field}`);
+    if (extracted && value)
+      replacements.set(field, `ai_full_document.${field}`);
   }
 
   const aiEvidence = records.flatMap((record) =>
-    record.aiValue
+    record.outcome === "resolved" && record.aiValue
       ? [
           {
             id: `ai_full_document.${record.field}`,
@@ -457,9 +499,14 @@ export async function recheckMissingFieldsWithFullDocument(
 
 function needsFullDocumentFallback(mapping: InvoiceMapping) {
   return (
-    [mapping.vendor, mapping.invoiceNumber, mapping.invoiceDate, mapping.currency, mapping.total].some(
-      (id) => !id,
-    ) ||
+    [
+      mapping.vendor,
+      mapping.invoiceNumber,
+      mapping.invoiceDate,
+      mapping.poNumber,
+      mapping.currency,
+      mapping.total,
+    ].some((id) => !id) ||
     !mapping.lines.length ||
     mapping.lines.some(
       (line) =>
@@ -471,38 +518,26 @@ function needsFullDocumentFallback(mapping: InvoiceMapping) {
   );
 }
 
-function fullDocumentTargets(mapping: InvoiceMapping, extracted: InvoiceMapping | null) {
-  const headers = [
-    "vendor",
-    "invoiceNumber",
-    "invoiceDate",
-    "poNumber",
-    "currency",
-    "subtotal",
-    "tax",
-    "total",
-    "taxNote",
-  ] as const;
-  const lineFields = [
-    "sku",
-    "description",
-    "quantity",
-    "uom",
-    "unitPrice",
-    "amount",
-    "taxInclusion",
-    "taxRate",
-    "taxAmount",
-  ] as const;
-  const targets: Array<{ field: string; id: string | null | undefined }> = headers
-    .filter((field) => !mapping[field])
-    .map((field) => ({ field, id: mapping[field] ?? null }));
-  const lineCount = Math.max(mapping.lines.length, extracted?.lines.length ?? 0);
+function fullDocumentTargets(
+  mapping: InvoiceMapping,
+  extracted: InvoiceExtraction | null,
+) {
+  const targets: Array<{ field: string; id: string | null | undefined }> =
+    mappingHeaderFields
+      .filter((field) => !mapping[field])
+      .map((field) => ({ field, id: mapping[field] ?? null }));
+  const lineCount = Math.max(
+    mapping.lines.length,
+    extracted?.lines.length ?? 0,
+  );
   for (let index = 0; index < lineCount; index += 1) {
     const existing = mapping.lines[index];
-    for (const field of lineFields) {
+    for (const field of mappingLineFields) {
       if (!existing?.[field])
-        targets.push({ field: `lines.${index}.${field}`, id: existing?.[field] ?? null });
+        targets.push({
+          field: `lines.${index}.${field}`,
+          id: existing?.[field] ?? null,
+        });
     }
   }
   if (!lineCount) targets.push({ field: "lines", id: null });
@@ -511,39 +546,60 @@ function fullDocumentTargets(mapping: InvoiceMapping, extracted: InvoiceMapping 
 
 function mergeFullDocumentMapping(
   mapping: InvoiceMapping,
-  extracted: InvoiceMapping | null,
+  extracted: InvoiceExtraction | null,
   replacements: Map<string, string>,
 ) {
   if (!extracted) return mapping;
-  const replace = (field: string, original: string | null | undefined) =>
-    original || replacements.get(field) || null;
   const lineCount = Math.max(mapping.lines.length, extracted.lines.length);
-  return invoiceMappingSchema.parse({
-    ...mapping,
-    vendor: replace("vendor", mapping.vendor),
-    invoiceNumber: replace("invoiceNumber", mapping.invoiceNumber),
-    invoiceDate: replace("invoiceDate", mapping.invoiceDate),
-    poNumber: replace("poNumber", mapping.poNumber),
-    currency: replace("currency", mapping.currency),
-    subtotal: replace("subtotal", mapping.subtotal),
-    tax: replace("tax", mapping.tax),
-    total: replace("total", mapping.total),
-    taxNote: replace("taxNote", mapping.taxNote),
-    lines: Array.from({ length: lineCount }, (_, index) => {
-      const original = mapping.lines[index];
-      return {
-        sku: replace(`lines.${index}.sku`, original?.sku),
-        description: replace(`lines.${index}.description`, original?.description),
-        quantity: replace(`lines.${index}.quantity`, original?.quantity),
-        uom: replace(`lines.${index}.uom`, original?.uom),
-        unitPrice: replace(`lines.${index}.unitPrice`, original?.unitPrice),
-        amount: replace(`lines.${index}.amount`, original?.amount),
-        taxInclusion: replace(`lines.${index}.taxInclusion`, original?.taxInclusion),
-        taxRate: replace(`lines.${index}.taxRate`, original?.taxRate),
-        taxAmount: replace(`lines.${index}.taxAmount`, original?.taxAmount),
-      };
+  return replaceMappedEvidence(
+    invoiceMappingSchema.parse({
+      ...mapping,
+      lines: Array.from(
+        { length: lineCount },
+        (_, index) =>
+          mapping.lines[index] ??
+          Object.fromEntries(mappingLineFields.map((field) => [field, null])),
+      ),
     }),
-  });
+    replacements,
+  );
+}
+
+function extractedValueFields(extraction: InvoiceExtraction) {
+  return [
+    ...mappingHeaderFields.map((field) => ({
+      field,
+      value: extraction[field],
+    })),
+    ...extraction.lines.flatMap((line, index) =>
+      mappingLineFields.map((field) => ({
+        field: `lines.${index}.${field}`,
+        value: line[field],
+      })),
+    ),
+  ];
+}
+
+function completeInvoiceExtraction(extraction: InvoiceExtraction) {
+  const requiredHeaders = [
+    extraction.vendor,
+    extraction.invoiceNumber,
+    extraction.invoiceDate,
+    extraction.currency,
+    extraction.total,
+  ];
+  return (
+    requiredHeaders.every((value) => Boolean(value?.trim())) &&
+    extraction.lines.length > 0 &&
+    extraction.lines.every(
+      (line) =>
+        Boolean((line.sku || line.description)?.trim()) &&
+        Boolean(line.quantity?.trim()) &&
+        Boolean(line.uom?.trim()) &&
+        Boolean(line.unitPrice?.trim()) &&
+        Boolean(line.amount?.trim()),
+    )
+  );
 }
 
 function emptyInvoiceMapping(): InvoiceMapping {
@@ -575,32 +631,10 @@ function lowConfidenceMappedFields(
 }
 
 function mappedEvidenceFields(mapping: InvoiceMapping) {
-  const headers = [
-    "vendor",
-    "invoiceNumber",
-    "invoiceDate",
-    "poNumber",
-    "currency",
-    "subtotal",
-    "tax",
-    "total",
-    "taxNote",
-  ] as const;
-  const lineFields = [
-    "sku",
-    "description",
-    "quantity",
-    "uom",
-    "unitPrice",
-    "amount",
-    "taxInclusion",
-    "taxRate",
-    "taxAmount",
-  ] as const;
   return [
-    ...headers.map((field) => ({ field, id: mapping[field] })),
+    ...mappingHeaderFields.map((field) => ({ field, id: mapping[field] })),
     ...mapping.lines.flatMap((line, index) =>
-      lineFields.map((field) => ({
+      mappingLineFields.map((field) => ({
         field: `lines.${index}.${field}`,
         id: line[field],
       })),
@@ -780,7 +814,9 @@ async function readPageWithConfiguredAi(
   return responseSchema.parse(JSON.parse(output)).values;
 }
 
-async function readFullDocumentWithConfiguredAi(documentPdf: Buffer): Promise<InvoiceMapping> {
+async function readFullDocumentWithConfiguredAi(
+  documentPdf: Buffer,
+): Promise<InvoiceExtraction> {
   const prompt =
     "Read the complete attached invoice. Return every printed invoice header and line item exactly as document text; use null only when a value is not present. Do not select a purchase order, map bundles, approve variances, receipts, or duplicates. Do not calculate or provide confidence scores.";
   if (env.MAPPING_PROVIDER === "openai") {
@@ -812,8 +848,11 @@ async function readFullDocumentWithConfiguredAi(documentPdf: Buffer): Promise<In
       },
     });
     if (!response.output_parsed)
-      throw new ProviderError("AI_RECHECK", "AI returned no full-document extraction.");
-    return invoiceMappingSchema.parse(response.output_parsed);
+      throw new ProviderError(
+        "AI_RECHECK",
+        "AI returned no full-document extraction.",
+      );
+    return fullInvoiceExtractionSchema.parse(response.output_parsed);
   }
 
   if (!env.GEMINI_API_KEY)
@@ -850,68 +889,38 @@ async function readFullDocumentWithConfiguredAi(documentPdf: Buffer): Promise<In
     },
   );
   if (!response.ok)
-    throw new ProviderError("AI_RECHECK", "Gemini full-document extraction failed.", {
-      status: response.status,
-    });
+    throw new ProviderError(
+      "AI_RECHECK",
+      "Gemini full-document extraction failed.",
+      {
+        status: response.status,
+      },
+    );
   const output = extractGeminiOutput(await response.json());
   if (!output)
-    throw new ProviderError("AI_RECHECK", "Gemini returned no full-document extraction.");
-  return invoiceMappingSchema.parse(JSON.parse(output));
+    throw new ProviderError(
+      "AI_RECHECK",
+      "Gemini returned no full-document extraction.",
+    );
+  return fullInvoiceExtractionSchema.parse(JSON.parse(output));
 }
 
 function fullInvoiceJsonSchema() {
   const value = { type: ["string", "null"] };
   const line = {
     type: "object",
-    properties: {
-      sku: value,
-      description: value,
-      quantity: value,
-      uom: value,
-      unitPrice: value,
-      amount: value,
-      taxInclusion: value,
-      taxRate: value,
-      taxAmount: value,
-    },
-    required: [
-      "sku",
-      "description",
-      "quantity",
-      "uom",
-      "unitPrice",
-      "amount",
-      "taxInclusion",
-      "taxRate",
-      "taxAmount",
-    ],
+    properties: Object.fromEntries(
+      mappingLineFields.map((field) => [field, value]),
+    ),
+    required: [...mappingLineFields],
   };
   return {
     type: "object",
     properties: {
-      vendor: value,
-      invoiceNumber: value,
-      invoiceDate: value,
-      poNumber: value,
-      currency: value,
-      subtotal: value,
-      tax: value,
-      total: value,
-      taxNote: value,
+      ...Object.fromEntries(mappingHeaderFields.map((field) => [field, value])),
       lines: { type: "array", items: line },
     },
-    required: [
-      "vendor",
-      "invoiceNumber",
-      "invoiceDate",
-      "poNumber",
-      "currency",
-      "subtotal",
-      "tax",
-      "total",
-      "taxNote",
-      "lines",
-    ],
+    required: [...mappingHeaderFields, "lines"],
   };
 }
 
@@ -1096,7 +1105,10 @@ async function mapWithGemini(evidence: SourceRef[]) {
   }
 }
 
-export function buildSourceCatalogue(payload: AzureResult, allowEmpty = false): SourceRef[] {
+export function buildSourceCatalogue(
+  payload: AzureResult,
+  allowEmpty = false,
+): SourceRef[] {
   const result = payload.analyzeResult;
   const fields = result?.documents?.[0]?.fields ?? {};
   const evidence: SourceRef[] = [];
@@ -1262,7 +1274,8 @@ export function preferReliableEvidence(
         (candidate) =>
           candidate.id !== id &&
           candidate.content.normalize("NFKC").trim() === content &&
-          candidate.confidence !== null && candidate.confidence >= 0.75,
+          candidate.confidence !== null &&
+          candidate.confidence >= 0.75,
       )
       .sort(
         (left, right) =>
@@ -1370,7 +1383,9 @@ function recordedRecheckValues(fields: LowConfidenceField[]) {
     "lines.0.quantity": "8",
     "lines.1.quantity": "5",
   };
-  return Object.fromEntries(fields.map((field) => [field.field, values[field.field] ?? null]));
+  return Object.fromEntries(
+    fields.map((field) => [field.field, values[field.field] ?? null]),
+  );
 }
 
 async function recordingForDocument(bytes: Buffer) {

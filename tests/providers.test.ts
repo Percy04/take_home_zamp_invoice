@@ -532,7 +532,9 @@ describe("AI extraction re-checks", () => {
       async () => ({ "lines.0.quantity": null }),
     );
 
-    expect(reread.mapping.lines[0]?.quantity).toBe("ai_recheck.lines.0.quantity");
+    expect(reread.mapping.lines[0]?.quantity).toBe(
+      "ai_recheck.lines.0.quantity",
+    );
     expect(reread.evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -640,6 +642,73 @@ describe("AI extraction re-checks", () => {
           outcome: "needs_review",
         }),
         expect.objectContaining({ field: "lines", outcome: "needs_review" }),
+      ]),
+    );
+  });
+
+  it("uses the full document when the printed PO is the only missing mapping", async () => {
+    const poMissing = { ...mapping, poNumber: null };
+    const reread = await recheckMissingFieldsWithFullDocument(
+      await onePagePdf(),
+      evidence,
+      poMissing,
+      async () => ({
+        vendor: "Acme Industrial Supplies LLC",
+        invoiceNumber: "ACME-2026-001",
+        invoiceDate: "2026-07-01",
+        poNumber: "PO-1001",
+        currency: "USD",
+        subtotal: null,
+        tax: null,
+        total: "990.00",
+        taxNote: null,
+        lines: [
+          {
+            sku: "WID-100",
+            description: "Industrial Widget",
+            quantity: "8",
+            uom: "EA",
+            unitPrice: "100.00",
+            amount: "800.00",
+          },
+        ],
+      }),
+    );
+
+    expect(reread.mapping.poNumber).toBe("ai_full_document.poNumber");
+  });
+
+  it("does not apply a partial full-document response", async () => {
+    const incomplete = { ...mapping, vendor: null, lines: [] };
+    const reread = await recheckMissingFieldsWithFullDocument(
+      await onePagePdf(),
+      evidence,
+      incomplete,
+      async () => ({
+        vendor: "Acme Industrial Supplies LLC",
+        invoiceNumber: "ACME-2026-001",
+        invoiceDate: "2026-07-01",
+        poNumber: "PO-1001",
+        currency: "USD",
+        subtotal: null,
+        tax: null,
+        total: "990.00",
+        taxNote: null,
+        lines: [],
+      }),
+    );
+
+    expect(reread.mapping).toMatchObject(incomplete);
+    expect(
+      reread.evidence.some((source) => source.id === "ai_full_document.vendor"),
+    ).toBe(false);
+    expect(reread.aiRechecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "vendor",
+          aiValue: "Acme Industrial Supplies LLC",
+          outcome: "needs_review",
+        }),
       ]),
     );
   });
