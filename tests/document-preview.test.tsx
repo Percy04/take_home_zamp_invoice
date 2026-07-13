@@ -46,8 +46,13 @@ describe("DocumentPreview", () => {
   it("uses real page counts and fit-width zoom controls", () => {
     render(<DocumentPreview run={run} compact />);
 
-    expect(screen.getByTestId("document-viewport")).toHaveClass("h-full", "overflow-auto");
-    expect(screen.getByTestId("document-viewport").closest("section")).toHaveClass("xl:h-full");
+    expect(screen.getByTestId("document-viewport")).toHaveClass(
+      "max-h-[560px]",
+      "overflow-auto",
+    );
+    expect(
+      screen.getByTestId("document-viewport").closest("section"),
+    ).not.toHaveClass("xl:h-full");
     expect(screen.getByText("Page 1 of —")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Load PDF" }));
     expect(screen.getByText("Page 1 of 2")).toBeVisible();

@@ -400,6 +400,37 @@ export class Storage {
       )
       .all(vendor.id, invoice.currency) as Array<{ po_number: string }>;
     const context = this.getHappyContext();
+    const poLines = context.poLines as Array<{
+      id: string;
+      po_number: string;
+      sku: string | null;
+      description: string;
+      normalized_sku: string | null;
+      normalized_description: string;
+      uom: string;
+      unit_price: string;
+      ordered_quantity: string;
+      received_quantity: string;
+    }>;
+    const priorAllocations = context.priorAllocations as Array<{
+      po_line_id: string;
+      component_quantity: string;
+    }>;
+    const capacityFor = (poLineId: string) => {
+      const poLine = poLines.find((line) => line.id === poLineId);
+      if (!poLine) return {};
+      const previouslyInvoicedQuantity = priorAllocations
+        .filter((allocation) => allocation.po_line_id === poLineId)
+        .reduce(
+          (total, allocation) => total.plus(allocation.component_quantity),
+          new Decimal(0),
+        );
+      return {
+        orderedQuantity: poLine.ordered_quantity,
+        receivedQuantity: poLine.received_quantity,
+        previouslyInvoicedQuantity: previouslyInvoicedQuantity.toString(),
+      };
+    };
     return poCandidateSchema.array().parse(
       purchaseOrders
         .map((po) => {
@@ -427,26 +458,11 @@ export class Storage {
                   allocation.availableOrderedQuantity ?? allocation.quantity,
                 availableReceivedQuantity:
                   allocation.availableReceivedQuantity ?? allocation.quantity,
+                ...capacityFor(allocation.poLineId),
               };
             });
           } catch {
             allLinesResolvable = false;
-            const poLines = context.poLines as Array<{
-              id: string;
-              po_number: string;
-              sku: string | null;
-              description: string;
-              normalized_sku: string | null;
-              normalized_description: string;
-              uom: string;
-              unit_price: string;
-              ordered_quantity: string;
-              received_quantity: string;
-            }>;
-            const priorAllocations = context.priorAllocations as Array<{
-              po_line_id: string;
-              component_quantity: string;
-            }>;
             lines = invoice.lines.flatMap((line, invoiceLineIndex) => {
               const poLine = poLines.find(
                 (candidate) =>
@@ -484,18 +500,19 @@ export class Storage {
                   )
                     .minus(consumed)
                     .toString(),
+                  ...capacityFor(poLine.id),
                 },
               ];
             });
             matchedLineCount = lines.length;
           }
-          const poLines = this.db
+          const purchaseOrderLines = this.db
             .prepare("SELECT * FROM po_lines WHERE po_number = ?")
             .all(po.po_number) as Array<{
             ordered_quantity: string;
             unit_price: string;
           }>;
-          const totalBasis = poLines.reduce(
+          const totalBasis = purchaseOrderLines.reduce(
             (sum, line) =>
               sum.plus(new Decimal(line.ordered_quantity).mul(line.unit_price)),
             new Decimal(0),

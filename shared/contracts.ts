@@ -198,6 +198,9 @@ export const poCandidateLineSchema = z.object({
   poUnitPrice: z.string(),
   availableOrderedQuantity: z.string(),
   availableReceivedQuantity: z.string(),
+  orderedQuantity: z.string().optional(),
+  receivedQuantity: z.string().optional(),
+  previouslyInvoicedQuantity: z.string().optional(),
 });
 
 export const poCandidateSchema = z.object({

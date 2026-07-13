@@ -57,6 +57,36 @@ const run = {
       shortfall: 1,
     },
   ],
+  poCandidates: [
+    {
+      poNumber: "PO-2001",
+      vendor: "Delta Components Ltd",
+      confidence: "HIGH",
+      aggregateDifference: 0,
+      lines: [
+        {
+          invoiceSku: "VAL-500",
+          invoiceDescription: "Control Valve",
+          requestedQuantity: 3,
+          uom: "EA",
+          invoiceUnitPrice: 50,
+          invoiceAmount: 150,
+          poLineId: "PO-2001-L1",
+          poSku: "VAL-500",
+          poDescription: "Control Valve",
+          poUnitPrice: 50,
+          orderedAvailable: 6,
+          receivedAvailable: 2,
+          orderedQuantity: 10,
+          receivedQuantity: 6,
+          previouslyInvoicedQuantity: 4,
+          remainingPoValue: 300,
+          priceVariancePct: 0,
+          amountDifference: 0,
+        },
+      ],
+    },
+  ],
   activity: [],
 } satisfies Run;
 
@@ -67,8 +97,12 @@ describe("active decision evidence", () => {
     expect(screen.getByText("Price variance")).toBeVisible();
     expect(screen.getByText(/\$15\.00 total variance/)).toBeVisible();
     expect(screen.getByText("Receipt capacity")).toBeVisible();
-    expect(screen.getByText("Requested")).toBeVisible();
-    expect(screen.getByText("3 EA")).toBeVisible();
+    expect(screen.getByText("Available to invoice")).toBeVisible();
+    expect(screen.getAllByText("3 EA")).toHaveLength(2);
     expect(screen.getByText("1 EA")).toBeVisible();
+    expect(screen.getByText("PO ordered")).toBeVisible();
+    expect(screen.getByText("Previously invoiced")).toBeVisible();
+    expect(screen.getByText(/\$300\.00/)).toBeVisible();
+    expect(screen.getByText(/\$100\.00/)).toBeVisible();
   });
 });
