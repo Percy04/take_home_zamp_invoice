@@ -135,6 +135,12 @@ describe("active activity layout", () => {
       screen.getByRole("columnheader", { name: "Received" }),
     ).toBeVisible();
     expect(screen.getByText("Delta Components Ltd")).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "AP Resolution dashboard" }),
+    ).toHaveAttribute("href", "/dashboard");
+    expect(
+      screen.getByRole("link", { name: "Delta Components Ltd" }),
+    ).toHaveClass("after:absolute");
     expect(screen.queryByText(/demo/i)).not.toBeInTheDocument();
   });
 });
