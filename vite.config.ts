@@ -12,5 +12,8 @@ export default defineConfig({
     },
   },
   build: { outDir: "../../dist/client", emptyOutDir: true },
-  server: { proxy: { "/api": "http://localhost:3000" } },
+  server: {
+    fs: { allow: [path.resolve(".")] },
+    proxy: { "/api": "http://localhost:3000" },
+  },
 });

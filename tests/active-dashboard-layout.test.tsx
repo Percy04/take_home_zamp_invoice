@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getRouter } from "../frontend_v1/ap-resolve-console/src/router";
@@ -15,12 +15,36 @@ vi.mock("react-pdf", () => ({
 }));
 
 afterEach(() => {
+  cleanup();
   store.clearRuns();
   vi.unstubAllGlobals();
   window.history.replaceState({}, "", "/");
 });
 
 describe("active activity layout", () => {
+  it("shows an empty workspace with an add-invoice action after reset", async () => {
+    window.history.replaceState({}, "", "/dashboard");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            items: [],
+            nextCursor: null,
+            metrics: { totalRuns: 0, postedCount: 0, reviewCount: 0, autoClearRate: "0.0" },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+
+    render(<RouterProvider router={getRouter()} />);
+
+    expect(await screen.findByText("Workspace is empty")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Add invoice" })).toHaveAttribute("href", "/");
+    expect(screen.queryByText("Loading invoices…")).not.toBeInTheDocument();
+  });
+
   it("renders the compact metrics, status tabs, and run ledger", async () => {
     window.history.replaceState({}, "", "/dashboard");
     vi.stubGlobal(

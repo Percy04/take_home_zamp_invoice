@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DecisionEvidence } from "../frontend_v1/ap-resolve-console/src/components/DecisionEvidence";
+import * as api from "../frontend_v1/ap-resolve-console/src/lib/api";
 import type { Run } from "../frontend_v1/ap-resolve-console/src/lib/types";
+
+vi.mock("../frontend_v1/ap-resolve-console/src/lib/api", () => ({
+  confirmBundle: vi.fn(),
+  rejectBundle: vi.fn(),
+}));
 
 const base = {
   runId: "11111111-1111-4111-8111-111111111111",
@@ -34,6 +40,8 @@ const base = {
 } satisfies Omit<Run, "state" | "reasonCode">;
 
 describe("DecisionEvidence", () => {
+  beforeEach(() => vi.resetAllMocks());
+
   it("compares a duplicate against the existing posting", () => {
     const run: Run = {
       ...base,
@@ -86,5 +94,46 @@ describe("DecisionEvidence", () => {
 
     expect(screen.getByText("Line 1 price above tolerance")).toBeVisible();
     expect(screen.getByText("Invoice date could not be read")).toBeVisible();
+  });
+
+  it("shows a failed bundle confirmation instead of silently leaving the action pending", async () => {
+    const run: Run = {
+      ...base,
+      state: "AWAITING_BUNDLE_CONFIRMATION",
+      execution: "AWAITING_CONFIRMATION",
+      reasonCode: "UNKNOWN_BUNDLE",
+      bundleCandidates: [
+        {
+          candidateId: "BUNDLE-CANDIDATE-1",
+          invoiceItemDescription: "Maintenance Pack",
+          invoiceQuantity: 1,
+          poNumber: "PO-1005",
+          totalPoBasis: 300,
+          components: [
+            {
+              poLineId: "PO-1005-L1",
+              sku: "WID-100",
+              description: "Industrial Widget",
+              uom: "EA",
+              quantity: 2,
+              unitPrice: 100,
+              poBasis: 200,
+              orderedAvailable: 2,
+              receivedAvailable: 2,
+            },
+          ],
+        },
+      ],
+    };
+    vi.mocked(api.confirmBundle).mockRejectedValueOnce(
+      new Error("The requested run action is not valid."),
+    );
+    render(<DecisionEvidence run={run} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm decomposition" }));
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("The requested run action is not valid.");
   });
 });
