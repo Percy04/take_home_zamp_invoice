@@ -60,6 +60,20 @@ function inclusiveEvidence(): SourceRef[] {
 }
 
 describe("deterministic normalization", () => {
+  it("uses the unit embedded in a valid quantity when no UOM field is mapped", () => {
+    const evidence = inclusiveEvidence();
+    evidence.find((item) => item.id === "quantity")!.content = "2 pcs";
+    const withoutUom = {
+      ...mapping,
+      lines: [{ ...mapping.lines[0], uom: null }],
+    };
+
+    expect(normalizeInvoice(evidence, withoutUom).lines[0]).toMatchObject({
+      quantity: "2",
+      uom: "EA",
+    });
+  });
+
   it("preserves mapped evidence when normalization stops on a missing field", () => {
     const preview = buildInvoicePreview(
       inclusiveEvidence(),

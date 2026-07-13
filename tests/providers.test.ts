@@ -522,4 +522,24 @@ describe("AI extraction re-checks", () => {
       }),
     ]);
   });
+
+  it("turns an explicit AI no-result into empty extraction evidence", async () => {
+    const reread = await recheckLowConfidenceFields(
+      await onePagePdf(),
+      evidence,
+      mapping,
+      async () => ({ "lines.0.quantity": null }),
+    );
+
+    expect(reread.mapping.lines[0]?.quantity).toBe("ai_recheck.lines.0.quantity");
+    expect(reread.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "ai_recheck.lines.0.quantity",
+          content: "",
+          confidence: null,
+        }),
+      ]),
+    );
+  });
 });

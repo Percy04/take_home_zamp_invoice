@@ -182,12 +182,14 @@ export function normalizeInvoice(
     );
     if (!sku && !description)
       failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.identity`);
+    const quantityReading = select(line.quantity, true, "quantity", sourceIds);
+    const embeddedUom = quantityReading.match(/^[\d.,]+\s*([a-zA-Z]+)$/)?.[1] ?? "";
     const quantity = parseQuantity(
-      select(line.quantity, true, "quantity", sourceIds),
+      quantityReading.replace(/\s*[a-zA-Z]+$/, ""),
       `lines.${index}.quantity`,
     );
     const uom = parseUom(
-      select(line.uom, true, "uom", sourceIds),
+      select(line.uom, false, "uom", sourceIds) || embeddedUom,
       `lines.${index}.uom`,
     );
     const observedUnitPrice = requiredMoney(

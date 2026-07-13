@@ -94,17 +94,28 @@ export async function processInvoice(runId: string, storage: Storage) {
         ? fields.map((failedField) => {
             const fieldName = formatField(failedField);
             const ambiguousDate = reason === "AMBIGUOUS_DATE";
+            const missingField = reason === "MISSING_REQUIRED_FIELD";
             return {
-              code: ambiguousDate ? "AMBIGUOUS_DATE" : "LOW_CONFIDENCE",
+              code: ambiguousDate
+                ? "AMBIGUOUS_DATE"
+                : missingField
+                  ? "MISSING_REQUIRED_FIELD"
+                  : "LOW_CONFIDENCE",
               passed: false,
               detail: ambiguousDate
                 ? `${fieldName} has an ambiguous numeric date format.`
+                : missingField
+                  ? `${fieldName} is missing from the document.`
                 : `${fieldName} could not be read reliably.`,
               expected: ambiguousDate
                 ? "An unambiguous invoice date"
+                : missingField
+                  ? `A readable ${fieldName.toLowerCase()}`
                 : `A readable ${fieldName.toLowerCase()}`,
               actual: ambiguousDate
                 ? "Ambiguous numeric date"
+                : missingField
+                  ? "Not found"
                 : "Low-confidence scan",
               category: "IDENTITY",
               sourceIds: [sourceIdForField(activeMapping, failedField)].filter(

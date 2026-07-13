@@ -319,6 +319,7 @@ export async function recheckLowConfidenceFields(
 
   const rechecks: AiRecheck[] = [];
   const replacements = new Map<string, string>();
+  const answeredFields = new Set<string>();
   const byPage = new Map<number, LowConfidenceField[]>();
   for (const field of fields) {
     if (!field.source.page) {
@@ -338,21 +339,24 @@ export async function recheckLowConfidenceFields(
       // One attempt per page group: retain the OCR selection for human review.
     }
     for (const field of pageFields) {
+      const answered = values !== null && Object.hasOwn(values, field.field);
       const value = values?.[field.field]?.trim() || null;
       const outcome = value ? "resolved" : "needs_review";
       rechecks.push(recheckRecord(field, value, outcome, model));
-      if (!value) continue;
       const id = `ai_recheck.${field.field}`;
-      replacements.set(field.field, id);
+      if (answered) {
+        answeredFields.add(field.field);
+        replacements.set(field.field, id);
+      }
     }
   }
 
   const aiEvidence = rechecks.flatMap((recheck) =>
-    recheck.outcome === "resolved" && recheck.aiValue
+    answeredFields.has(recheck.field)
       ? [
           {
             id: `ai_recheck.${recheck.field}`,
-            content: recheck.aiValue,
+            content: recheck.aiValue ?? "",
             confidence: null,
             page: recheck.page,
             label: `${formatRecheckField(recheck.field)} AI re-read`,
