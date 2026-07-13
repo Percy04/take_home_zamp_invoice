@@ -223,7 +223,7 @@ export class Storage {
         invoiceNumber: row.invoice_number,
         poNumber: row.po_number,
         total: row.total,
-        currency: row.currency,
+        currency: row.currency === "USD" ? "USD" : null,
         state: row.state,
         decision: row.decision,
         execution: row.execution,

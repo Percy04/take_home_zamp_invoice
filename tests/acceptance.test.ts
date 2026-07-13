@@ -15,6 +15,45 @@ afterEach(() => {
 });
 
 describe("happy-path vertical slice", () => {
+  it("lists review runs even when preview currency is only a printed symbol", () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-list-preview-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const runId = "11111111-1111-4111-8111-111111111111";
+    storage.createRun({
+      id: runId,
+      filename: "invoice_ssum.pdf",
+      sha256: "test",
+      pdfPath: "invoice_ssum.pdf",
+    });
+    storage.block(runId, "TOTAL_MISMATCH", "Review totals.", null, [], {
+      invoicePreview: {
+        vendor: "Fountainhead A+E",
+        invoiceNumber: "GALT-009",
+        invoiceDate: "2023-08-21",
+        poNumber: "2012-0001",
+        currency: "$",
+        subtotal: null,
+        tax: null,
+        total: "$11,812.50",
+        missingField: null,
+        lines: [],
+      },
+    });
+
+    try {
+      expect(storage.listRuns().items).toEqual([
+        expect.objectContaining({
+          runId,
+          filename: "invoice_ssum.pdf",
+          currency: null,
+        }),
+      ]);
+    } finally {
+      storage.close();
+    }
+  });
+
   it("persists, posts exactly once, and restores the complete run", async () => {
     const runtime = mkdtempSync(path.join(tmpdir(), "zamp-phase-1-"));
     temporaryDirectories.push(runtime);
