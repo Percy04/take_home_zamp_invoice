@@ -11,6 +11,7 @@ import {
   extractAndMap,
   logProviderError,
   providerFailureReason,
+  restoreRecheckedMapping,
 } from "./providers.js";
 import type { InvoiceMapping } from "./providers.js";
 import type { Storage } from "./storage.js";
@@ -40,14 +41,36 @@ export async function processInvoice(runId: string, storage: Storage) {
     storage.block(runId, reason, nextActionFor(reason));
     return storage.getRun(runId)!;
   }
-  const { evidence, mapping } = providerResult;
+  const { evidence, mapping, originalMapping, aiRechecks } = providerResult;
   storage.saveEvidence(runId, evidence);
+  storage.saveAiRechecks(runId, aiRechecks);
   storage.addStage(runId, "EXTRACTION", "COMPLETED");
   storage.addStage(runId, "MAPPING", "COMPLETED");
 
   let invoice;
+  let activeMapping = mapping;
+  let activeRechecks = aiRechecks;
   try {
-    invoice = normalizeInvoice(evidence, mapping);
+    for (;;) {
+      try {
+        invoice = normalizeInvoice(evidence, activeMapping);
+        break;
+      } catch (caught) {
+        const invalidFields = invalidRecheckFields(caught, activeRechecks);
+        if (!invalidFields.length) throw caught;
+        activeMapping = restoreRecheckedMapping(
+          activeMapping,
+          originalMapping,
+          invalidFields,
+        );
+        activeRechecks = activeRechecks.map((recheck) =>
+          invalidFields.includes(recheck.field)
+            ? { ...recheck, outcome: "needs_review" as const }
+            : recheck,
+        );
+        storage.saveAiRechecks(runId, activeRechecks);
+      }
+    }
   } catch (caught) {
     storage.addStage(runId, "NORMALIZATION", "FAILED");
     const reason =
@@ -80,9 +103,11 @@ export async function processInvoice(runId: string, storage: Storage) {
               expected: ambiguousDate
                 ? "An unambiguous invoice date"
                 : `A readable ${fieldName.toLowerCase()}`,
-              actual: ambiguousDate ? "Ambiguous numeric date" : "Low-confidence scan",
+              actual: ambiguousDate
+                ? "Ambiguous numeric date"
+                : "Low-confidence scan",
               category: "IDENTITY",
-              sourceIds: [sourceIdForField(mapping, failedField)].filter(
+              sourceIds: [sourceIdForField(activeMapping, failedField)].filter(
                 (id): id is string => Boolean(id),
               ),
             };
@@ -100,7 +125,7 @@ export async function processInvoice(runId: string, storage: Storage) {
       {
         invoicePreview: buildInvoicePreview(
           evidence,
-          mapping,
+          activeMapping,
           reason === "MISSING_REQUIRED_FIELD" ? (fields[0] ?? null) : null,
         ),
       },
@@ -217,6 +242,30 @@ export async function processInvoice(runId: string, storage: Storage) {
   }
   storage.addStage(runId, "POSTING", "COMPLETED");
   return storage.getRun(runId)!;
+}
+
+function invalidRecheckFields(
+  caught: unknown,
+  rechecks: import("../../shared/contracts.js").AiRecheck[],
+) {
+  if (!(caught instanceof NormalizationError)) return [];
+  const failed = new Set(
+    [caught.field, ...caught.fields]
+      .filter((field): field is string => Boolean(field))
+      .map(normalizationFieldFor),
+  );
+  return rechecks
+    .filter(
+      (recheck) => recheck.outcome === "resolved" && failed.has(recheck.field),
+    )
+    .map((recheck) => recheck.field);
+}
+
+function normalizationFieldFor(field: string) {
+  return field
+    .replace(/\.observedUnitPrice$/, ".unitPrice")
+    .replace(/\.observedAmount$/, ".amount")
+    .replace(/\.observedTaxAmount$/, ".taxAmount");
 }
 
 function sourceIdForField(mapping: InvoiceMapping, field: string) {

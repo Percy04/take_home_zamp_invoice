@@ -4,6 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import {
   allocationSchema,
+  aiRecheckSchema,
   bundleCandidateSchema,
   checkResultSchema,
   normalizedInvoiceSchema,
@@ -13,6 +14,7 @@ import {
   sourceRefSchema,
   stageEventSchema,
   type Allocation,
+  type AiRecheck,
   type BundleCandidate,
   type CheckResult,
   type DuplicateMatch,
@@ -39,6 +41,7 @@ type RunRow = {
   next_action: string | null;
   ledger_invoice_id: string | null;
   extraction_json: string | null;
+  ai_rechecks_json: string | null;
   evaluation_json: string | null;
   candidates_json: string | null;
   bundle_candidates_json: string | null;
@@ -86,6 +89,8 @@ export class Storage {
     }>;
     if (!columns.some((column) => column.name === "idempotency_key"))
       this.db.exec("ALTER TABLE runs ADD COLUMN idempotency_key TEXT");
+    if (!columns.some((column) => column.name === "ai_rechecks_json"))
+      this.db.exec("ALTER TABLE runs ADD COLUMN ai_rechecks_json TEXT");
     this.db.exec(
       "CREATE UNIQUE INDEX IF NOT EXISTS runs_idempotency_key ON runs(idempotency_key) WHERE idempotency_key IS NOT NULL",
     );
@@ -143,6 +148,9 @@ export class Storage {
       evidence: row.extraction_json
         ? sourceRefSchema.array().parse(JSON.parse(row.extraction_json))
         : [],
+      aiRechecks: aiRecheckSchema
+        .array()
+        .parse(JSON.parse(row.ai_rechecks_json ?? "[]")),
       invoice: evaluation.invoice
         ? normalizedInvoiceSchema.parse(evaluation.invoice)
         : null,
@@ -298,6 +306,15 @@ export class Storage {
         "UPDATE runs SET extraction_json = ?, updated_at = ? WHERE id = ?",
       )
       .run(JSON.stringify(evidence), new Date().toISOString(), id);
+  }
+
+  saveAiRechecks(id: string, rechecks: AiRecheck[]) {
+    aiRecheckSchema.array().parse(rechecks);
+    this.db
+      .prepare(
+        "UPDATE runs SET ai_rechecks_json = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(JSON.stringify(rechecks), new Date().toISOString(), id);
   }
 
   getHappyContext() {

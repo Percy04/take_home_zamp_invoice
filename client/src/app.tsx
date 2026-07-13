@@ -446,11 +446,18 @@ function DashboardPage() {
                         </span>
                       </td>
                       <td className="px-3 py-2.5 align-top text-[12.5px] text-[var(--muted-foreground)]">
-                        {run.reasonCode
-                          ? formatReason(run.reasonCode)
-                          : run.state === "PROCESSING"
-                            ? "Processing…"
-                            : "—"}
+                        {run.reasonCode ? (
+                          <>
+                            <strong className="block text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">
+                              {reviewRoute(run.reasonCode)}
+                            </strong>
+                            {formatReason(run.reasonCode)}
+                          </>
+                        ) : run.state === "PROCESSING" ? (
+                          "Processing…"
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-3 py-2.5 align-top text-xs text-[var(--muted-foreground)]">
                         {formatDate(run.updatedAt)}
@@ -700,6 +707,10 @@ function RunPage() {
           />
         )}
 
+        {hasUnresolvedExtraction(detail) && (
+          <ExtractionEvidence rechecks={detail.aiRechecks ?? []} />
+        )}
+
         {detail.duplicateMatch && (
           <DuplicateEvidence match={detail.duplicateMatch} />
         )}
@@ -712,7 +723,7 @@ function RunPage() {
             <div className="section-head compact-head">
               <div>
                 <p className="eyebrow">Decision evidence</p>
-                <h2 id="po-candidates">Suggested purchase order</h2>
+                <h2 id="po-candidates">Select the purchase order</h2>
               </div>
               <span>{detail.poCandidates.length} feasible match</span>
             </div>
@@ -770,7 +781,9 @@ function RunPage() {
             <div className="section-head compact-head">
               <div>
                 <p className="eyebrow">Decision evidence</p>
-                <h2 id="bundle-evidence">Proposed bundle components</h2>
+                <h2 id="bundle-evidence">
+                  Invoice item needs a component mapping
+                </h2>
               </div>
               <span>PO {detail.invoice?.poNumber}</span>
             </div>
@@ -871,7 +884,7 @@ function RunPage() {
             <div className="section-head compact-head match-evidence-head">
               <div>
                 <p className="eyebrow">Decision evidence</p>
-                <h2 id="comparison">How invoice lines matched</h2>
+                <h2 id="comparison">Invoice and purchase order comparison</h2>
               </div>
               <span>{matchMethodLabel(detail)}</span>
             </div>
@@ -946,11 +959,11 @@ function RunPage() {
           <ProcessingActivity detail={detail} />
         )}
 
-        {detail.checks.length > 0 && (
+        {(detail.checks.length > 0 || (detail.aiRechecks?.length ?? 0) > 0) && (
           <details className="surface audit-details">
             <summary>
               <span>
-                <strong>Control details</strong>
+                <strong>Controls &amp; History</strong>
                 <small>
                   {detail.checks.filter((check) => check.passed).length} of{" "}
                   {detail.checks.length} checks passed
@@ -959,6 +972,12 @@ function RunPage() {
               <span aria-hidden="true">⌄</span>
             </summary>
             <div className="audit-details-body">
+              {(detail.aiRechecks?.length ?? 0) > 0 && (
+                <ExtractionEvidence
+                  rechecks={detail.aiRechecks ?? []}
+                  history
+                />
+              )}
               <ul className="checks">
                 {detail.checks.map((check, index) => (
                   <li key={`${check.code}-${index}`}>
@@ -1172,6 +1191,67 @@ function ValueComparison({ invoice }: { invoice: RunDetail["invoice"] }) {
   );
 }
 
+function ExtractionEvidence({
+  rechecks,
+  history = false,
+}: {
+  rechecks: NonNullable<RunDetail["aiRechecks"]>;
+  history?: boolean;
+}) {
+  if (!rechecks.length) return null;
+  return (
+    <section
+      className={history ? "mt-4" : "surface evidence-panel"}
+      aria-label={history ? "AI re-read history" : "Document extraction issue"}
+    >
+      {!history && (
+        <div className="section-head compact-head">
+          <div>
+            <p className="eyebrow">Decision evidence</p>
+            <h2>Document extraction issue</h2>
+          </div>
+        </div>
+      )}
+      {history && <h3>AI re-read provenance</h3>}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>OCR reading</th>
+              <th>OCR confidence</th>
+              <th>AI re-read</th>
+              <th>Source/page</th>
+              <th>Outcome</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rechecks.map((recheck) => (
+              <tr key={`${recheck.field}-${recheck.attemptedAt}`}>
+                <td>{formatFieldName(recheck.field)}</td>
+                <td>{recheck.originalOcrValue || "—"}</td>
+                <td>
+                  {recheck.ocrConfidence === null
+                    ? "—"
+                    : `${Math.round(recheck.ocrConfidence * 100)}%`}
+                </td>
+                <td>{recheck.aiValue ?? "No usable value"}</td>
+                <td>
+                  {recheck.sourceId}
+                  {recheck.page ? ` · Page ${recheck.page}` : " · Page unknown"}
+                </td>
+                <td>
+                  {recheck.outcome === "resolved" ? "Resolved" : "Needs review"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function PartialInvoiceEvidence({
   preview,
   reasonCode,
@@ -1323,7 +1403,7 @@ function matchEvidenceSummary(detail: RunDetail) {
     return `${invoiceItem || "The invoice bundle"} was expanded using ${first.bundleDefinitionId} and matched to ${first.poNumber}.`;
   if (first?.matchType === "BUNDLE_CONFIRMED")
     return `${invoiceItem || "The invoice bundle"} was expanded from the confirmed proposal and matched to ${first.poNumber}.`;
-  return `${detail.allocations.length} invoice line${detail.allocations.length === 1 ? "" : "s"} matched to ${first?.poNumber} by SKU, description, and unit of measure.`;
+  return `${detail.allocations.length} invoice item${detail.allocations.length === 1 ? "" : "s"} compared with purchase order ${first?.poNumber}.`;
 }
 
 function DecisionExplanation({ detail }: { detail: RunDetail }) {
@@ -1333,7 +1413,7 @@ function DecisionExplanation({ detail }: { detail: RunDetail }) {
     const failed = failures[0];
     return (
       <section className="decision-explanation review">
-        <h3>Why this needs review</h3>
+        <h3>{reviewRoute(detail.reasonCode)}</h3>
         {failures.length > 1 ? (
           <ul className="issue-list">
             {failures.map((check) => (
@@ -1538,20 +1618,46 @@ function formatLabel(value: string) {
 function formatReason(value: string) {
   return (
     {
-      DUPLICATE: "Duplicate invoice",
-      RECEIPT_CAPACITY_EXCEEDED: "Receipt quantity insufficient",
+      DUPLICATE: "Possible duplicate invoice",
+      RECEIPT_CAPACITY_EXCEEDED: "Quantity exceeds received goods",
       MAPPING_FAILED: "Invoice details could not be read",
       EXTRACTION_FAILED: "Document could not be read",
-      MISSING_PO: "PO confirmation required",
-      BUNDLE_MAPPING_REQUIRED: "Bundle confirmation required",
-      PRICE_MATCH: "Price variance",
+      LOW_CONFIDENCE: "Document extraction issue",
+      MISSING_PO: "Select the purchase order",
+      BUNDLE_MAPPING_REQUIRED: "Invoice item needs a component mapping",
+      PRICE_MATCH: "Price differs from PO",
+      PRICE_VARIANCE_EXCEEDED: "Price differs from PO",
       MULTIPLE_ISSUES: "Multiple independent issues",
-      RECEIPT_CAPACITY: "Receipt quantity exceeded",
+      RECEIPT_CAPACITY: "Quantity exceeds received goods",
       ORDERED_CAPACITY: "Ordered quantity exceeded",
       PO_VALUE_CAPACITY: "PO value exceeded",
       SUBTOTAL_MATCH: "Subtotal mismatch",
       TOTAL_MATCH: "Total mismatch",
     }[value] ?? formatLabel(value)
+  );
+}
+
+function reviewRoute(reasonCode: string | null) {
+  return isExtractionReason(reasonCode)
+    ? "Document extraction issue"
+    : "Business decision required";
+}
+
+function isExtractionReason(reasonCode: string | null) {
+  return [
+    "LOW_CONFIDENCE",
+    "MAPPING_FAILED",
+    "EXTRACTION_FAILED",
+    "MISSING_REQUIRED_FIELD",
+    "AMBIGUOUS_DATE",
+  ].includes(reasonCode ?? "");
+}
+
+function hasUnresolvedExtraction(detail: RunDetail) {
+  return (
+    (detail.aiRechecks ?? []).some(
+      (recheck) => recheck.outcome === "needs_review",
+    ) || isExtractionReason(detail.reasonCode)
   );
 }
 

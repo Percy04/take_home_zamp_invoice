@@ -3,6 +3,8 @@ import { PDFDocument } from "pdf-lib";
 import {
   buildSourceCatalogue,
   extractAndMap,
+  recheckLowConfidenceFields,
+  restoreRecheckedMapping,
   invoiceMappingSchemaForEvidence,
   preferReliableEvidence,
   ProviderError,
@@ -355,5 +357,150 @@ describe("mapping evidence validation", () => {
       poNumber: "key_value.0.value",
       lines: [{ sku: "table.0.r1.c0" }],
     });
+  });
+});
+
+describe("AI extraction re-checks", () => {
+  const mapping = {
+    vendor: "field.VendorName",
+    invoiceNumber: "field.InvoiceId",
+    invoiceDate: "field.InvoiceDate",
+    poNumber: null,
+    currency: "field.Currency",
+    subtotal: null,
+    tax: null,
+    total: "field.InvoiceTotal",
+    taxNote: null,
+    lines: [
+      {
+        sku: "item.0.ProductCode",
+        description: "item.0.Description",
+        quantity: "item.0.Quantity",
+        uom: "item.0.Unit",
+        unitPrice: "item.0.UnitPrice",
+        amount: "item.0.Amount",
+      },
+    ],
+  };
+  const evidence: SourceRef[] = [
+    "field.VendorName",
+    "field.InvoiceId",
+    "field.InvoiceDate",
+    "field.Currency",
+    "field.InvoiceTotal",
+    "item.0.ProductCode",
+    "item.0.Description",
+    "item.0.Quantity",
+    "item.0.Unit",
+    "item.0.UnitPrice",
+    "item.0.Amount",
+  ].map((id) => ({
+    id,
+    content: id === "item.0.Quantity" ? "8" : id,
+    confidence: id === "item.0.Quantity" ? 0.62 : 0.98,
+    page: 1,
+    label: id,
+    sourceKind: id.startsWith("item") ? "ITEM" : "FIELD",
+  }));
+  async function onePagePdf() {
+    const pdf = await PDFDocument.create();
+    pdf.addPage();
+    return Buffer.from(await pdf.save());
+  }
+
+  it("uses one structured page re-read and replaces only the selected low-confidence evidence", async () => {
+    const reread = await recheckLowConfidenceFields(
+      await onePagePdf(),
+      evidence,
+      mapping,
+      async (_page, fields) => {
+        expect(fields.map((field) => field.field)).toEqual([
+          "lines.0.quantity",
+        ]);
+        return { "lines.0.quantity": "9" };
+      },
+    );
+
+    expect(reread.mapping.lines[0]?.quantity).toBe(
+      "ai_recheck.lines.0.quantity",
+    );
+    expect(reread.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "ai_recheck.lines.0.quantity",
+          content: "9",
+          confidence: null,
+          sourceKind: "AI_RECHECK",
+        }),
+      ]),
+    );
+    expect(reread.aiRechecks).toEqual([
+      expect.objectContaining({
+        field: "lines.0.quantity",
+        originalOcrValue: "8",
+        ocrConfidence: 0.62,
+        aiValue: "9",
+        outcome: "resolved",
+      }),
+    ]);
+    expect(
+      restoreRecheckedMapping(reread.mapping, reread.originalMapping, [
+        "lines.0.quantity",
+      ]).lines[0]?.quantity,
+    ).toBe("item.0.Quantity");
+  });
+
+  it("groups fields on the same page and leaves malformed AI answers reviewable without retrying", async () => {
+    const lowEvidence = evidence.map((source) =>
+      source.id === "field.VendorName"
+        ? { ...source, confidence: 0.5 }
+        : source,
+    );
+    let calls = 0;
+    const reread = await recheckLowConfidenceFields(
+      await onePagePdf(),
+      lowEvidence,
+      mapping,
+      async (_page, fields) => {
+        calls += 1;
+        expect(fields).toHaveLength(2);
+        return {};
+      },
+    );
+
+    expect(calls).toBe(1);
+    expect(reread.mapping).toMatchObject(mapping);
+    expect(reread.aiRechecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "vendor", outcome: "needs_review" }),
+        expect.objectContaining({
+          field: "lines.0.quantity",
+          outcome: "needs_review",
+        }),
+      ]),
+    );
+  });
+
+  it("does not guess or call the AI when a low-confidence source has no page", async () => {
+    const pageLess = evidence.map((source) =>
+      source.id === "item.0.Quantity" ? { ...source, page: null } : source,
+    );
+    const reread = await recheckLowConfidenceFields(
+      await onePagePdf(),
+      pageLess,
+      mapping,
+      async () => {
+        throw new Error("must not run");
+      },
+    );
+
+    expect(reread.mapping).toMatchObject(mapping);
+    expect(reread.aiRechecks).toEqual([
+      expect.objectContaining({
+        field: "lines.0.quantity",
+        page: null,
+        outcome: "needs_review",
+      }),
+    ]);
   });
 });

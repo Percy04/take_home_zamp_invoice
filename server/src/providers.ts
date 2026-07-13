@@ -8,7 +8,11 @@ import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
-import { sourceRefSchema, type SourceRef } from "../../shared/contracts.js";
+import {
+  sourceRefSchema,
+  type AiRecheck,
+  type SourceRef,
+} from "../../shared/contracts.js";
 import { env } from "./env.js";
 
 const lineMappingSchema = z.object({
@@ -91,6 +95,7 @@ type ProviderStage =
   | "AZURE_EVIDENCE"
   | "OPENAI_MAPPING"
   | "GEMINI_MAPPING"
+  | "AI_RECHECK"
   | "MAPPING_VALIDATION"
   | "RECORDED_PROVIDER";
 
@@ -196,6 +201,8 @@ function invoiceMappingJsonSchemaForEvidence(evidence: SourceRef[]) {
 export async function extractAndMap(bytes: Buffer): Promise<{
   evidence: SourceRef[];
   mapping: InvoiceMapping;
+  originalMapping: InvoiceMapping;
+  aiRechecks: AiRecheck[];
 }> {
   return env.PROVIDER_MODE === "live"
     ? extractAndMapLive(bytes)
@@ -272,7 +279,323 @@ export async function extractAndMapLive(bytes: Buffer) {
     });
   const evidence = buildSourceCatalogue(result);
   const mapping = await mapEvidenceWithRetry(evidence);
-  return { evidence, mapping };
+  return recheckLowConfidenceFields(bytes, evidence, mapping);
+}
+
+type LowConfidenceField = {
+  field: string;
+  source: SourceRef;
+};
+
+type AiPageReader = (
+  pagePdf: Buffer,
+  fields: LowConfidenceField[],
+) => Promise<Record<string, string | null>>;
+
+const aiRecheckResponseSchema = z.object({
+  values: z.record(z.string(), z.string().nullable()),
+});
+
+/** Re-read each affected PDF page once; the response can only replace extraction values. */
+export async function recheckLowConfidenceFields(
+  bytes: Buffer,
+  evidence: SourceRef[],
+  mapping: InvoiceMapping,
+  readPage: AiPageReader = readPageWithConfiguredAi,
+): Promise<{
+  evidence: SourceRef[];
+  mapping: InvoiceMapping;
+  originalMapping: InvoiceMapping;
+  aiRechecks: AiRecheck[];
+}> {
+  const fields = lowConfidenceMappedFields(evidence, mapping);
+  if (!fields.length)
+    return { evidence, mapping, originalMapping: mapping, aiRechecks: [] };
+
+  const rechecks: AiRecheck[] = [];
+  const replacements = new Map<string, string>();
+  const byPage = new Map<number, LowConfidenceField[]>();
+  for (const field of fields) {
+    if (!field.source.page) {
+      rechecks.push(recheckRecord(field, null, "needs_review"));
+      continue;
+    }
+    const pageFields = byPage.get(field.source.page) ?? [];
+    pageFields.push(field);
+    byPage.set(field.source.page, pageFields);
+  }
+
+  for (const [page, pageFields] of byPage) {
+    let values: Record<string, string | null> | null = null;
+    try {
+      values = await readPage(await singlePagePdf(bytes, page), pageFields);
+    } catch {
+      // One attempt per page group: retain the OCR selection for human review.
+    }
+    for (const field of pageFields) {
+      const value = values?.[field.field]?.trim() || null;
+      const outcome = value ? "resolved" : "needs_review";
+      rechecks.push(recheckRecord(field, value, outcome));
+      if (!value) continue;
+      const id = `ai_recheck.${field.field}`;
+      replacements.set(field.field, id);
+    }
+  }
+
+  const aiEvidence = rechecks.flatMap((recheck) =>
+    recheck.outcome === "resolved" && recheck.aiValue
+      ? [
+          {
+            id: `ai_recheck.${recheck.field}`,
+            content: recheck.aiValue,
+            confidence: null,
+            page: recheck.page,
+            label: `${formatRecheckField(recheck.field)} AI re-read`,
+            sourceKind: "AI_RECHECK" as const,
+          },
+        ]
+      : [],
+  );
+  return {
+    evidence: sourceRefSchema.array().parse([...evidence, ...aiEvidence]),
+    mapping: replaceMappedEvidence(mapping, replacements),
+    originalMapping: mapping,
+    aiRechecks: rechecks,
+  };
+}
+
+function lowConfidenceMappedFields(
+  evidence: SourceRef[],
+  mapping: InvoiceMapping,
+) {
+  const byId = new Map(evidence.map((source) => [source.id, source]));
+  return mappedEvidenceFields(mapping).flatMap(({ field, id }) => {
+    const source = id ? byId.get(id) : undefined;
+    return source && source.confidence !== null && source.confidence < 0.75
+      ? [{ field, source }]
+      : [];
+  });
+}
+
+function mappedEvidenceFields(mapping: InvoiceMapping) {
+  const headers = [
+    "vendor",
+    "invoiceNumber",
+    "invoiceDate",
+    "poNumber",
+    "currency",
+    "subtotal",
+    "tax",
+    "total",
+    "taxNote",
+  ] as const;
+  const lineFields = [
+    "sku",
+    "description",
+    "quantity",
+    "uom",
+    "unitPrice",
+    "amount",
+    "taxInclusion",
+    "taxRate",
+    "taxAmount",
+  ] as const;
+  return [
+    ...headers.map((field) => ({ field, id: mapping[field] })),
+    ...mapping.lines.flatMap((line, index) =>
+      lineFields.map((field) => ({
+        field: `lines.${index}.${field}`,
+        id: line[field],
+      })),
+    ),
+  ];
+}
+
+function replaceMappedEvidence(
+  mapping: InvoiceMapping,
+  replacements: Map<string, string | null>,
+): InvoiceMapping {
+  const replace = (field: string, id: string | null | undefined) =>
+    replacements.has(field) ? (replacements.get(field) ?? null) : (id ?? null);
+  return invoiceMappingSchema.parse({
+    ...mapping,
+    vendor: replace("vendor", mapping.vendor),
+    invoiceNumber: replace("invoiceNumber", mapping.invoiceNumber),
+    invoiceDate: replace("invoiceDate", mapping.invoiceDate),
+    poNumber: replace("poNumber", mapping.poNumber),
+    currency: replace("currency", mapping.currency),
+    subtotal: replace("subtotal", mapping.subtotal),
+    tax: replace("tax", mapping.tax),
+    total: replace("total", mapping.total),
+    taxNote: replace("taxNote", mapping.taxNote),
+    lines: mapping.lines.map((line, index) => ({
+      ...line,
+      sku: replace(`lines.${index}.sku`, line.sku),
+      description: replace(`lines.${index}.description`, line.description),
+      quantity: replace(`lines.${index}.quantity`, line.quantity),
+      uom: replace(`lines.${index}.uom`, line.uom),
+      unitPrice: replace(`lines.${index}.unitPrice`, line.unitPrice),
+      amount: replace(`lines.${index}.amount`, line.amount),
+      taxInclusion: replace(`lines.${index}.taxInclusion`, line.taxInclusion),
+      taxRate: replace(`lines.${index}.taxRate`, line.taxRate),
+      taxAmount: replace(`lines.${index}.taxAmount`, line.taxAmount),
+    })),
+  });
+}
+
+export function restoreRecheckedMapping(
+  mapping: InvoiceMapping,
+  originalMapping: InvoiceMapping,
+  fields: string[],
+) {
+  const originalIds = new Map(
+    mappedEvidenceFields(originalMapping).map(({ field, id }) => [
+      field,
+      id ?? null,
+    ]),
+  );
+  return replaceMappedEvidence(
+    mapping,
+    new Map(fields.map((field) => [field, originalIds.get(field) ?? null])),
+  );
+}
+
+function recheckRecord(
+  field: LowConfidenceField,
+  aiValue: string | null,
+  outcome: AiRecheck["outcome"],
+): AiRecheck {
+  return {
+    field: field.field,
+    originalOcrValue: field.source.content,
+    ocrConfidence: field.source.confidence,
+    sourceId: field.source.id,
+    page: field.source.page,
+    aiValue,
+    model: field.source.page ? configuredModel() : null,
+    attemptedAt: new Date().toISOString(),
+    outcome,
+  };
+}
+
+async function readPageWithConfiguredAi(
+  pagePdf: Buffer,
+  fields: LowConfidenceField[],
+): Promise<Record<string, string | null>> {
+  const prompt = `Read only these invoice extraction fields from the attached PDF page: ${fields
+    .map(
+      (field) =>
+        `${field.field} (OCR read: ${JSON.stringify(field.source.content)})`,
+    )
+    .join(
+      ", ",
+    )}. Return only the requested field values. Do not select a PO, map bundles, approve variances, receipts, or duplicates. Do not provide confidence scores.`;
+  if (env.MAPPING_PROVIDER === "openai") {
+    if (!env.OPENAI_API_KEY)
+      throw new ProviderError("CONFIG", "OpenAI is not configured.");
+    const client = new OpenAI({
+      apiKey: env.OPENAI_API_KEY,
+      timeout: 30_000,
+      maxRetries: 0,
+    });
+    const response = await client.responses.parse({
+      model: env.OPENAI_MODEL,
+      input: [
+        { role: "system", content: "You extract document text only." },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_file",
+              filename: "invoice-page.pdf",
+              file_data: `data:application/pdf;base64,${pagePdf.toString("base64")}`,
+            },
+            { type: "input_text", text: prompt },
+          ],
+        },
+      ],
+      text: {
+        format: zodTextFormat(aiRecheckResponseSchema, "invoice_reread"),
+      },
+    });
+    if (!response.output_parsed)
+      throw new ProviderError("AI_RECHECK", "AI returned no re-read values.");
+    return aiRecheckResponseSchema.parse(response.output_parsed).values;
+  }
+
+  if (!env.GEMINI_API_KEY)
+    throw new ProviderError("CONFIG", "Gemini is not configured.");
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL}:generateContent?key=${env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: "You extract document text only." }],
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  mimeType: "application/pdf",
+                  data: pagePdf.toString("base64"),
+                },
+              },
+              { text: prompt },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "object",
+            properties: {
+              values: {
+                type: "object",
+                additionalProperties: { type: ["string", "null"] },
+              },
+            },
+            required: ["values"],
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  if (!response.ok)
+    throw new ProviderError("AI_RECHECK", "Gemini re-read request failed.", {
+      status: response.status,
+    });
+  const output = extractGeminiOutput(await response.json());
+  if (!output)
+    throw new ProviderError("AI_RECHECK", "Gemini returned no re-read values.");
+  return aiRecheckResponseSchema.parse(JSON.parse(output)).values;
+}
+
+async function singlePagePdf(bytes: Buffer, page: number) {
+  const source = await PDFDocument.load(bytes, {
+    ignoreEncryption: false,
+    updateMetadata: false,
+  });
+  if (page < 1 || page > source.getPageCount())
+    throw new Error("Unknown page.");
+  const output = await PDFDocument.create();
+  const [copied] = await output.copyPages(source, [page - 1]);
+  output.addPage(copied!);
+  return Buffer.from(await output.save());
+}
+
+function configuredModel() {
+  return env.MAPPING_PROVIDER === "openai"
+    ? env.OPENAI_MODEL
+    : env.GEMINI_MODEL;
+}
+
+function formatRecheckField(field: string) {
+  return field.replace(/^lines\.\d+\./, "Line ").replace(/([A-Z])/g, " $1");
 }
 
 export async function mapEvidenceWithRetry(
@@ -639,20 +962,25 @@ export function preferReliableEvidence(
 }
 
 function evidencePriority(source: SourceRef) {
-  return {
-    FIELD: 0,
-    ITEM: 0,
-    TAX: 0,
-    KEY_VALUE: 1,
-    TABLE: 2,
-    OCR_LINE: 3,
-    RECORDED: 4,
-  }[source.sourceKind ?? "RECORDED"];
+  return (
+    {
+      FIELD: 0,
+      ITEM: 0,
+      TAX: 0,
+      KEY_VALUE: 1,
+      TABLE: 2,
+      OCR_LINE: 3,
+      RECORDED: 4,
+      AI_RECHECK: 0,
+    }[source.sourceKind ?? "RECORDED"] ?? 4
+  );
 }
 
 async function extractAndMapRecorded(bytes: Buffer): Promise<{
   evidence: SourceRef[];
   mapping: InvoiceMapping;
+  originalMapping: InvoiceMapping;
+  aiRechecks: AiRecheck[];
 }> {
   const recording = await recordingForDocument(bytes);
   const evidence = await recordedEvidence(recording);
@@ -676,7 +1004,7 @@ async function extractAndMapRecorded(bytes: Buffer): Promise<{
     })),
   };
   validateMapping(mapping, evidence);
-  return { evidence, mapping };
+  return { evidence, mapping, originalMapping: mapping, aiRechecks: [] };
 }
 
 async function recordingForDocument(bytes: Buffer) {

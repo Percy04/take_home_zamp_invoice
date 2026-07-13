@@ -23,12 +23,25 @@ export const sourceRefSchema = z.object({
       "OCR_LINE",
       "KEY_VALUE",
       "RECORDED",
+      "AI_RECHECK",
     ])
     .optional(),
   tableIndex: z.number().int().nonnegative().nullable().optional(),
   row: z.number().int().nonnegative().nullable().optional(),
   column: z.number().int().nonnegative().nullable().optional(),
   lineIndex: z.number().int().nonnegative().nullable().optional(),
+});
+
+export const aiRecheckSchema = z.object({
+  field: z.string().min(1),
+  originalOcrValue: z.string(),
+  ocrConfidence: z.number().min(0).max(1).nullable(),
+  sourceId: z.string().min(1),
+  page: z.number().int().positive().nullable(),
+  aiValue: z.string().nullable(),
+  model: z.string().nullable(),
+  attemptedAt: z.iso.datetime(),
+  outcome: z.enum(["resolved", "needs_review"]),
 });
 
 export const stageEventSchema = z.object({
@@ -273,6 +286,7 @@ export const runDetailSchema = z
     updatedAt: z.iso.datetime(),
     stages: z.array(stageEventSchema),
     evidence: z.array(sourceRefSchema),
+    aiRechecks: z.array(aiRecheckSchema).default([]),
     invoice: normalizedInvoiceSchema.nullable(),
     invoicePreview: invoicePreviewSchema.nullable(),
     duplicateMatch: duplicateMatchSchema.nullable(),
@@ -345,6 +359,7 @@ export const apiErrorSchema = z.object({
 });
 
 export type SourceRef = z.infer<typeof sourceRefSchema>;
+export type AiRecheck = z.infer<typeof aiRecheckSchema>;
 export type StageEvent = z.infer<typeof stageEventSchema>;
 export type CheckResult = z.infer<typeof checkResultSchema>;
 export type NormalizedInvoice = z.infer<typeof normalizedInvoiceSchema>;
@@ -353,6 +368,9 @@ export type InvoicePreview = z.infer<typeof invoicePreviewSchema>;
 export type DuplicateMatch = z.infer<typeof duplicateMatchSchema>;
 export type BundleCandidate = z.infer<typeof bundleCandidateSchema>;
 export type PoCandidate = z.infer<typeof poCandidateSchema>;
-export type RunDetail = z.infer<typeof runDetailSchema>;
+// Optional in TypeScript so older API fixtures remain compatible; parsed API data always defaults it to [].
+export type RunDetail = Omit<z.infer<typeof runDetailSchema>, "aiRechecks"> & {
+  aiRechecks?: AiRecheck[];
+};
 export type RunSummary = z.infer<typeof runSummarySchema>;
 export type RunList = z.infer<typeof runListSchema>;
