@@ -1297,7 +1297,7 @@ function parseDate(value: string, field?: string, evidence: SourceRef[] = []) {
 function numericDateOrder(evidence: SourceRef[]) {
   const orders = new Set<"MONTH_FIRST" | "DAY_FIRST">();
   for (const source of evidence) {
-    if (!/DATE/i.test(source.label)) continue;
+    if (!/DUE[\s_-]*DATE/i.test(source.label)) continue;
     const match = source.content
       .trim()
       .match(/^(\d{1,2})[./-](\d{1,2})[./-]\d{4}$/);

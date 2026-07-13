@@ -157,6 +157,18 @@ describe("deterministic normalization", () => {
     expect(normalizeInvoice(evidence, mapping).invoiceDate).toBe("2025-09-01");
   });
 
+  it("does not use unrelated dated fields to guess the invoice date order", () => {
+    const evidence = inclusiveEvidence();
+    evidence.find((item) => item.id === "date")!.content = "09.01.2025";
+    evidence.push(source("serviceDate", "09.14.2025", "ServiceDate"));
+
+    expect(() => normalizeInvoice(evidence, mapping)).toThrowError(
+      expect.objectContaining<Partial<NormalizationError>>({
+        reasonCode: "AMBIGUOUS_DATE",
+      }),
+    );
+  });
+
   it("treats a printed tax rate without inclusive language as exclusive tax", () => {
     const evidence = inclusiveEvidence();
     evidence.find((item) => item.id === "date")!.content = "2025-09-01";

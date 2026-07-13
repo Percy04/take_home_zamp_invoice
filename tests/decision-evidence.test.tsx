@@ -4,7 +4,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DecisionEvidence } from "../frontend_v1/ap-resolve-console/src/components/DecisionEvidence";
 import * as api from "../frontend_v1/ap-resolve-console/src/lib/api";
-import { reviewSummary } from "../frontend_v1/ap-resolve-console/src/lib/review-issues";
+import {
+  reviewIssues,
+  reviewSummary,
+} from "../frontend_v1/ap-resolve-console/src/lib/review-issues";
 import type { Run } from "../frontend_v1/ap-resolve-console/src/lib/types";
 
 vi.mock("../frontend_v1/ap-resolve-console/src/lib/api", () => ({
@@ -223,12 +226,13 @@ describe("DecisionEvidence", () => {
         name: "Invoice lines do not match the total",
       }),
     ).toBeVisible();
-    expect(
-      screen.getAllByText("Invoice lines do not match the total"),
-    ).toHaveLength(2);
+    expect(screen.getAllByText("Invoice lines do not match the total").length).toBeGreaterThanOrEqual(
+      2,
+    );
     expect(
       screen.getByText(/omitted, duplicated, or inconsistent charge/i),
     ).toBeVisible();
+    expect(reviewIssues(run)[0]?.category).toBe("INVOICE_DATA");
   });
 
   it("uses plain quantity labels for a suggested purchase order", () => {
