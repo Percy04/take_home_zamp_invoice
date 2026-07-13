@@ -98,11 +98,10 @@ describe("active decision evidence", () => {
     expect(screen.getByText(/\$15\.00 total variance/)).toBeVisible();
     expect(screen.getByText("Receipt capacity")).toBeVisible();
     expect(screen.getByText("Available to invoice")).toBeVisible();
-    expect(screen.getAllByText("3 EA")).toHaveLength(2);
-    expect(screen.getByText("1 EA")).toBeVisible();
-    expect(screen.getByText("PO ordered")).toBeVisible();
-    expect(screen.getByText("Previously invoiced")).toBeVisible();
-    expect(screen.getByText(/\$300\.00/)).toBeVisible();
-    expect(screen.getByText(/\$100\.00/)).toBeVisible();
+    expect(screen.getAllByText("3 EA")).toHaveLength(1);
+    expect(screen.getByText("This invoice needs more than is currently available to invoice on this PO line.")).toBeVisible();
+    expect(screen.queryByText("Still needed")).not.toBeInTheDocument();
+    expect(screen.queryByText("PO ordered")).not.toBeInTheDocument();
+    expect(screen.queryByText("Previously invoiced")).not.toBeInTheDocument();
   });
 });

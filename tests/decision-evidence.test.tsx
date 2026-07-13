@@ -96,6 +96,52 @@ describe("DecisionEvidence", () => {
     expect(screen.getByText("Invoice date could not be read")).toBeVisible();
   });
 
+  it("uses plain quantity labels for a suggested purchase order", () => {
+    const run: Run = {
+      ...base,
+      state: "AWAITING_PO_CONFIRMATION",
+      execution: "AWAITING_CONFIRMATION",
+      reasonCode: "MISSING_PO",
+      poCandidates: [
+        {
+          poNumber: "PO-1002",
+          vendor: "Acme Industrial Supplies LLC",
+          confidence: "HIGH",
+          aggregateDifference: 0,
+          lines: [
+            {
+              invoiceSku: "SEN-300",
+              invoiceDescription: "Safety Sensor",
+              requestedQuantity: 2,
+              uom: "EA",
+              invoiceUnitPrice: 250,
+              invoiceAmount: 500,
+              poLineId: "PO-1002-L1",
+              poSku: "SEN-300",
+              poDescription: "Safety Sensor",
+              poUnitPrice: 250,
+              orderedAvailable: 2,
+              receivedAvailable: 2,
+              remainingPoValue: 500,
+              priceVariancePct: 0,
+              amountDifference: 0,
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<DecisionEvidence run={run} />);
+
+    expect(screen.getAllByText("This invoice").at(-1)).toBeVisible();
+    expect(screen.getByText("Available to invoice")).toBeVisible();
+    expect(screen.queryByText("Received avail.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ordered avail.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Confirming reruns price, capacity, and duplicate controls before anything posts."),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows a failed bundle confirmation instead of silently leaving the action pending", async () => {
     const run: Run = {
       ...base,

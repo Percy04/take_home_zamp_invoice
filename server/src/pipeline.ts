@@ -55,26 +55,41 @@ export async function processInvoice(runId: string, storage: Storage) {
         : "MAPPING_FAILED";
     const field =
       caught instanceof NormalizationError ? (caught.field ?? null) : null;
-    const fieldName = field ? formatField(field) : null;
+    const fields =
+      caught instanceof NormalizationError && caught.fields.length
+        ? caught.fields
+        : field
+          ? [field]
+          : [];
     storage.block(
       runId,
       reason,
       nextActionFor(reason),
       null,
-      [
-        {
-          code: reason,
-          passed: false,
-          detail: fieldName
-            ? `${fieldName} is missing or could not be read reliably.`
-            : nextActionFor(reason),
-          expected: fieldName ? `A readable ${fieldName.toLowerCase()}` : null,
-          actual: fieldName ? "Not found" : null,
-          sourceIds: [],
-        },
-      ],
+      fields.length
+        ? fields.map((failedField) => {
+            const fieldName = formatField(failedField);
+            return {
+              code: "LOW_CONFIDENCE",
+              passed: false,
+              detail: `${fieldName} could not be read reliably.`,
+              expected: `A readable ${fieldName.toLowerCase()}`,
+              actual: "Low-confidence scan",
+              sourceIds: [],
+            };
+          })
+        : [
+            {
+              code: reason,
+              passed: false,
+              detail: nextActionFor(reason),
+              expected: null,
+              actual: null,
+              sourceIds: [],
+            },
+          ],
       {
-        invoicePreview: buildInvoicePreview(evidence, mapping, field),
+        invoicePreview: buildInvoicePreview(evidence, mapping, fields[0] ?? null),
       },
     );
     return storage.getRun(runId)!;

@@ -66,25 +66,22 @@ const run = {
 } satisfies Run;
 
 describe("RunDetailTabs", () => {
-  it("shows available and post-invoice capacity without repeating values", () => {
+  it("uses a plain-language PO reconciliation for receipt capacity", () => {
     render(<RunDetailTabs run={run} />);
     fireEvent.click(screen.getByRole("tab", { name: "Purchase order" }));
 
     expect(screen.getByText("PO ordered")).toBeVisible();
     expect(screen.getByText("Goods received")).toBeVisible();
-    expect(screen.getByText("Previously invoiced")).toBeVisible();
+    expect(screen.getByText("Already invoiced")).toBeVisible();
     expect(screen.getByText("Available to invoice")).toBeVisible();
     expect(screen.getByText("This invoice")).toBeVisible();
-    expect(screen.getByText("Short by")).toBeVisible();
-    expect(screen.getByText("PO value open")).toBeVisible();
-    expect(screen.getByText("Receipt-supported value")).toBeVisible();
+    expect(screen.getByText("Invoice PO value")).toBeVisible();
     expect(screen.getByText("10")).toBeVisible();
     expect(screen.getByText("6")).toBeVisible();
     expect(screen.getByText("4")).toBeVisible();
     expect(screen.getByText("2")).toBeVisible();
     expect(screen.getByText("3")).toBeVisible();
-    expect(screen.getByText("1")).toHaveClass("text-destructive");
-    expect(screen.getByText("$300.00")).toBeVisible();
-    expect(screen.getByText("$100.00")).toBeVisible();
+    expect(screen.getByText("$150.00")).toBeVisible();
+    expect(screen.queryByText("Short by")).not.toBeInTheDocument();
   });
 });

@@ -133,6 +133,19 @@ describe("deterministic normalization", () => {
     );
   });
 
+  it("reports every low-confidence required field instead of stopping at the first", () => {
+    const evidence = inclusiveEvidence();
+    evidence.find((item) => item.id === "invoice")!.confidence = 0.6;
+    evidence.find((item) => item.id === "quantity")!.confidence = 0.6;
+
+    expect(() => normalizeInvoice(evidence, mapping)).toThrowError(
+      expect.objectContaining({
+        reasonCode: "MULTIPLE_ISSUES",
+        fields: ["invoiceNumber", "lines.0.quantity"],
+      }),
+    );
+  });
+
   it("normalizes common date and decimal formats without guessing ambiguous dates", () => {
     const evidence = inclusiveEvidence().map((item) => ({ ...item }));
     evidence.find((item) => item.id === "date")!.content = "06 Jul 2026";

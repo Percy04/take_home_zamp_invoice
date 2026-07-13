@@ -111,6 +111,14 @@ export function normalizeInvoice(
   mapping: InvoiceMapping,
 ): NormalizedInvoice {
   const byId = new Map(evidence.map((source) => [source.id, source]));
+  const lowConfidenceFields = mappedLowConfidenceFields(byId, mapping);
+  if (lowConfidenceFields.length > 1) {
+    throw new NormalizationError(
+      "MULTIPLE_ISSUES",
+      undefined,
+      lowConfidenceFields,
+    );
+  }
   const selected: SourceRef[] = [];
   const fieldSources: Record<string, string> = {};
   const select = (
@@ -850,9 +858,44 @@ export class NormalizationError extends Error {
   constructor(
     readonly reasonCode: string,
     readonly field?: string,
+    readonly fields: string[] = field ? [field] : [],
   ) {
     super(field ? `${reasonCode}: ${field}` : reasonCode);
   }
+}
+
+function mappedLowConfidenceFields(
+  evidence: Map<string, SourceRef>,
+  mapping: InvoiceMapping,
+) {
+  const fields: Array<[string, string | null | undefined]> = [
+    ["vendor", mapping.vendor],
+    ["invoiceNumber", mapping.invoiceNumber],
+    ["invoiceDate", mapping.invoiceDate],
+    ["poNumber", mapping.poNumber],
+    ["currency", mapping.currency],
+    ["observedSubtotal", mapping.subtotal],
+    ["observedTax", mapping.tax],
+    ["observedTotal", mapping.total],
+    ["taxNote", mapping.taxNote],
+    ...(mapping.lines.flatMap((line, index) => [
+      [`lines.${index}.sku`, line.sku],
+      [`lines.${index}.description`, line.description],
+      [`lines.${index}.quantity`, line.quantity],
+      [`lines.${index}.uom`, line.uom],
+      [`lines.${index}.unitPrice`, line.unitPrice],
+      [`lines.${index}.amount`, line.amount],
+      [`lines.${index}.taxInclusion`, line.taxInclusion],
+      [`lines.${index}.taxRate`, line.taxRate],
+      [`lines.${index}.taxAmount`, line.taxAmount],
+    ]) as Array<[string, string | null | undefined]>),
+  ];
+  return fields.flatMap(([field, sourceId]) => {
+    const confidence = sourceId ? evidence.get(sourceId)?.confidence : null;
+    return confidence !== null && confidence !== undefined && confidence < 0.75
+      ? [field]
+      : [];
+  });
 }
 
 export function normalize(value: string) {
@@ -919,6 +962,9 @@ function allocationFor(input: {
     remainingReceivedQuantity: receivedRemaining.toString(),
     poDescription: input.poLine.description,
     poUnitPrice: input.poLine.unit_price,
+    orderedQuantity: input.poLine.ordered_quantity,
+    receivedQuantity: input.poLine.received_quantity,
+    previouslyInvoicedQuantity: (input.used.get(input.poLine.id) ?? new Decimal(0)).toString(),
     availableOrderedQuantity,
     availableReceivedQuantity,
     matchReason:
