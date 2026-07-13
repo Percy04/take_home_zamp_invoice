@@ -277,9 +277,21 @@ export async function extractAndMapLive(bytes: Buffer) {
     throw new ProviderError("AZURE_RESULT", "Azure extraction failed.", {
       status: result.status ?? "unknown",
     });
-  const evidence = buildSourceCatalogue(result);
+  const evidence = buildSourceCatalogue(result, true);
+  if (!evidence.length)
+    return recheckMissingFieldsWithFullDocument(bytes, evidence, emptyInvoiceMapping());
   const mapping = await mapEvidenceWithRetry(evidence);
-  return recheckLowConfidenceFields(bytes, evidence, mapping);
+  const reread = await recheckLowConfidenceFields(bytes, evidence, mapping);
+  const fullDocument = await recheckMissingFieldsWithFullDocument(
+    bytes,
+    reread.evidence,
+    reread.mapping,
+  );
+  return {
+    ...fullDocument,
+    originalMapping: mapping,
+    aiRechecks: [...reread.aiRechecks, ...fullDocument.aiRechecks],
+  };
 }
 
 type LowConfidenceField = {
@@ -291,6 +303,8 @@ type AiPageReader = (
   pagePdf: Buffer,
   fields: LowConfidenceField[],
 ) => Promise<Record<string, string | null>>;
+
+type AiFullDocumentReader = (documentPdf: Buffer) => Promise<InvoiceMapping>;
 
 function aiRecheckResponseSchemaFor(fields: LowConfidenceField[]) {
   return z.object({
@@ -370,6 +384,180 @@ export async function recheckLowConfidenceFields(
     mapping: replaceMappedEvidence(mapping, replacements),
     originalMapping: mapping,
     aiRechecks: rechecks,
+  };
+}
+
+/** Read the complete PDF once when OCR did not map required invoice values. */
+export async function recheckMissingFieldsWithFullDocument(
+  bytes: Buffer,
+  evidence: SourceRef[],
+  mapping: InvoiceMapping,
+  readDocument: AiFullDocumentReader = readFullDocumentWithConfiguredAi,
+  model = configuredModel(),
+): Promise<{
+  evidence: SourceRef[];
+  mapping: InvoiceMapping;
+  originalMapping: InvoiceMapping;
+  aiRechecks: AiRecheck[];
+}> {
+  if (!needsFullDocumentFallback(mapping))
+    return { evidence, mapping, originalMapping: mapping, aiRechecks: [] };
+
+  let extracted: InvoiceMapping | null = null;
+  try {
+    extracted = invoiceMappingSchema.parse(await readDocument(bytes));
+  } catch {
+    // One attempt per document: preserve the missing values and its audit record.
+  }
+
+  const byId = new Map(evidence.map((source) => [source.id, source]));
+  const records: AiRecheck[] = [];
+  const replacements = new Map<string, string>();
+  const values = extracted ? mappedEvidenceFields(extracted) : [];
+  const extractedByField = new Map(values.map(({ field, id }) => [field, id ?? null]));
+
+  for (const { field, id } of fullDocumentTargets(mapping, extracted)) {
+    const value = extractedByField.get(field)?.trim() || null;
+    const source = id ? byId.get(id) : undefined;
+    records.push({
+      field,
+      originalOcrValue: source?.content ?? "",
+      ocrConfidence: source?.confidence ?? null,
+      sourceId: source?.id ?? "document",
+      page: source?.page ?? null,
+      aiValue: value,
+      model,
+      attemptedAt: new Date().toISOString(),
+      outcome: value ? "resolved" : "needs_review",
+    });
+    if (value) replacements.set(field, `ai_full_document.${field}`);
+  }
+
+  const aiEvidence = records.flatMap((record) =>
+    record.aiValue
+      ? [
+          {
+            id: `ai_full_document.${record.field}`,
+            content: record.aiValue,
+            confidence: null,
+            page: null,
+            label: `${formatRecheckField(record.field)} full-document AI extraction`,
+            sourceKind: "AI_RECHECK" as const,
+          },
+        ]
+      : [],
+  );
+  return {
+    evidence: sourceRefSchema.array().parse([...evidence, ...aiEvidence]),
+    mapping: mergeFullDocumentMapping(mapping, extracted, replacements),
+    originalMapping: mapping,
+    aiRechecks: records,
+  };
+}
+
+function needsFullDocumentFallback(mapping: InvoiceMapping) {
+  return (
+    [mapping.vendor, mapping.invoiceNumber, mapping.invoiceDate, mapping.currency, mapping.total].some(
+      (id) => !id,
+    ) ||
+    !mapping.lines.length ||
+    mapping.lines.some(
+      (line) =>
+        (!line.sku && !line.description) ||
+        !line.quantity ||
+        !line.unitPrice ||
+        !line.amount,
+    )
+  );
+}
+
+function fullDocumentTargets(mapping: InvoiceMapping, extracted: InvoiceMapping | null) {
+  const headers = [
+    "vendor",
+    "invoiceNumber",
+    "invoiceDate",
+    "poNumber",
+    "currency",
+    "subtotal",
+    "tax",
+    "total",
+    "taxNote",
+  ] as const;
+  const lineFields = [
+    "sku",
+    "description",
+    "quantity",
+    "uom",
+    "unitPrice",
+    "amount",
+    "taxInclusion",
+    "taxRate",
+    "taxAmount",
+  ] as const;
+  const targets: Array<{ field: string; id: string | null | undefined }> = headers
+    .filter((field) => !mapping[field])
+    .map((field) => ({ field, id: mapping[field] ?? null }));
+  const lineCount = Math.max(mapping.lines.length, extracted?.lines.length ?? 0);
+  for (let index = 0; index < lineCount; index += 1) {
+    const existing = mapping.lines[index];
+    for (const field of lineFields) {
+      if (!existing?.[field])
+        targets.push({ field: `lines.${index}.${field}`, id: existing?.[field] ?? null });
+    }
+  }
+  if (!lineCount) targets.push({ field: "lines", id: null });
+  return targets;
+}
+
+function mergeFullDocumentMapping(
+  mapping: InvoiceMapping,
+  extracted: InvoiceMapping | null,
+  replacements: Map<string, string>,
+) {
+  if (!extracted) return mapping;
+  const replace = (field: string, original: string | null | undefined) =>
+    original || replacements.get(field) || null;
+  const lineCount = Math.max(mapping.lines.length, extracted.lines.length);
+  return invoiceMappingSchema.parse({
+    ...mapping,
+    vendor: replace("vendor", mapping.vendor),
+    invoiceNumber: replace("invoiceNumber", mapping.invoiceNumber),
+    invoiceDate: replace("invoiceDate", mapping.invoiceDate),
+    poNumber: replace("poNumber", mapping.poNumber),
+    currency: replace("currency", mapping.currency),
+    subtotal: replace("subtotal", mapping.subtotal),
+    tax: replace("tax", mapping.tax),
+    total: replace("total", mapping.total),
+    taxNote: replace("taxNote", mapping.taxNote),
+    lines: Array.from({ length: lineCount }, (_, index) => {
+      const original = mapping.lines[index];
+      return {
+        sku: replace(`lines.${index}.sku`, original?.sku),
+        description: replace(`lines.${index}.description`, original?.description),
+        quantity: replace(`lines.${index}.quantity`, original?.quantity),
+        uom: replace(`lines.${index}.uom`, original?.uom),
+        unitPrice: replace(`lines.${index}.unitPrice`, original?.unitPrice),
+        amount: replace(`lines.${index}.amount`, original?.amount),
+        taxInclusion: replace(`lines.${index}.taxInclusion`, original?.taxInclusion),
+        taxRate: replace(`lines.${index}.taxRate`, original?.taxRate),
+        taxAmount: replace(`lines.${index}.taxAmount`, original?.taxAmount),
+      };
+    }),
+  });
+}
+
+function emptyInvoiceMapping(): InvoiceMapping {
+  return {
+    vendor: null,
+    invoiceNumber: null,
+    invoiceDate: null,
+    poNumber: null,
+    currency: null,
+    subtotal: null,
+    tax: null,
+    total: null,
+    taxNote: null,
+    lines: [],
   };
 }
 
@@ -592,6 +780,141 @@ async function readPageWithConfiguredAi(
   return responseSchema.parse(JSON.parse(output)).values;
 }
 
+async function readFullDocumentWithConfiguredAi(documentPdf: Buffer): Promise<InvoiceMapping> {
+  const prompt =
+    "Read the complete attached invoice. Return every printed invoice header and line item exactly as document text; use null only when a value is not present. Do not select a purchase order, map bundles, approve variances, receipts, or duplicates. Do not calculate or provide confidence scores.";
+  if (env.MAPPING_PROVIDER === "openai") {
+    if (!env.OPENAI_API_KEY)
+      throw new ProviderError("CONFIG", "OpenAI is not configured.");
+    const client = new OpenAI({
+      apiKey: env.OPENAI_API_KEY,
+      timeout: 30_000,
+      maxRetries: 0,
+    });
+    const response = await client.responses.parse({
+      model: env.OPENAI_MODEL,
+      input: [
+        { role: "system", content: "You extract document text only." },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_file",
+              filename: "invoice.pdf",
+              file_data: `data:application/pdf;base64,${documentPdf.toString("base64")}`,
+            },
+            { type: "input_text", text: prompt },
+          ],
+        },
+      ],
+      text: {
+        format: zodTextFormat(invoiceMappingSchema, "full_invoice_extraction"),
+      },
+    });
+    if (!response.output_parsed)
+      throw new ProviderError("AI_RECHECK", "AI returned no full-document extraction.");
+    return invoiceMappingSchema.parse(response.output_parsed);
+  }
+
+  if (!env.GEMINI_API_KEY)
+    throw new ProviderError("CONFIG", "Gemini is not configured.");
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL}:generateContent?key=${env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: "You extract document text only." }],
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  mimeType: "application/pdf",
+                  data: documentPdf.toString("base64"),
+                },
+              },
+              { text: prompt },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: fullInvoiceJsonSchema(),
+        },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  if (!response.ok)
+    throw new ProviderError("AI_RECHECK", "Gemini full-document extraction failed.", {
+      status: response.status,
+    });
+  const output = extractGeminiOutput(await response.json());
+  if (!output)
+    throw new ProviderError("AI_RECHECK", "Gemini returned no full-document extraction.");
+  return invoiceMappingSchema.parse(JSON.parse(output));
+}
+
+function fullInvoiceJsonSchema() {
+  const value = { type: ["string", "null"] };
+  const line = {
+    type: "object",
+    properties: {
+      sku: value,
+      description: value,
+      quantity: value,
+      uom: value,
+      unitPrice: value,
+      amount: value,
+      taxInclusion: value,
+      taxRate: value,
+      taxAmount: value,
+    },
+    required: [
+      "sku",
+      "description",
+      "quantity",
+      "uom",
+      "unitPrice",
+      "amount",
+      "taxInclusion",
+      "taxRate",
+      "taxAmount",
+    ],
+  };
+  return {
+    type: "object",
+    properties: {
+      vendor: value,
+      invoiceNumber: value,
+      invoiceDate: value,
+      poNumber: value,
+      currency: value,
+      subtotal: value,
+      tax: value,
+      total: value,
+      taxNote: value,
+      lines: { type: "array", items: line },
+    },
+    required: [
+      "vendor",
+      "invoiceNumber",
+      "invoiceDate",
+      "poNumber",
+      "currency",
+      "subtotal",
+      "tax",
+      "total",
+      "taxNote",
+      "lines",
+    ],
+  };
+}
+
 async function singlePagePdf(bytes: Buffer, page: number) {
   const source = await PDFDocument.load(bytes, {
     ignoreEncryption: false,
@@ -773,7 +1096,7 @@ async function mapWithGemini(evidence: SourceRef[]) {
   }
 }
 
-export function buildSourceCatalogue(payload: AzureResult): SourceRef[] {
+export function buildSourceCatalogue(payload: AzureResult, allowEmpty = false): SourceRef[] {
   const result = payload.analyzeResult;
   const fields = result?.documents?.[0]?.fields ?? {};
   const evidence: SourceRef[] = [];
@@ -869,7 +1192,7 @@ export function buildSourceCatalogue(payload: AzureResult): SourceRef[] {
       });
     }
   }
-  if (!evidence.length) {
+  if (!evidence.length && !allowEmpty) {
     throw new ProviderError(
       "AZURE_EVIDENCE",
       "Azure returned no usable invoice evidence.",

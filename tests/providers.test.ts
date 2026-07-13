@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import {
   buildSourceCatalogue,
   extractAndMap,
+  recheckMissingFieldsWithFullDocument,
   recheckLowConfidenceFields,
   restoreRecheckedMapping,
   invoiceMappingSchemaForEvidence,
@@ -539,6 +540,106 @@ describe("AI extraction re-checks", () => {
           content: "",
           confidence: null,
         }),
+      ]),
+    );
+  });
+
+  it("uses one full-document AI extraction when OCR mapping is missing fields", async () => {
+    const incomplete = { ...mapping, vendor: null, poNumber: null, lines: [] };
+    let calls = 0;
+    const reread = await recheckMissingFieldsWithFullDocument(
+      await onePagePdf(),
+      evidence,
+      incomplete,
+      async () => {
+        calls += 1;
+        return {
+          vendor: "Acme Industrial Supplies LLC",
+          invoiceNumber: "ACME-2026-001",
+          invoiceDate: "2026-07-01",
+          poNumber: "PO-1001",
+          currency: "USD",
+          subtotal: "900.00",
+          tax: "90.00",
+          total: "990.00",
+          taxNote: null,
+          lines: [
+            {
+              sku: "WID-100",
+              description: "Industrial Widget",
+              quantity: "8",
+              uom: "EA",
+              unitPrice: "100.00",
+              amount: "800.00",
+            },
+          ],
+        };
+      },
+      "test-model",
+    );
+
+    expect(calls).toBe(1);
+    expect(reread.mapping).toMatchObject({
+      vendor: "ai_full_document.vendor",
+      poNumber: "ai_full_document.poNumber",
+      lines: [
+        {
+          sku: "ai_full_document.lines.0.sku",
+          quantity: "ai_full_document.lines.0.quantity",
+        },
+      ],
+    });
+    expect(reread.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "ai_full_document.vendor",
+          content: "Acme Industrial Supplies LLC",
+          confidence: null,
+          page: null,
+          sourceKind: "AI_RECHECK",
+        }),
+      ]),
+    );
+    expect(reread.aiRechecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "vendor",
+          originalOcrValue: "",
+          ocrConfidence: null,
+          sourceId: "document",
+          aiValue: "Acme Industrial Supplies LLC",
+          model: "test-model",
+          outcome: "resolved",
+        }),
+      ]),
+    );
+  });
+
+  it("records one failed full-document attempt without replacing missing values", async () => {
+    const incomplete = { ...mapping, vendor: null, lines: [] };
+    let calls = 0;
+    const reread = await recheckMissingFieldsWithFullDocument(
+      await onePagePdf(),
+      evidence,
+      incomplete,
+      async () => {
+        calls += 1;
+        throw new Error("malformed response");
+      },
+      "test-model",
+    );
+
+    expect(calls).toBe(1);
+    expect(reread.mapping).toMatchObject(incomplete);
+    expect(reread.aiRechecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "vendor",
+          aiValue: null,
+          model: "test-model",
+          outcome: "needs_review",
+        }),
+        expect.objectContaining({ field: "lines", outcome: "needs_review" }),
       ]),
     );
   });

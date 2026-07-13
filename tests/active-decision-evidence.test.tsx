@@ -94,7 +94,7 @@ describe("active decision evidence", () => {
   it("renders every independent failure and the receipt calculation", () => {
     render(<DecisionEvidence run={run} />);
 
-    expect(screen.getByText("Price variance")).toBeVisible();
+    expect(screen.getByText("Price differs from PO")).toBeVisible();
     expect(screen.getByText(/\$15\.00 total variance/)).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "PO" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "Item" })).toBeVisible();
