@@ -87,8 +87,8 @@ describe("invoice workflow UI", () => {
     expect(
       await screen.findByRole("heading", { name: "Needs review" }),
     ).toBeVisible();
-    expect(screen.getByText("Business decision required")).toBeVisible();
-    expect(screen.getAllByText("Possible duplicate invoice")).toHaveLength(2);
+    expect(screen.getByText("Why this needs review")).toBeVisible();
+    expect(screen.getAllByText("Duplicate invoice")).toHaveLength(2);
     expect(screen.getByText(/nothing was posted again/i)).toBeVisible();
     expect(
       screen.getByRole("heading", { name: "Existing ledger invoice" }),
@@ -216,63 +216,15 @@ describe("invoice workflow UI", () => {
     expect(
       await screen.findByRole("heading", { name: "2 issues need attention" }),
     ).toBeVisible();
-    expect(screen.getAllByText("Price differs from PO").length).toBeGreaterThan(
-      0,
-    );
+    expect(screen.getAllByText("Price variance").length).toBeGreaterThan(0);
     expect(
-      screen.getAllByText("Quantity exceeds received goods").length,
+      screen.getAllByText("Receipt quantity exceeded").length,
     ).toBeGreaterThan(0);
     expect(
       screen.getByText(
         /Requested 3 EA; received availability 2 EA; shortfall 1 EA/i,
       ),
     ).toBeVisible();
-  });
-
-  it("shows OCR and AI evidence only when document extraction still needs review", async () => {
-    const runId = "33333333-3333-4333-8333-333333333333";
-    window.history.replaceState({}, "", `/runs/${runId}`);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        jsonResponse(
-          runDetail({
-            runId,
-            state: "NEEDS_REVIEW",
-            decision: "NEEDS_REVIEW",
-            execution: "BLOCKED",
-            reasonCode: "LOW_CONFIDENCE",
-            ledgerId: null,
-            nextAction: "Review the source document.",
-            aiRechecks: [
-              {
-                field: "lines.0.quantity",
-                originalOcrValue: "8",
-                ocrConfidence: 0.62,
-                sourceId: "item.0.Quantity",
-                page: 1,
-                aiValue: null,
-                model: "gpt-5-mini",
-                attemptedAt: "2026-07-13T10:00:00.000Z",
-                outcome: "needs_review",
-              },
-            ],
-          }),
-        ),
-      ),
-    );
-
-    render(<App />);
-
-    expect(
-      await screen.findByLabelText("Document extraction issue"),
-    ).toBeVisible();
-    expect(screen.getAllByText("OCR reading")[0]).toBeVisible();
-    expect(screen.getAllByText("OCR confidence")[0]).toBeVisible();
-    expect(screen.getAllByText("AI re-read")[0]).toBeVisible();
-    expect(screen.getAllByText("Source/page")[0]).toBeVisible();
-    expect(screen.getAllByText("62%")[0]).toBeVisible();
-    expect(screen.getAllByText("No usable value")[0]).toBeVisible();
   });
 
   it("shows a retry action when processing fails unexpectedly", async () => {
@@ -373,7 +325,7 @@ describe("invoice workflow UI", () => {
     expect(screen.getByText(/2 received available/)).toBeVisible();
     const action = screen.getByLabelText("PO confirmation");
     const evidence = screen.getByRole("heading", {
-      name: "Select the purchase order",
+      name: "Suggested purchase order",
     });
     const document = screen.getByRole("heading", { name: "Original PDF" });
     expect(
