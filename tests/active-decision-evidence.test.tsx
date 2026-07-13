@@ -105,11 +105,15 @@ describe("active decision evidence", () => {
     expect(
       screen.getByRole("heading", { name: "2 issues require review" }),
     ).toBeVisible();
+    expect(screen.getByText("Quantity exceeds received goods")).toBeVisible();
     expect(screen.getByText(/\$15\.00 total variance/)).toBeVisible();
-    expect(screen.getByRole("columnheader", { name: "PO" })).toBeVisible();
-    expect(screen.getByRole("columnheader", { name: "Item" })).toBeVisible();
-    expect(screen.getByText("Available to invoice")).toBeVisible();
-    expect(screen.getAllByText("3 EA")).toHaveLength(1);
+    const issueCards = document.querySelectorAll("[data-review-issue]");
+    expect(issueCards).toHaveLength(2);
+    expect(new Set([...issueCards].map((card) => card.className))).toHaveLength(
+      1,
+    );
+    expect(issueCards[0]?.parentElement).toHaveClass("space-y-2");
+    expect(screen.queryByRole("columnheader")).not.toBeInTheDocument();
     expect(screen.queryByText("Capacity check")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Why this invoice is blocked"),
