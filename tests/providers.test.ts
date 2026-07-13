@@ -597,7 +597,7 @@ describe("AI extraction re-checks", () => {
           id: "ai_full_document.vendor",
           content: "Acme Industrial Supplies LLC",
           confidence: null,
-          page: null,
+          page: 1,
           sourceKind: "AI_RECHECK",
         }),
       ]),
@@ -676,6 +676,49 @@ describe("AI extraction re-checks", () => {
     );
 
     expect(reread.mapping.poNumber).toBe("ai_full_document.poNumber");
+    expect(reread.aiRechecks).toEqual([
+      expect.objectContaining({
+        field: "poNumber",
+        page: 1,
+        outcome: "resolved",
+      }),
+    ]);
+  });
+
+  it("does not report optional invoice fields that are absent from the document", async () => {
+    const poMissing = { ...mapping, poNumber: null };
+    const reread = await recheckMissingFieldsWithFullDocument(
+      await onePagePdf(),
+      evidence,
+      poMissing,
+      async () => ({
+        vendor: "Acme Industrial Supplies LLC",
+        invoiceNumber: "ACME-2026-001",
+        invoiceDate: "2026-07-01",
+        poNumber: null,
+        currency: "USD",
+        subtotal: null,
+        tax: null,
+        total: "990.00",
+        taxNote: null,
+        lines: [
+          {
+            sku: "WID-100",
+            description: "Industrial Widget",
+            quantity: "8",
+            uom: "EA",
+            unitPrice: "100.00",
+            amount: "800.00",
+            taxInclusion: null,
+            taxRate: null,
+            taxAmount: null,
+          },
+        ],
+      }),
+    );
+
+    expect(reread.mapping.poNumber).toBeNull();
+    expect(reread.aiRechecks).toEqual([]);
   });
 
   it("does not apply a partial full-document response", async () => {

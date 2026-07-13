@@ -105,18 +105,18 @@ export async function processInvoice(runId: string, storage: Storage) {
               detail: ambiguousDate
                 ? `${fieldName} has an ambiguous numeric date format.`
                 : missingField
-                  ? `${fieldName} is missing from the document.`
-                : `${fieldName} could not be read reliably.`,
+                  ? `${fieldName} could not be extracted reliably.`
+                  : `${fieldName} could not be read reliably.`,
               expected: ambiguousDate
                 ? "An unambiguous invoice date"
                 : missingField
                   ? `A readable ${fieldName.toLowerCase()}`
-                : `A readable ${fieldName.toLowerCase()}`,
+                  : `A readable ${fieldName.toLowerCase()}`,
               actual: ambiguousDate
                 ? "Ambiguous numeric date"
                 : missingField
-                  ? "Not found"
-                : "Low-confidence scan",
+                  ? "Not extracted"
+                  : "Low-confidence scan",
               category: "IDENTITY",
               sourceIds: [sourceIdForField(activeMapping, failedField)].filter(
                 (id): id is string => Boolean(id),
@@ -448,7 +448,7 @@ function nextActionFor(reasonCode: string) {
       MAPPING_FAILED:
         "Inspect the extracted evidence and retry; no values were assumed.",
       MISSING_REQUIRED_FIELD:
-        "Correct the invoice or provide a document containing the highlighted field.",
+        "Review the highlighted field in the source document; correct the document only if the value is truly absent.",
       AMBIGUOUS_DATE:
         "Confirm whether the invoice date is day-month or month-day, then provide an unambiguous date.",
       TAX_TREATMENT_UNRESOLVED:
@@ -470,7 +470,8 @@ function nextActionFor(reasonCode: string) {
         "Review the invoice price against the PO or bundle definition.",
       MULTIPLE_ISSUES:
         "Resolve every failed control before submitting this invoice again.",
-      TOTAL_MISMATCH: "Correct the invoice arithmetic.",
+      TOTAL_MISMATCH:
+        "Review the current line items and totals for an omitted, duplicated, or inconsistent charge.",
       UNSUPPORTED_STRUCTURE: "Route it to the normal manual AP process.",
       PROCESSING_ERROR:
         "Retry; if it repeats, inspect application diagnostics without reposting.",

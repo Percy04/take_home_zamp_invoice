@@ -161,6 +161,7 @@ export function normalizeInvoice(
   const invoiceDate = parseDate(
     select(mapping.invoiceDate, true, "invoiceDate"),
     "invoiceDate",
+    evidence,
   );
   const poNumber = select(mapping.poNumber, false, "poNumber");
   if (
@@ -173,33 +174,96 @@ export function normalizeInvoice(
 
   const observedLines = mapping.lines.map((line, index) => {
     const sourceIds: Record<string, string> = {};
-    const sku = select(line.sku, false, "sku", sourceIds);
-    const description = select(
+    const rawSku = select(line.sku, false, "sku", sourceIds);
+    const rawDescription = select(
       line.description,
       false,
       "description",
       sourceIds,
     );
+    const compact = compactLine(rawSku, rawDescription);
+    const sku = compact?.sku ?? rawSku;
+    const description = compact?.description ?? rawDescription;
     if (!sku && !description)
       failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.identity`);
-    const quantityReading = select(line.quantity, true, "quantity", sourceIds);
-    const embeddedUom = quantityReading.match(/^[\d.,]+\s*([a-zA-Z]+)$/)?.[1] ?? "";
-    const quantity = parseQuantity(
-      quantityReading.replace(/\s*[a-zA-Z]+$/, ""),
-      `lines.${index}.quantity`,
+    const mappedQuantity = select(line.quantity, false, "quantity", sourceIds);
+    const quantityReading = compact?.quantity ?? mappedQuantity;
+    const embeddedUom =
+      quantityReading.match(/^[\d.,]+\s*([a-zA-Z]+)$/)?.[1] ?? "";
+    let quantity = quantityReading
+      ? parseQuantity(
+          quantityReading.replace(/\s*[a-zA-Z]+$/, ""),
+          `lines.${index}.quantity`,
+        )
+      : null;
+    const mappedUom = select(line.uom, false, "uom", sourceIds);
+    const uom = parseUom(compact?.uom || mappedUom || embeddedUom || "");
+    const mappedUnitPrice = select(
+      line.unitPrice,
+      false,
+      "observedUnitPrice",
+      sourceIds,
     );
-    const uom = parseUom(
-      select(line.uom, false, "uom", sourceIds) || embeddedUom,
-      `lines.${index}.uom`,
-    );
-    const observedUnitPrice = requiredMoney(
-      select(line.unitPrice, true, "observedUnitPrice", sourceIds),
+    let observedUnitPrice = optionalMoney(
+      compact?.unitPrice ?? mappedUnitPrice,
       `lines.${index}.observedUnitPrice`,
     );
-    const observedAmount = requiredMoney(
-      select(line.amount, true, "observedAmount", sourceIds),
+    const mappedAmount = select(
+      line.amount,
+      false,
+      "observedAmount",
+      sourceIds,
+    );
+    let observedAmount = optionalMoney(
+      compact?.amount ?? mappedAmount,
       `lines.${index}.observedAmount`,
     );
+    const derivations: NormalizedInvoice["lines"][number]["derivations"] = [];
+    if (!quantity && observedUnitPrice && observedAmount) {
+      if (observedUnitPrice.isZero())
+        failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.quantity`);
+      quantity = observedAmount.div(observedUnitPrice);
+      derivations.push({
+        field: "quantity",
+        formula: `${money(observedAmount)} / ${money(observedUnitPrice)}`,
+        sourceIds: [
+          sourceIds.observedAmount,
+          sourceIds.observedUnitPrice,
+        ].filter((id): id is string => Boolean(id)),
+      });
+    }
+    if (!observedUnitPrice && quantity && observedAmount) {
+      observedUnitPrice = observedAmount.div(quantity);
+      derivations.push({
+        field: "unitPrice",
+        formula: `${money(observedAmount)} / ${quantity.toString()}`,
+        sourceIds: [sourceIds.observedAmount, sourceIds.quantity].filter(
+          (id): id is string => Boolean(id),
+        ),
+      });
+    }
+    if (!observedAmount && quantity && observedUnitPrice) {
+      observedAmount = quantity.mul(observedUnitPrice);
+      derivations.push({
+        field: "amount",
+        formula: `${quantity.toString()} * ${money(observedUnitPrice)}`,
+        sourceIds: [sourceIds.quantity, sourceIds.observedUnitPrice].filter(
+          (id): id is string => Boolean(id),
+        ),
+      });
+    }
+    if (!quantity)
+      failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.quantity`);
+    if (!observedUnitPrice)
+      failNormalization(
+        "MISSING_REQUIRED_FIELD",
+        `lines.${index}.observedUnitPrice`,
+      );
+    if (!observedAmount)
+      failNormalization(
+        "MISSING_REQUIRED_FIELD",
+        `lines.${index}.observedAmount`,
+      );
     const taxInclusion = select(
       line.taxInclusion,
       false,
@@ -224,6 +288,7 @@ export function normalizeInvoice(
       taxRate,
       observedTaxAmount,
       sourceIds,
+      derivations,
     };
   });
 
@@ -259,10 +324,7 @@ export function normalizeInvoice(
 
   const documentInclusionClaim = claimsTaxInclusion(taxNote);
   const documentRate = parseTaxRate(taxNote);
-  if (
-    (documentInclusionClaim && !documentRate) ||
-    (documentRate && !documentInclusionClaim)
-  )
+  if (documentInclusionClaim && !documentRate)
     failNormalization("TAX_TREATMENT_UNRESOLVED");
 
   const lines = observedLines.map((line) => {
@@ -272,8 +334,7 @@ export function normalizeInvoice(
       ? claimsTaxInclusion(lineTaxText)
       : documentInclusionClaim;
     const rate = hasLineTaxEvidence ? parseTaxRate(lineTaxText) : documentRate;
-    if ((inclusionClaim && !rate) || (rate && !inclusionClaim))
-      failNormalization("TAX_TREATMENT_UNRESOLVED");
+    if (inclusionClaim && !rate) failNormalization("TAX_TREATMENT_UNRESOLVED");
     const amount = inclusionClaim
       ? money(line.observedAmount.div(new Decimal(1).plus(rate!)))
       : money(line.observedAmount);
@@ -303,18 +364,21 @@ export function normalizeInvoice(
           : ("ZERO" as const),
       taxRate: rate?.toString() ?? null,
       sourceIds: line.sourceIds,
-      derivations: inclusionClaim
-        ? [
-            {
-              field: "amount",
-              formula: `${money(line.observedAmount)} / (1 + ${rate!.toString()})`,
-              sourceIds: [
-                line.sourceIds.observedAmount,
-                fieldSources.taxNote,
-              ].filter((id): id is string => Boolean(id)),
-            },
-          ]
-        : [],
+      derivations: [
+        ...line.derivations,
+        ...(inclusionClaim
+          ? [
+              {
+                field: "amount",
+                formula: `${money(line.observedAmount)} / (1 + ${rate!.toString()})`,
+                sourceIds: [
+                  line.sourceIds.observedAmount,
+                  fieldSources.taxNote,
+                ].filter((id): id is string => Boolean(id)),
+              },
+            ]
+          : []),
+      ],
     };
   });
   const goodsSubtotal = lines.reduce(
@@ -363,7 +427,7 @@ export function normalizeInvoice(
     taxTreatment = "ZERO";
     normalizedTax = new Decimal(0);
   } else {
-    failNormalization("TAX_TREATMENT_UNRESOLVED");
+    failNormalization("TOTAL_MISMATCH");
   }
 
   if (goodsSubtotal.plus(normalizedTax).minus(observedTotal).abs().gt("0.01"))
@@ -966,7 +1030,9 @@ function allocationFor(input: {
     poUnitPrice: input.poLine.unit_price,
     orderedQuantity: input.poLine.ordered_quantity,
     receivedQuantity: input.poLine.received_quantity,
-    previouslyInvoicedQuantity: (input.used.get(input.poLine.id) ?? new Decimal(0)).toString(),
+    previouslyInvoicedQuantity: (
+      input.used.get(input.poLine.id) ?? new Decimal(0)
+    ).toString(),
     availableOrderedQuantity,
     availableReceivedQuantity,
     matchReason:
@@ -1144,15 +1210,43 @@ function parseQuantity(value: string, field?: string) {
   return quantity;
 }
 
-function parseUom(value: string, field?: string) {
+function parseUom(value: string) {
   const normalized = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (["EA", "EACH", "PC", "PCS"].includes(normalized)) return "EA";
   if (normalized === "KIT") return "KIT";
-  if (!normalized) failNormalization("MISSING_REQUIRED_FIELD", field);
+  if (!normalized) return "";
   return normalized;
 }
 
-function parseDate(value: string, field?: string) {
+function compactLine(...values: string[]) {
+  const value = values.find((candidate) => candidate.includes("|"));
+  if (!value) return null;
+  const parts = value
+    .replace(/^\s*Line\s+\d+\s*:\s*/i, "")
+    .split("|")
+    .map((part) => part.trim());
+  if (parts.length < 2) return null;
+  const uom = parts
+    .slice(2)
+    .join(" ")
+    .match(/\b(EA|EACH|PC|PCS|KIT|HRS?|HOURS?)\b/i)?.[1];
+  const arithmetic = parts
+    .slice(2)
+    .join(" ")
+    .match(
+      /(-?\d+(?:[.,]\d+)?)\s*(?:EA|EACH|PC|PCS|KIT|HRS?|HOURS?)?\s*[x×]\s*\$?([\d,.]+)\s*=\s*\$?([\d,.]+)/i,
+    );
+  return {
+    sku: parts[0]!,
+    description: parts[1]!,
+    uom: uom ?? "",
+    quantity: arithmetic?.[1],
+    unitPrice: arithmetic?.[2],
+    amount: arithmetic?.[3],
+  };
+}
+
+function parseDate(value: string, field?: string, evidence: SourceRef[] = []) {
   const normalized = value.normalize("NFKC").trim().replace(/\s+/g, " ");
   let year: number;
   let month: number;
@@ -1167,7 +1261,12 @@ function parseDate(value: string, field?: string) {
     if (first! > 12 && second! <= 12) [day, month] = [first!, second!];
     else if (second! > 12 && first! <= 12) [month, day] = [first!, second!];
     else if (first === second) [month, day] = [first!, second!];
-    else failNormalization("AMBIGUOUS_DATE", field);
+    else {
+      const order = numericDateOrder(evidence);
+      if (order === "MONTH_FIRST") [month, day] = [first!, second!];
+      else if (order === "DAY_FIRST") [day, month] = [first!, second!];
+      else failNormalization("AMBIGUOUS_DATE", field);
+    }
   } else {
     const dayFirst = normalized.match(
       /^(\d{1,2})(?:st|nd|rd|th)?[\s.-]+([A-Za-z]{3,9})[\s,.-]+(\d{4})$/i,
@@ -1193,6 +1292,22 @@ function parseDate(value: string, field?: string) {
   )
     failNormalization("MISSING_REQUIRED_FIELD", field);
   return `${String(year!).padStart(4, "0")}-${String(month!).padStart(2, "0")}-${String(day!).padStart(2, "0")}`;
+}
+
+function numericDateOrder(evidence: SourceRef[]) {
+  const orders = new Set<"MONTH_FIRST" | "DAY_FIRST">();
+  for (const source of evidence) {
+    if (!/DATE/i.test(source.label)) continue;
+    const match = source.content
+      .trim()
+      .match(/^(\d{1,2})[./-](\d{1,2})[./-]\d{4}$/);
+    if (!match) continue;
+    const first = Number(match[1]);
+    const second = Number(match[2]);
+    if (second > 12 && first <= 12) orders.add("MONTH_FIRST");
+    if (first > 12 && second <= 12) orders.add("DAY_FIRST");
+  }
+  return orders.size === 1 ? [...orders][0] : null;
 }
 
 function canonicalNumber(value: string) {

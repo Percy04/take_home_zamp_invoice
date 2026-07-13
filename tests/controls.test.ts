@@ -60,6 +60,81 @@ function inclusiveEvidence(): SourceRef[] {
 }
 
 describe("deterministic normalization", () => {
+  it("recovers a compact line item from exact arithmetic", () => {
+    const evidence = inclusiveEvidence().map((item) => ({ ...item }));
+    evidence.find((item) => item.id === "sku")!.content =
+      "Line 1: VAL-500 | Control Valve | 3 EA x $55.00 = $165.00";
+    evidence.find((item) => item.id === "description")!.content =
+      "Line 1: VAL-500 | Control Valve | 3 EA x $55.00 = $165.00";
+    evidence.find((item) => item.id === "unitPrice")!.content = "$55.00";
+    evidence.find((item) => item.id === "amount")!.content = "$165.00";
+    evidence.find((item) => item.id === "total")!.content = "$165.00";
+    const compact = {
+      ...mapping,
+      taxNote: null,
+      lines: [
+        {
+          ...mapping.lines[0],
+          quantity: "description",
+          uom: "description",
+          unitPrice: "description",
+          amount: "description",
+        },
+      ],
+    };
+
+    expect(normalizeInvoice(evidence, compact).lines[0]).toMatchObject({
+      sku: "VAL-500",
+      description: "Control Valve",
+      quantity: "3",
+      uom: "EA",
+      unitPrice: "55.00",
+      amount: "165.00",
+      derivations: [],
+    });
+  });
+
+  it("derives a service line rate when hours and extension are printed", () => {
+    const evidence = inclusiveEvidence().map((item) => ({ ...item }));
+    evidence.find((item) => item.id === "sku")!.content = "";
+    evidence.find((item) => item.id === "description")!.content =
+      "Prepare Payout Request Log";
+    evidence.find((item) => item.id === "quantity")!.content = "3.00";
+    evidence.find((item) => item.id === "amount")!.content = "$375.00";
+    evidence.find((item) => item.id === "total")!.content = "$375.00";
+    const service = {
+      ...mapping,
+      taxNote: null,
+      lines: [{ ...mapping.lines[0], unitPrice: null, uom: null }],
+    };
+
+    expect(normalizeInvoice(evidence, service).lines[0]).toMatchObject({
+      description: "Prepare Payout Request Log",
+      quantity: "3",
+      uom: "",
+      unitPrice: "125.00",
+      amount: "375.00",
+      derivations: [
+        expect.objectContaining({
+          field: "unitPrice",
+          sourceIds: ["amount", "quantity"],
+        }),
+      ],
+    });
+  });
+
+  it("classifies an unexplained gap between lines and total as a total mismatch", () => {
+    const evidence = inclusiveEvidence();
+    evidence.find((item) => item.id === "total")!.content = "$11,812.50";
+    const noTaxEvidence = { ...mapping, taxNote: null };
+
+    expect(() => normalizeInvoice(evidence, noTaxEvidence)).toThrowError(
+      expect.objectContaining<Partial<NormalizationError>>({
+        reasonCode: "TOTAL_MISMATCH",
+      }),
+    );
+  });
+
   it("uses the unit embedded in a valid quantity when no UOM field is mapped", () => {
     const evidence = inclusiveEvidence();
     evidence.find((item) => item.id === "quantity")!.content = "2 pcs";
@@ -71,6 +146,48 @@ describe("deterministic normalization", () => {
     expect(normalizeInvoice(evidence, withoutUom).lines[0]).toMatchObject({
       quantity: "2",
       uom: "EA",
+    });
+  });
+
+  it("uses an unambiguous sibling date to resolve the invoice date order", () => {
+    const evidence = inclusiveEvidence();
+    evidence.find((item) => item.id === "date")!.content = "09.01.2025";
+    evidence.push(source("dueDate", "09.14.2025", "DueDate"));
+
+    expect(normalizeInvoice(evidence, mapping).invoiceDate).toBe("2025-09-01");
+  });
+
+  it("treats a printed tax rate without inclusive language as exclusive tax", () => {
+    const evidence = inclusiveEvidence();
+    evidence.find((item) => item.id === "date")!.content = "2025-09-01";
+    evidence.find((item) => item.id === "unitPrice")!.content = "$1,000.00";
+    evidence.find((item) => item.id === "amount")!.content = "$1,000.00";
+    evidence.find((item) => item.id === "quantity")!.content = "1";
+    evidence.find((item) => item.id === "total")!.content = "$1,050.00";
+    evidence.push(source("subtotal", "$1,000.00", "SubTotal"));
+    evidence.push(source("tax", "$50.00", "TotalTax"));
+    evidence.push(source("lineRate", "5%", "TaxRate"));
+    const exclusive: InvoiceMapping = {
+      ...mapping,
+      subtotal: "subtotal",
+      tax: "tax",
+      taxNote: null,
+      lines: [
+        {
+          ...mapping.lines[0],
+          taxRate: "lineRate",
+          taxInclusion: null,
+          taxAmount: null,
+        },
+      ],
+    };
+
+    expect(normalizeInvoice(evidence, exclusive)).toMatchObject({
+      taxTreatment: "EXCLUSIVE",
+      subtotal: "1000.00",
+      tax: "50.00",
+      total: "1050.00",
+      lines: [{ taxRate: "0.05" }],
     });
   });
 

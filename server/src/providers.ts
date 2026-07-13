@@ -339,7 +339,7 @@ type AiPageReader = (
   fields: LowConfidenceField[],
 ) => Promise<Record<string, string | null>>;
 
-type AiFullDocumentReader = (documentPdf: Buffer) => Promise<InvoiceExtraction>;
+type AiFullDocumentReader = (documentPdf: Buffer) => Promise<unknown>;
 
 function aiRecheckResponseSchemaFor(fields: LowConfidenceField[]) {
   return z.object({
@@ -456,6 +456,7 @@ export async function recheckMissingFieldsWithFullDocument(
   const extractedByField = new Map(
     values.map(({ field, value }) => [field, value ?? null]),
   );
+  const documentPage = await singlePageNumber(bytes);
 
   for (const { field, id } of fullDocumentTargets(mapping, extracted)) {
     const value = extractedByField.get(field)?.trim() || null;
@@ -465,7 +466,7 @@ export async function recheckMissingFieldsWithFullDocument(
       originalOcrValue: source?.content ?? "",
       ocrConfidence: source?.confidence ?? null,
       sourceId: source?.id ?? "document",
-      page: source?.page ?? null,
+      page: source?.page ?? documentPage,
       aiValue: value,
       model,
       attemptedAt: new Date().toISOString(),
@@ -482,7 +483,7 @@ export async function recheckMissingFieldsWithFullDocument(
             id: `ai_full_document.${record.field}`,
             content: record.aiValue,
             confidence: null,
-            page: null,
+            page: record.page,
             label: `${formatRecheckField(record.field)} full-document AI extraction`,
             sourceKind: "AI_RECHECK" as const,
           },
@@ -522,23 +523,48 @@ function fullDocumentTargets(
   mapping: InvoiceMapping,
   extracted: InvoiceExtraction | null,
 ) {
-  const targets: Array<{ field: string; id: string | null | undefined }> =
-    mappingHeaderFields
-      .filter((field) => !mapping[field])
-      .map((field) => ({ field, id: mapping[field] ?? null }));
+  const requiredHeaders = new Set<keyof InvoiceMapping>([
+    "vendor",
+    "invoiceNumber",
+    "invoiceDate",
+    "total",
+  ]);
+  const targets: Array<{ field: string; id: string | null | undefined }> = [];
+  for (const field of mappingHeaderFields) {
+    if (mapping[field]) continue;
+    if (requiredHeaders.has(field) || extracted?.[field]?.trim())
+      targets.push({ field, id: null });
+  }
   const lineCount = Math.max(
     mapping.lines.length,
     extracted?.lines.length ?? 0,
   );
   for (let index = 0; index < lineCount; index += 1) {
     const existing = mapping.lines[index];
+    const reread = extracted?.lines[index];
     for (const field of mappingLineFields) {
-      if (!existing?.[field])
+      if (!existing?.[field] && reread?.[field]?.trim())
         targets.push({
           field: `lines.${index}.${field}`,
           id: existing?.[field] ?? null,
         });
     }
+    const hasIdentity = Boolean(
+      existing?.sku ||
+      existing?.description ||
+      reread?.sku?.trim() ||
+      reread?.description?.trim(),
+    );
+    if (!hasIdentity)
+      targets.push({ field: `lines.${index}.identity`, id: null });
+    const arithmetic = ["quantity", "unitPrice", "amount"] as const;
+    const available = arithmetic.filter(
+      (field) => existing?.[field] || reread?.[field]?.trim(),
+    );
+    if (available.length < 2)
+      for (const field of arithmetic)
+        if (!existing?.[field] && !reread?.[field]?.trim())
+          targets.push({ field: `lines.${index}.${field}`, id: null });
   }
   if (!lineCount) targets.push({ field: "lines", id: null });
   return targets;
@@ -585,7 +611,6 @@ function completeInvoiceExtraction(extraction: InvoiceExtraction) {
     extraction.vendor,
     extraction.invoiceNumber,
     extraction.invoiceDate,
-    extraction.currency,
     extraction.total,
   ];
   return (
@@ -594,12 +619,19 @@ function completeInvoiceExtraction(extraction: InvoiceExtraction) {
     extraction.lines.every(
       (line) =>
         Boolean((line.sku || line.description)?.trim()) &&
-        Boolean(line.quantity?.trim()) &&
-        Boolean(line.uom?.trim()) &&
-        Boolean(line.unitPrice?.trim()) &&
-        Boolean(line.amount?.trim()),
+        [line.quantity, line.unitPrice, line.amount].filter((value) =>
+          Boolean(value?.trim()),
+        ).length >= 2,
     )
   );
+}
+
+async function singlePageNumber(bytes: Buffer) {
+  try {
+    return (await PDFDocument.load(bytes)).getPageCount() === 1 ? 1 : null;
+  } catch {
+    return null;
+  }
 }
 
 function emptyInvoiceMapping(): InvoiceMapping {
@@ -818,7 +850,7 @@ async function readFullDocumentWithConfiguredAi(
   documentPdf: Buffer,
 ): Promise<InvoiceExtraction> {
   const prompt =
-    "Read the complete attached invoice. Return every printed invoice header and line item exactly as document text; use null only when a value is not present. Do not select a purchase order, map bundles, approve variances, receipts, or duplicates. Do not calculate or provide confidence scores.";
+    "Read the complete attached invoice. Return every printed invoice header and current-invoice line item exactly as document text; use null only when a value is not present. Include fee-summary, progress-billing, and current-invoice rows when they contribute to the invoice total. Exclude previously invoiced amounts, prior balances, payments, and remaining balances from current line items. Split compact or pipe-delimited rows into their printed SKU, description, quantity, UOM, unit price, and amount fields. Do not select a purchase order, map bundles, approve variances, receipts, or duplicates. Do not calculate or provide confidence scores.";
   if (env.MAPPING_PROVIDER === "openai") {
     if (!env.OPENAI_API_KEY)
       throw new ProviderError("CONFIG", "OpenAI is not configured.");
