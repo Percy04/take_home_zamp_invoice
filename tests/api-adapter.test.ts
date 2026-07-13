@@ -85,4 +85,130 @@ describe("Lovable API adapter", () => {
       }),
     ]);
   });
+
+  it("keeps extracted USD preview amounts visible when date normalization is blocked", () => {
+    const run = toUiRun({
+      runId: "5510339d-5647-455b-91f3-272361da4a54",
+      filename: "02-Invoice-2.pdf",
+      state: "NEEDS_REVIEW",
+      decision: "NEEDS_REVIEW",
+      execution: "BLOCKED",
+      reasonCode: "AMBIGUOUS_DATE",
+      nextAction: "Confirm whether 09.01.2025 is day-month or month-day.",
+      ledgerId: null,
+      createdAt: "2026-07-13T09:53:57.781Z",
+      updatedAt: "2026-07-13T09:54:09.663Z",
+      stages: [],
+      evidence: [],
+      invoice: null,
+      invoicePreview: {
+        vendor: "Keystone Contractors",
+        invoiceNumber: "1001",
+        invoiceDate: "09.01.2025",
+        poNumber: null,
+        currency: "USD",
+        subtotal: "$1 000.00",
+        tax: "$50.00",
+        total: "$1 050.00",
+        missingField: "invoiceDate",
+        lines: [
+          {
+            sku: null,
+            description: "Portfolio review",
+            quantity: "1",
+            uom: null,
+            unitPrice: "$1 000.00",
+            amount: "$1 000.00",
+          },
+        ],
+      },
+      duplicateMatch: null,
+      checks: [],
+      allocations: [],
+      candidatePo: null,
+      poCandidates: [],
+      bundleCandidates: [],
+    } as RunDetail);
+
+    expect(run.reasonCode).toBe("AMBIGUOUS_DATE");
+    expect(run.invoice).toMatchObject({
+      observedSubtotal: 1000,
+      observedTax: 50,
+      observedTotal: 1050,
+      normalizedTotal: 1050,
+      lines: [{ unitPrice: 1000, amount: 1000 }],
+    });
+  });
+
+  it("keeps low-confidence scanned values visible and parses quantities with their unit", () => {
+    const run = toUiRun({
+      runId: "5510339d-5647-455b-91f3-272361da4a54",
+      filename: "happy_layout_c_scanned.pdf",
+      state: "NEEDS_REVIEW",
+      decision: "NEEDS_REVIEW",
+      execution: "BLOCKED",
+      reasonCode: "LOW_CONFIDENCE",
+      nextAction: "Verify the highlighted values in the source document.",
+      ledgerId: null,
+      createdAt: "2026-07-13T09:53:57.781Z",
+      updatedAt: "2026-07-13T09:54:09.663Z",
+      stages: [],
+      evidence: [
+        {
+          id: "line.1.l0",
+          content: "8 pcs",
+          confidence: 0.62,
+          page: 1,
+          label: "OCR line",
+        },
+      ],
+      invoice: null,
+      invoicePreview: {
+        vendor: "Acme Industrial Supplies LLC",
+        invoiceNumber: "ACME-2026-001",
+        invoiceDate: "2026-07-01",
+        poNumber: "PO-1001",
+        currency: "USD",
+        subtotal: "$900.00",
+        tax: "$90.00",
+        total: "$990.00",
+        missingField: "lines.0.quantity",
+        lines: [
+          {
+            sku: "WID-100",
+            description: "Industrial Widget",
+            quantity: "8 pcs",
+            uom: null,
+            unitPrice: "$100.00",
+            amount: "$800.00",
+          },
+        ],
+      },
+      duplicateMatch: null,
+      checks: [
+        {
+          code: "LOW_CONFIDENCE",
+          passed: false,
+          detail: "Product code and quantity could not be read reliably.",
+          category: "IDENTITY",
+          sourceIds: ["line.1.l0"],
+        },
+      ],
+      allocations: [],
+      candidatePo: null,
+      poCandidates: [],
+      bundleCandidates: [],
+    } as RunDetail);
+
+    expect(run.reasonCode).toBe("LOW_CONFIDENCE");
+    expect(run.invoice).toMatchObject({
+      invoiceDate: "2026-07-01",
+      poNumber: "PO-1001",
+      lines: [{ quantity: 8, uom: "pcs" }],
+    });
+    expect(run.invoice?.missingFields).toBeUndefined();
+    expect(run.evidence).toEqual([
+      expect.objectContaining({ id: "line.1.l0", content: "8 pcs", confidence: 0.62 }),
+    ]);
+  });
 });

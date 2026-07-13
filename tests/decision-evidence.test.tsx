@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DecisionEvidence } from "../frontend_v1/ap-resolve-console/src/components/DecisionEvidence";
 import * as api from "../frontend_v1/ap-resolve-console/src/lib/api";
 import type { Run } from "../frontend_v1/ap-resolve-console/src/lib/types";
@@ -40,6 +40,7 @@ const base = {
 } satisfies Omit<Run, "state" | "reasonCode">;
 
 describe("DecisionEvidence", () => {
+  afterEach(cleanup);
   beforeEach(() => vi.resetAllMocks());
 
   it("compares a duplicate against the existing posting", () => {
@@ -61,9 +62,59 @@ describe("DecisionEvidence", () => {
 
     render(<DecisionEvidence run={run} />);
 
-    expect(screen.getByText("Compare with existing posting")).toBeVisible();
+    expect(screen.getByText("Duplicate invoice")).toBeVisible();
     expect(screen.getAllByText("✓ identical")).toHaveLength(4);
     expect(screen.getByText("LEDGER-bf1055b6")).toBeVisible();
+    expect(
+      screen.queryByText(
+        "This invoice matches an existing ledger posting. It was not posted again.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps missing-date evidence to the issue and extracted fields", () => {
+    const run: Run = {
+      ...base,
+      state: "NEEDS_REVIEW",
+      reasonCode: "MISSING_FIELD",
+      invoice: { ...base.invoice, invoiceDate: "" },
+    };
+
+    render(<DecisionEvidence run={run} />);
+
+    expect(screen.getByText("Invoice date")).toBeVisible();
+    expect(screen.getByText("Missing")).toBeVisible();
+    expect(screen.getByText("Not found")).toBeVisible();
+  });
+
+  it("does not claim the invoice date is missing when the extracted date is present", () => {
+    const run: Run = {
+      ...base,
+      state: "NEEDS_REVIEW",
+      reasonCode: "MISSING_FIELD",
+      invoice: { ...base.invoice, missingFields: ["lines.0.quantity"] },
+    };
+
+    render(<DecisionEvidence run={run} />);
+
+    expect(screen.getByText("Line 1 quantity")).toBeVisible();
+    expect(screen.queryByText("Invoice date")).not.toBeInTheDocument();
+  });
+
+  it("groups date ambiguity and a missing PO number under invoice data", () => {
+    const run: Run = {
+      ...base,
+      state: "NEEDS_REVIEW",
+      reasonCode: "AMBIGUOUS_DATE",
+      invoice: { ...base.invoice, invoiceDate: "09.01.2025", poNumber: null },
+    };
+
+    render(<DecisionEvidence run={run} />);
+
+    expect(screen.getByRole("heading", { name: "Invoice data issues · 2" })).toBeVisible();
+    expect(screen.getByRole("columnheader", { name: "Field" })).toBeVisible();
+    expect(screen.getByText("Ambiguous")).toBeVisible();
+    expect(screen.getByText("09.01.2025")).toBeVisible();
   });
 
   it("shows each independent failed control and a clear missing-date warning", () => {
@@ -102,6 +153,16 @@ describe("DecisionEvidence", () => {
       state: "AWAITING_PO_CONFIRMATION",
       execution: "AWAITING_CONFIRMATION",
       reasonCode: "MISSING_PO",
+      invoice: { ...base.invoice, poNumber: null },
+      checks: [
+        {
+          code: "MISSING_PO",
+          name: "Missing PO",
+          category: "ARITHMETIC",
+          pass: false,
+          explanation: "Invoice omitted its PO reference.",
+        },
+      ],
       poCandidates: [
         {
           poNumber: "PO-1002",
@@ -133,10 +194,15 @@ describe("DecisionEvidence", () => {
 
     render(<DecisionEvidence run={run} />);
 
+    expect(screen.getByRole("heading", { name: "Purchase order missing" })).toBeVisible();
     expect(screen.getAllByText("This invoice").at(-1)).toBeVisible();
     expect(screen.getByText("Available to invoice")).toBeVisible();
     expect(screen.queryByText("Received avail.")).not.toBeInTheDocument();
     expect(screen.queryByText("Ordered avail.")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Purchase order missing")).toHaveLength(1);
+    expect(
+      screen.queryByText("Suggested PO line matches this invoice item and has enough quantity to invoice."),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText("Confirming reruns price, capacity, and duplicate controls before anything posts."),
     ).not.toBeInTheDocument();
@@ -176,10 +242,47 @@ describe("DecisionEvidence", () => {
     );
     render(<DecisionEvidence run={run} />);
 
+    expect(screen.getAllByText("Bundle decomposition required")).toHaveLength(1);
+
     fireEvent.click(screen.getByRole("button", { name: "Confirm decomposition" }));
 
     expect(
       await screen.findByRole("alert"),
     ).toHaveTextContent("The requested run action is not valid.");
+  });
+
+  it("shows low-confidence details alongside the extracted invoice", () => {
+    const run: Run = {
+      ...base,
+      state: "NEEDS_REVIEW",
+      reasonCode: "LOW_CONFIDENCE",
+      invoice: {
+        ...base.invoice,
+        lines: [
+          { sku: "WID-100", description: "Industrial Widget", quantity: 8, uom: "pcs", unitPrice: 100, amount: 800 },
+        ],
+      },
+      evidence: [
+        { id: "line.1.l0", content: "8 pcs", confidence: 0.62, page: 1, label: "OCR line" },
+      ],
+      checks: [
+        {
+          code: "LOW_CONFIDENCE",
+          name: "Low confidence",
+          category: "IDENTITY",
+          pass: false,
+          explanation: "Quantity could not be read reliably.",
+          sourceRefs: [],
+        },
+      ],
+    };
+
+    render(<DecisionEvidence run={run} />);
+
+    expect(screen.getByText("Quantity low confidence")).toBeVisible();
+    expect(screen.getByText("Low confidence")).toBeVisible();
+    expect(screen.getByText("8 pcs")).toBeVisible();
+    expect(screen.getByText("62%")).toBeVisible();
+    expect(screen.getByText("OCR line · page 1")).toBeVisible();
   });
 });

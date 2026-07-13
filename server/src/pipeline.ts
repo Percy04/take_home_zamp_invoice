@@ -12,6 +12,7 @@ import {
   logProviderError,
   providerFailureReason,
 } from "./providers.js";
+import type { InvoiceMapping } from "./providers.js";
 import type { Storage } from "./storage.js";
 import type { Allocation, CheckResult } from "../../shared/contracts.js";
 
@@ -69,13 +70,21 @@ export async function processInvoice(runId: string, storage: Storage) {
       fields.length
         ? fields.map((failedField) => {
             const fieldName = formatField(failedField);
+            const ambiguousDate = reason === "AMBIGUOUS_DATE";
             return {
-              code: "LOW_CONFIDENCE",
+              code: ambiguousDate ? "AMBIGUOUS_DATE" : "LOW_CONFIDENCE",
               passed: false,
-              detail: `${fieldName} could not be read reliably.`,
-              expected: `A readable ${fieldName.toLowerCase()}`,
-              actual: "Low-confidence scan",
-              sourceIds: [],
+              detail: ambiguousDate
+                ? `${fieldName} has an ambiguous numeric date format.`
+                : `${fieldName} could not be read reliably.`,
+              expected: ambiguousDate
+                ? "An unambiguous invoice date"
+                : `A readable ${fieldName.toLowerCase()}`,
+              actual: ambiguousDate ? "Ambiguous numeric date" : "Low-confidence scan",
+              category: "IDENTITY",
+              sourceIds: [sourceIdForField(mapping, failedField)].filter(
+                (id): id is string => Boolean(id),
+              ),
             };
           })
         : [
@@ -89,7 +98,11 @@ export async function processInvoice(runId: string, storage: Storage) {
             },
           ],
       {
-        invoicePreview: buildInvoicePreview(evidence, mapping, fields[0] ?? null),
+        invoicePreview: buildInvoicePreview(
+          evidence,
+          mapping,
+          reason === "MISSING_REQUIRED_FIELD" ? (fields[0] ?? null) : null,
+        ),
       },
     );
     return storage.getRun(runId)!;
@@ -204,6 +217,27 @@ export async function processInvoice(runId: string, storage: Storage) {
   }
   storage.addStage(runId, "POSTING", "COMPLETED");
   return storage.getRun(runId)!;
+}
+
+function sourceIdForField(mapping: InvoiceMapping, field: string) {
+  const headers: Record<string, string | null | undefined> = {
+    vendor: mapping.vendor,
+    invoiceNumber: mapping.invoiceNumber,
+    invoiceDate: mapping.invoiceDate,
+    poNumber: mapping.poNumber,
+    currency: mapping.currency,
+    observedSubtotal: mapping.subtotal,
+    observedTax: mapping.tax,
+    observedTotal: mapping.total,
+    taxNote: mapping.taxNote,
+  };
+  if (field in headers) return headers[field] ?? null;
+
+  const lineField = field.match(/^lines\.(\d+)\.(.+)$/);
+  if (!lineField) return null;
+  const line = mapping.lines[Number(lineField[1])];
+  const value = line?.[lineField[2] as keyof typeof line];
+  return typeof value === "string" ? value : null;
 }
 
 export function confirmPo(runId: string, storage: Storage, poNumber: string) {
@@ -355,6 +389,8 @@ function nextActionFor(reasonCode: string) {
         "Inspect the extracted evidence and retry; no values were assumed.",
       MISSING_REQUIRED_FIELD:
         "Correct the invoice or provide a document containing the highlighted field.",
+      AMBIGUOUS_DATE:
+        "Confirm whether the invoice date is day-month or month-day, then provide an unambiguous date.",
       TAX_TREATMENT_UNRESOLVED:
         "Provide explicit tax treatment and rate evidence or route the invoice for manual tax review.",
       VENDOR_OR_PO_MISMATCH:

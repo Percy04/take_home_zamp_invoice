@@ -9,7 +9,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve("frontend_v1/ap-resolve-console/src"),
+      react: path.resolve("node_modules/react"),
+      "react-dom": path.resolve("node_modules/react-dom"),
     },
+    dedupe: ["react", "react-dom"],
   },
   build: { outDir: "../../dist/client", emptyOutDir: true },
   server: {
