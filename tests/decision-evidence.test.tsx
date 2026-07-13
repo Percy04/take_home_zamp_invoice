@@ -226,9 +226,9 @@ describe("DecisionEvidence", () => {
         name: "Invoice lines do not match the total",
       }),
     ).toBeVisible();
-    expect(screen.getAllByText("Invoice lines do not match the total").length).toBeGreaterThanOrEqual(
-      2,
-    );
+    expect(
+      screen.getAllByText("Invoice lines do not match the total"),
+    ).toHaveLength(2);
     expect(
       screen.getByText(/omitted, duplicated, or inconsistent charge/i),
     ).toBeVisible();

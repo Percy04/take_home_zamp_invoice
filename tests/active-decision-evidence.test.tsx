@@ -44,6 +44,13 @@ const run = {
       explanation:
         "Requested 3 EA; received availability 2 EA; shortfall 1 EA.",
     },
+    {
+      code: "PRICE_MATCH",
+      name: "Price variance",
+      category: "MATCHING",
+      pass: false,
+      explanation: "Aggregate direct-line price variance is at most $5.00.",
+    },
   ],
   capacityIssues: [
     {
@@ -94,14 +101,19 @@ describe("active decision evidence", () => {
   it("renders every independent failure and the receipt calculation", () => {
     render(<DecisionEvidence run={run} />);
 
-    expect(screen.getByText("Price differs from PO")).toBeVisible();
+    expect(screen.getAllByText("Price differs from PO")).toHaveLength(1);
+    expect(
+      screen.getByRole("heading", { name: "2 issues require review" }),
+    ).toBeVisible();
     expect(screen.getByText(/\$15\.00 total variance/)).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "PO" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "Item" })).toBeVisible();
     expect(screen.getByText("Available to invoice")).toBeVisible();
     expect(screen.getAllByText("3 EA")).toHaveLength(1);
     expect(screen.queryByText("Capacity check")).not.toBeInTheDocument();
-    expect(screen.queryByText("Why this invoice is blocked")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Why this invoice is blocked"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("Receipt capacity")).not.toBeInTheDocument();
     expect(screen.queryByText("Still needed")).not.toBeInTheDocument();
     expect(screen.queryByText("PO ordered")).not.toBeInTheDocument();
