@@ -1,3 +1,11 @@
 .env
-
-.venv/
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.vite/
+data/runtime/
+data/runtime-live/
+data/uploads/
+*.uploaded.pdf
+tmp/

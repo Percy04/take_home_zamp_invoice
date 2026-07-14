@@ -1,0 +1,219 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<<
+/Producer (pypdf)
+/Title (Invoice ACME\0552026\055006)
+/Author (Acme Industrial Supplies LLC)
+>>
+endobj
+2 0 obj
+<<
+/Type /Pages
+/Count 1
+/Kids [ 4 0 R ]
+>>
+endobj
+3 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+4 0 obj
+<<
+/Contents 5 0 R
+/MediaBox [ 0 0 595.2756 841.8898 ]
+/Resources <<
+/Font <<
+/F1 6 0 R
+/F1-0 7 0 R
+/F2 8 0 R
+/F2-0 9 0 R
+>>
+/ProcSet [ /ImageB /ImageC /ImageI /PDF /Text ]
+>>
+/Rotate 0
+/Trans <<
+>>
+/Type /Page
+/Annots [ ]
+/Parent 2 0 R
+>>
+endobj
+5 0 obj
+<<
+/Length 3053
+>>
+stream
+q
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+1 1 1 rg
+n 0 0 595.2756 841.8898 re f*
+.062745 .164706 .262745 rg
+n 0 726.8898 595.2756 115 re f*
+1 1 1 rg
+BT /F2 23 Tf 27.6 TL ET
+BT 1 0 0 1 48 785.8898 Tm (ACME INDUSTRIAL SUPPLIES) Tj T* ET
+BT /F1 9 Tf 10.8 TL ET
+BT 1 0 0 1 48 765.8898 Tm (123 Foundry Road, Bengaluru, KA 560001) Tj T* ET
+BT /F2 24 Tf 28.8 TL ET
+BT 1 0 0 1 448.5876 783.8898 Tm (INVOICE) Tj T* ET
+.419608 .447059 .501961 rg
+BT /F2 8 Tf 9.6 TL ET
+BT 1 0 0 1 48 688.8898 Tm (BILL TO) Tj T* ET
+.121569 .160784 .215686 rg
+BT /F2 11 Tf 13.2 TL ET
+BT 1 0 0 1 48 668.8898 Tm (Zamp Demo Company) Tj T* ET
+BT /F1 10 Tf 12 TL ET
+BT 1 0 0 1 48 651.8898 Tm (Accounts Payable) Tj T* ET
+BT 1 0 0 1 48 634.8898 Tm (Bengaluru, India) Tj T* ET
+.419608 .447059 .501961 rg
+BT /F2 8 Tf 9.6 TL ET
+BT 1 0 0 1 355 688.8898 Tm (INVOICE NUMBER) Tj T* ET
+.121569 .160784 .215686 rg
+BT /F2 10 Tf 12 TL ET
+BT 1 0 0 1 355 673.8898 Tm (ACME-2026-006) Tj T* ET
+.419608 .447059 .501961 rg
+BT /F2 8 Tf 9.6 TL ET
+BT 1 0 0 1 355 649.8898 Tm (INVOICE DATE) Tj T* ET
+.121569 .160784 .215686 rg
+BT /F2 10 Tf 12 TL ET
+BT 1 0 0 1 355 634.8898 Tm (2026-07-14) Tj T* ET
+.419608 .447059 .501961 rg
+BT /F2 8 Tf 9.6 TL ET
+BT 1 0 0 1 355 610.8898 Tm (CURRENCY) Tj T* ET
+.121569 .160784 .215686 rg
+BT /F2 10 Tf 12 TL ET
+BT 1 0 0 1 355 595.8898 Tm (USD) Tj T* ET
+.419608 .447059 .501961 rg
+BT /F2 8 Tf 9.6 TL ET
+BT 1 0 0 1 355 571.8898 Tm (PURCHASE ORDER) Tj T* ET
+.121569 .160784 .215686 rg
+BT /F2 10 Tf 12 TL ET
+BT 1 0 0 1 355 556.8898 Tm (-) Tj T* ET
+.909804 .933333 .968627 rg
+n 48 511.8898 499.2756 27 re f*
+.2 .305882 .407843 rg
+BT /F2 8 Tf 9.6 TL ET
+BT 1 0 0 1 58 520.8898 Tm (SKU) Tj T* ET
+BT 1 0 0 1 125 520.8898 Tm (DESCRIPTION) Tj T* ET
+BT 1 0 0 1 330 520.8898 Tm (QTY) Tj T* ET
+BT 1 0 0 1 390 520.8898 Tm (UOM) Tj T* ET
+BT 1 0 0 1 435 520.8898 Tm (UNIT PRICE) Tj T* ET
+BT 1 0 0 1 515 520.8898 Tm (AMOUNT) Tj T* ET
+.121569 .160784 .215686 rg
+BT /F1 10 Tf 12 TL ET
+BT 1 0 0 1 125 477.8898 Tm (Maintenance Pack) Tj T* ET
+BT 1 0 0 1 330 477.8898 Tm (1) Tj T* ET
+BT 1 0 0 1 390 477.8898 Tm (KIT) Tj T* ET
+BT 1 0 0 1 463.86 477.8898 Tm ($300.00) Tj T* ET
+BT 1 0 0 1 510.86 477.8898 Tm ($300.00) Tj T* ET
+.85098 .886275 .92549 RG
+n 48 461.8898 m 547.2756 461.8898 l S
+.321569 .376471 .427451 rg
+BT /F1 10 Tf 12 TL ET
+BT 1 0 0 1 433.31 420.8898 Tm (Subtotal) Tj T* ET
+BT 1 0 0 1 510.86 420.8898 Tm ($300.00) Tj T* ET
+.321569 .376471 .427451 rg
+BT /F1 10 Tf 12 TL ET
+BT 1 0 0 1 453.33 395.8898 Tm (Tax) Tj T* ET
+BT 1 0 0 1 521.98 395.8898 Tm ($0.00) Tj T* ET
+.062745 .164706 .262745 rg
+BT /F2 11 Tf 13.2 TL ET
+BT 1 0 0 1 443.721 370.8898 Tm (Total) Tj T* ET
+BT 1 0 0 1 507.246 370.8898 Tm ($300.00) Tj T* ET
+.85098 .886275 .92549 RG
+n 48 90 m 547.2756 90 l S
+.419608 .447059 .501961 rg
+BT /F1 8 Tf 9.6 TL ET
+BT 1 0 0 1 48 68 Tm (Synthetic demo invoice - no payment is due.) Tj T* ET
+ 
+
+Q
+
+q
+0.0 0.0 595.2756 841.8898 re
+W
+n
+1 0 0 1 0 0 cm
+BT
+/F1-0 12 Tf
+14.4 TL
+ET
+1 1 1 rg
+n
+350 547.8898 30 20 re
+f*
+1 1 1 rg
+BT
+/F2-0 23 Tf
+27.6 TL
+ET
+BT
+1 0 0 1 381.523 785.8898 Tm
+( LLC) Tj
+T*
+ET
+Q
+
+
+endstream
+endobj
+6 0 obj
+<<
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+/Name /F1
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+7 0 obj
+<<
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+/Name /F1
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+8 0 obj
+<<
+/BaseFont /Helvetica-Bold
+/Encoding /WinAnsiEncoding
+/Name /F2
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+9 0 obj
+<<
+/BaseFont /Helvetica-Bold
+/Encoding /WinAnsiEncoding
+/Name /F2
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000130 00000 n 
+0000000189 00000 n 
+0000000238 00000 n 
+0000000493 00000 n 
+0000003598 00000 n 
+0000003705 00000 n 
+0000003812 00000 n 
+0000003924 00000 n 
+trailer
+<<
+/Size 10
+/Root 3 0 R
+/Info 1 0 R
+>>
+startxref
+4036
+%%EOF

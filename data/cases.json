@@ -1,0 +1,695 @@
+{
+  "currency": "USD",
+  "fixtures": {
+    "bundle_known": {
+      "expected": {
+        "allocation_delta": [
+          {
+            "actual_net_amount": "200.00",
+            "bundle_definition_id": "BUNDLE-ACME-KIT-300",
+            "component_quantity": "2",
+            "match_type": "BUNDLE_MASTER",
+            "po_basis_amount": "200.00",
+            "po_line_id": "PO-1004-L1",
+            "po_number": "PO-1004",
+            "remaining_ordered_quantity": "0",
+            "remaining_received_quantity": "0",
+            "sku": "WID-100"
+          },
+          {
+            "actual_net_amount": "100.00",
+            "bundle_definition_id": "BUNDLE-ACME-KIT-300",
+            "component_quantity": "5",
+            "match_type": "BUNDLE_MASTER",
+            "po_basis_amount": "100.00",
+            "po_line_id": "PO-1004-L2",
+            "po_number": "PO-1004",
+            "remaining_ordered_quantity": "0",
+            "remaining_received_quantity": "0",
+            "sku": "BOL-200"
+          }
+        ],
+        "bundle_candidates": [],
+        "candidate_po": null,
+        "decision": "AUTO_CLEARED",
+        "execution": "POSTED",
+        "ledger_delta": 1,
+        "normalized": {
+          "subtotal": "300.00",
+          "tax": "0.00",
+          "total": "300.00"
+        },
+        "reason_code": null,
+        "run_state": "POSTED"
+      },
+      "file": "data/fixtures/bundle_known.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-04",
+        "invoice_number": "ACME-2026-003",
+        "lines": [
+          {
+            "amount": "300.00",
+            "description": "Installation Kit",
+            "quantity": "1",
+            "sku": "KIT-300",
+            "unit_price": "300.00",
+            "uom": "KIT"
+          }
+        ],
+        "po_number": "PO-1004",
+        "subtotal": "300.00",
+        "tax": "0.00",
+        "total": "300.00",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "81cf56df24f8ac2e90eae227a3d28eb059e6eeaba22df8b65a4e089fe2dc8505"
+    },
+    "bundle_unknown": {
+      "after_confirmation": {
+        "allocation_delta": [
+          {
+            "actual_net_amount": "200.00",
+            "bundle_definition_id": null,
+            "component_quantity": "2",
+            "match_type": "BUNDLE_CONFIRMED",
+            "po_basis_amount": "200.00",
+            "po_line_id": "PO-1005-L1",
+            "po_number": "PO-1005",
+            "remaining_ordered_quantity": "0",
+            "remaining_received_quantity": "0",
+            "sku": "WID-100"
+          },
+          {
+            "actual_net_amount": "100.00",
+            "bundle_definition_id": null,
+            "component_quantity": "5",
+            "match_type": "BUNDLE_CONFIRMED",
+            "po_basis_amount": "100.00",
+            "po_line_id": "PO-1005-L2",
+            "po_number": "PO-1005",
+            "remaining_ordered_quantity": "0",
+            "remaining_received_quantity": "0",
+            "sku": "BOL-200"
+          }
+        ],
+        "bundle_definition_created": false,
+        "decision": "AUTO_CLEARED",
+        "execution": "POSTED",
+        "ledger_delta": 1,
+        "reason_code": null,
+        "repeated_confirmation_same_ledger_id": true,
+        "run_state": "POSTED",
+        "same_run_id": true
+      },
+      "expected": {
+        "allocation_delta": [],
+        "bundle_candidates": [
+          {
+            "bundle_quantity": "1",
+            "components": [
+              {
+                "po_basis_amount": "200.00",
+                "po_line_id": "PO-1005-L1",
+                "quantity": "2",
+                "sku": "WID-100",
+                "uom": "EA"
+              },
+              {
+                "po_basis_amount": "100.00",
+                "po_line_id": "PO-1005-L2",
+                "quantity": "5",
+                "sku": "BOL-200",
+                "uom": "EA"
+              }
+            ],
+            "id": "BUNDLE-CANDIDATE-1",
+            "invoice_line_index": 0,
+            "total_po_basis_amount": "300.00"
+          }
+        ],
+        "candidate_po": null,
+        "decision": "NEEDS_REVIEW",
+        "execution": "AWAITING_CONFIRMATION",
+        "ledger_delta": 0,
+        "normalized": {
+          "subtotal": "300.00",
+          "tax": "0.00",
+          "total": "300.00"
+        },
+        "reason_code": "BUNDLE_MAPPING_REQUIRED",
+        "run_state": "AWAITING_BUNDLE_CONFIRMATION"
+      },
+      "file": "data/fixtures/bundle_unknown.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-05",
+        "invoice_number": "ACME-2026-004",
+        "lines": [
+          {
+            "amount": "300.00",
+            "description": "Maintenance Pack",
+            "quantity": "1",
+            "sku": "",
+            "unit_price": "300.00",
+            "uom": "KIT"
+          }
+        ],
+        "po_number": "PO-1005",
+        "subtotal": "300.00",
+        "tax": "0.00",
+        "total": "300.00",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "2f003610ede25c901a7b004d0d543b043762268f13cfa5287b9615313b38a99e"
+    },
+    "duplicate": {
+      "expected": {
+        "allocation_delta": [],
+        "bundle_candidates": [],
+        "candidate_po": null,
+        "decision": "NEEDS_REVIEW",
+        "execution": "BLOCKED",
+        "ledger_delta": 0,
+        "normalized": {
+          "subtotal": "100.00",
+          "tax": "10.00",
+          "total": "110.00"
+        },
+        "reason_code": "DUPLICATE",
+        "run_state": "NEEDS_REVIEW"
+      },
+      "file": "data/fixtures/duplicate.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-06-01",
+        "invoice_number": "ACME-2026-000",
+        "lines": [
+          {
+            "amount": "100.00",
+            "description": "Replacement Filter",
+            "quantity": "1",
+            "sku": "FIL-900",
+            "unit_price": "100.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": "PO-0999",
+        "subtotal": "100.00",
+        "tax": "10.00",
+        "total": "110.00",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "215a398cfb3f81afba9715f4cd85b6b975b5e87c1153836910ba3c8a2aa70b00"
+    },
+    "happy": {
+      "expected": {
+        "allocation_delta": [
+          {
+            "actual_net_amount": "800.00",
+            "component_quantity": "8",
+            "match_type": "DIRECT",
+            "po_basis_amount": "800.00",
+            "po_line_id": "PO-1001-L1",
+            "po_number": "PO-1001",
+            "remaining_ordered_quantity": "2",
+            "remaining_received_quantity": "2",
+            "sku": "WID-100"
+          },
+          {
+            "actual_net_amount": "100.00",
+            "component_quantity": "5",
+            "match_type": "DIRECT",
+            "po_basis_amount": "100.00",
+            "po_line_id": "PO-1001-L2",
+            "po_number": "PO-1001",
+            "remaining_ordered_quantity": "0",
+            "remaining_received_quantity": "0",
+            "sku": "BOL-200"
+          }
+        ],
+        "bundle_candidates": [],
+        "candidate_po": null,
+        "decision": "AUTO_CLEARED",
+        "execution": "POSTED",
+        "layout_equivalent_to": "happy",
+        "ledger_delta": 1,
+        "normalized": {
+          "subtotal": "900.00",
+          "tax": "90.00",
+          "total": "990.00"
+        },
+        "reason_code": null,
+        "run_state": "POSTED"
+      },
+      "file": "data/fixtures/happy.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-01",
+        "invoice_number": "ACME-2026-001",
+        "lines": [
+          {
+            "amount": "800.00",
+            "description": "Industrial Widget",
+            "quantity": "8",
+            "sku": "WID-100",
+            "unit_price": "100.00",
+            "uom": "EA"
+          },
+          {
+            "amount": "100.00",
+            "description": "Mounting Bolt Pack",
+            "quantity": "5",
+            "sku": "BOL-200",
+            "unit_price": "20.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": "PO-1001",
+        "subtotal": "900.00",
+        "tax": "90.00",
+        "total": "990.00",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "a502d37c221ca4084bb0340ba93b335b7ac1ae14421db8f81ab5b9ceaa6f2416"
+    },
+    "happy_layout_b": {
+      "expected": {
+        "allocation_delta": [
+          {
+            "actual_net_amount": "800.00",
+            "component_quantity": "8",
+            "match_type": "DIRECT",
+            "po_basis_amount": "800.00",
+            "po_line_id": "PO-1001-L1",
+            "po_number": "PO-1001",
+            "remaining_ordered_quantity": "2",
+            "remaining_received_quantity": "2",
+            "sku": "WID-100"
+          },
+          {
+            "actual_net_amount": "100.00",
+            "component_quantity": "5",
+            "match_type": "DIRECT",
+            "po_basis_amount": "100.00",
+            "po_line_id": "PO-1001-L2",
+            "po_number": "PO-1001",
+            "remaining_ordered_quantity": "0",
+            "remaining_received_quantity": "0",
+            "sku": "BOL-200"
+          }
+        ],
+        "bundle_candidates": [],
+        "candidate_po": null,
+        "decision": "AUTO_CLEARED",
+        "execution": "POSTED",
+        "layout_equivalent_to": "happy",
+        "ledger_delta": 1,
+        "normalized": {
+          "subtotal": "900.00",
+          "tax": "90.00",
+          "total": "990.00"
+        },
+        "reason_code": null,
+        "run_state": "POSTED"
+      },
+      "file": "data/fixtures/happy_layout_b.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-01",
+        "invoice_number": "ACME-2026-001",
+        "lines": [
+          {
+            "amount": "800.00",
+            "description": "Industrial Widget",
+            "quantity": "8",
+            "sku": "WID-100",
+            "unit_price": "100.00",
+            "uom": "EA"
+          },
+          {
+            "amount": "100.00",
+            "description": "Mounting Bolt Pack",
+            "quantity": "5",
+            "sku": "BOL-200",
+            "unit_price": "20.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": "PO-1001",
+        "subtotal": "900.00",
+        "tax": "90.00",
+        "total": "990.00",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "2b3b1fded70cb3484699f9673895054d76df9da7e8a947cc46cff99146b3c9b8"
+    },
+    "happy_layout_c_scanned": {
+      "expected": {
+        "allocation_delta": [
+          {
+            "actual_net_amount": "800.00",
+            "component_quantity": "8",
+            "match_type": "DIRECT",
+            "po_basis_amount": "800.00",
+            "po_line_id": "PO-1001-L1",
+            "po_number": "PO-1001",
+            "remaining_ordered_quantity": "2",
+            "remaining_received_quantity": "2",
+            "sku": "WID-100"
+          },
+          {
+            "actual_net_amount": "100.00",
+            "component_quantity": "5",
+            "match_type": "DIRECT",
+            "po_basis_amount": "100.00",
+            "po_line_id": "PO-1001-L2",
+            "po_number": "PO-1001",
+            "remaining_ordered_quantity": "0",
+            "remaining_received_quantity": "0",
+            "sku": "BOL-200"
+          }
+        ],
+        "bundle_candidates": [],
+        "candidate_po": null,
+        "decision": "AUTO_CLEARED",
+        "execution": "POSTED",
+        "layout_equivalent_to": "happy",
+        "ledger_delta": 1,
+        "normalized": {
+          "subtotal": "900.00",
+          "tax": "90.00",
+          "total": "990.00"
+        },
+        "reason_code": null,
+        "run_state": "POSTED",
+        "source_references": [
+          {
+            "confidence": "MIN_WORD_CONFIDENCE",
+            "path": "ocr.pages[].lines[]",
+            "source_kind": "OCR_LINE"
+          }
+        ]
+      },
+      "file": "data/fixtures/happy_layout_c_scanned.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-01",
+        "invoice_number": "ACME-2026-001",
+        "lines": [
+          {
+            "amount": "800.00",
+            "description": "Industrial Widget",
+            "quantity": "8",
+            "sku": "WID-100",
+            "unit_price": "100.00",
+            "uom": "EA"
+          },
+          {
+            "amount": "100.00",
+            "description": "Mounting Bolt Pack",
+            "quantity": "5",
+            "sku": "BOL-200",
+            "unit_price": "20.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": "PO-1001",
+        "subtotal": "900.00",
+        "tax": "90.00",
+        "total": "990.00",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "f00e5c72ed010b3e27369d575c85a148e8677a411d273c7a8ed42c164aca8e93"
+    },
+    "missing_po": {
+      "after_confirmation": {
+        "aggregate_price_variance": "2.00",
+        "allocation_delta": [
+          {
+            "po_number": "PO-1002",
+            "quantity": "2",
+            "remaining_ordered_quantity": "0",
+            "remaining_received_quantity": "0",
+            "sku": "SEN-300"
+          }
+        ],
+        "confirmed_po": "PO-1002",
+        "decision": "AUTO_CLEARED",
+        "execution": "POSTED",
+        "ledger_delta": 1,
+        "reason_code": null,
+        "repeated_confirmation_same_ledger_id": true,
+        "run_state": "POSTED",
+        "same_run_id": true,
+        "unit_price_variance_percent": "0.4"
+      },
+      "expected": {
+        "allocation_delta": [],
+        "bundle_candidates": [],
+        "candidate_po": "PO-1002",
+        "decision": "NEEDS_REVIEW",
+        "execution": "AWAITING_CONFIRMATION",
+        "ledger_delta": 0,
+        "normalized": {
+          "subtotal": "502.00",
+          "tax": "50.20",
+          "total": "552.20"
+        },
+        "reason_code": "MISSING_PO",
+        "run_state": "AWAITING_PO_CONFIRMATION"
+      },
+      "file": "data/fixtures/missing_po.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-02",
+        "invoice_number": "ACME-2026-002",
+        "lines": [
+          {
+            "amount": "502.00",
+            "description": "Safety Sensor",
+            "quantity": "2",
+            "sku": "SEN-300",
+            "unit_price": "251.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": null,
+        "subtotal": "502.00",
+        "tax": "50.20",
+        "total": "552.20",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "b238ba68ceb0ace9b3dc5704af1babbd779ed15b8b51b826f39712a5acc889bc"
+    },
+    "missing_po_bundle": {
+      "expected": {
+        "bundle_candidates": [],
+        "candidate_po": "PO-1004",
+        "decision": "NEEDS_REVIEW",
+        "execution": "AWAITING_CONFIRMATION",
+        "reason_code": "MISSING_PO",
+        "run_state": "AWAITING_PO_CONFIRMATION"
+      },
+      "file": "data/fixtures/missing_po_bundle.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-14",
+        "invoice_number": "ACME-2026-006",
+        "lines": [
+          {
+            "amount": "300.00",
+            "description": "Maintenance Pack",
+            "quantity": "1",
+            "sku": "",
+            "unit_price": "300.00",
+            "uom": "KIT"
+          }
+        ],
+        "po_number": null,
+        "subtotal": "300.00",
+        "tax": "0.00",
+        "total": "300.00",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "1b2b21c26d44cd5efbf774ed0e092658c767d6eb0dc085f8e0ea6bf8a5c979e1"
+    },
+    "receipt_capacity": {
+      "expected": {
+        "allocation_delta": [],
+        "bundle_candidates": [],
+        "candidate_po": null,
+        "decision": "NEEDS_REVIEW",
+        "execution": "BLOCKED",
+        "ledger_delta": 0,
+        "normalized": {
+          "subtotal": "150.00",
+          "tax": "15.00",
+          "total": "165.00"
+        },
+        "ordered_capacity_passes": true,
+        "po_basis_capacity_passes": true,
+        "reason_code": "RECEIPT_CAPACITY_EXCEEDED",
+        "remaining_received_quantity": "2",
+        "requested_quantity": "3",
+        "run_state": "NEEDS_REVIEW"
+      },
+      "file": "data/fixtures/receipt_capacity.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-03",
+        "invoice_number": "DELTA-2026-010",
+        "lines": [
+          {
+            "amount": "150.00",
+            "description": "Control Valve",
+            "quantity": "3",
+            "sku": "VAL-500",
+            "unit_price": "50.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": "PO-2001",
+        "subtotal": "150.00",
+        "tax": "15.00",
+        "total": "165.00",
+        "vendor": "Delta Components Ltd"
+      },
+      "pdf_sha256": "b74136776c8d83b170d22113a02bacc11f06d82ad4ccd9b9a8b2c7dcc2fcd20d"
+    },
+    "multiple_issues": {
+      "expected": {
+        "allocation_delta": [],
+        "bundle_candidates": [],
+        "candidate_po": null,
+        "decision": "NEEDS_REVIEW",
+        "execution": "BLOCKED",
+        "ledger_delta": 0,
+        "normalized": {
+          "subtotal": "165.00",
+          "tax": "16.50",
+          "total": "181.50"
+        },
+        "reason_code": "MULTIPLE_ISSUES",
+        "run_state": "NEEDS_REVIEW"
+      },
+      "file": "data/fixtures/multiple_issues.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-08",
+        "invoice_number": "DELTA-2026-011",
+        "lines": [
+          {
+            "amount": "165.00",
+            "description": "Control Valve",
+            "quantity": "3",
+            "sku": "VAL-500",
+            "unit_price": "55.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": "PO-2001",
+        "subtotal": "165.00",
+        "tax": "16.50",
+        "total": "181.50",
+        "vendor": "Delta Components Ltd"
+      },
+      "pdf_sha256": "40db710096e9682063bba5df8f662fde469a43b780e9ebb465d84560ebf71118"
+    },
+    "tax_inclusive": {
+      "expected": {
+        "allocation_delta": [
+          {
+            "actual_net_amount": "500.00",
+            "component_quantity": "2",
+            "match_type": "DIRECT",
+            "po_basis_amount": "500.00",
+            "po_line_id": "PO-1002-L1",
+            "po_number": "PO-1002",
+            "remaining_ordered_quantity": "0",
+            "remaining_received_quantity": "0",
+            "sku": "SEN-300"
+          }
+        ],
+        "bundle_candidates": [],
+        "candidate_po": null,
+        "decision": "AUTO_CLEARED",
+        "derivations": [
+          {
+            "field": "normalized.subtotal",
+            "formula": "590.00 / 1.18",
+            "source": "explicit tax note"
+          },
+          {
+            "field": "normalized.tax",
+            "formula": "590.00 - 500.00",
+            "source": "gross total and derived net"
+          }
+        ],
+        "execution": "POSTED",
+        "ledger_delta": 1,
+        "normalized": {
+          "line_amount": "500.00",
+          "subtotal": "500.00",
+          "tax": "90.00",
+          "total": "590.00",
+          "unit_price": "250.00"
+        },
+        "observed": {
+          "line_amount": "590.00",
+          "subtotal": null,
+          "tax": null,
+          "tax_inclusion": "INCLUSIVE",
+          "tax_rate": "0.18",
+          "total": "590.00",
+          "unit_price": "295.00"
+        },
+        "reason_code": null,
+        "run_state": "POSTED",
+        "source_references": [
+          {
+            "content": "All line prices include 18% tax.",
+            "path": "tax.inclusion",
+            "source_kind": "DOCUMENT_FIELD"
+          },
+          {
+            "content": "18%",
+            "path": "tax.rate",
+            "source_kind": "NESTED_TAX_FIELD"
+          }
+        ]
+      },
+      "file": "data/fixtures/tax_inclusive.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-06",
+        "invoice_number": "ACME-2026-005",
+        "lines": [
+          {
+            "amount": "590.00",
+            "description": "Safety Sensor",
+            "quantity": "2",
+            "sku": "SEN-300",
+            "unit_price": "295.00",
+            "uom": "EA"
+          }
+        ],
+        "po_number": "PO-1002",
+        "subtotal": null,
+        "tax": null,
+        "tax_note": "All line prices include 18% tax.",
+        "total": "590.00",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "58d0077728829fb075f1ccd3fa07cb95d9785279549ce1108246950153e8dc50"
+    }
+  },
+  "schema_version": 2,
+  "selection_policy": {
+    "forbidden_inputs": ["filename", "file_sha256"]
+  },
+  "source_reference_contract": {
+    "optional_azure_evidence": ["key_value_pairs"],
+    "required": ["path", "source_kind"]
+  }
+}

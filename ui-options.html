@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AP Resolution Agent UI Options</title>
+    <style>
+      :root {
+        --ink: #17201c;
+        --muted: #64716a;
+        --line: #d8ded9;
+        --paper: #fbfcfb;
+        --page: #eef1ef;
+        --green: #19705c;
+        --blue: #245f8f;
+        --amber: #b56612;
+        --red: #a53b36;
+        --violet: #6750a4;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        color: var(--ink);
+        background: var(--page);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      header {
+        padding: 32px clamp(18px, 4vw, 56px) 18px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 920px;
+        margin-bottom: 10px;
+        font-size: clamp(34px, 6vw, 72px);
+        line-height: 0.98;
+        letter-spacing: 0;
+      }
+
+      .intro {
+        max-width: 760px;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.55;
+      }
+
+      .options {
+        display: grid;
+        gap: 28px;
+        padding: 10px clamp(18px, 4vw, 56px) 56px;
+      }
+
+      .option {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .option-head {
+        display: flex;
+        gap: 18px;
+        align-items: start;
+        justify-content: space-between;
+        padding: 22px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .option h2 {
+        margin-bottom: 6px;
+        font-size: 24px;
+        letter-spacing: 0;
+      }
+
+      .option-head p {
+        max-width: 820px;
+        margin-bottom: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .tag {
+        flex: 0 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 7px 10px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .preview {
+        min-height: 560px;
+        padding: 24px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 58px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand {
+        font-weight: 800;
+      }
+
+      .nav {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .nav span,
+      .pill {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 9px;
+        background: white;
+      }
+
+      .button {
+        border: 0;
+        border-radius: 6px;
+        padding: 10px 13px;
+        color: white;
+        background: var(--green);
+        font-weight: 800;
+      }
+
+      .grid {
+        display: grid;
+        gap: 14px;
+      }
+
+      .two {
+        grid-template-columns: minmax(0, 1fr) minmax(300px, 0.62fr);
+      }
+
+      .three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .metric {
+        padding: 16px;
+      }
+
+      .metric strong {
+        display: block;
+        font-size: 28px;
+      }
+
+      .metric span,
+      .small {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        padding: 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 5px 8px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .ok {
+        color: #075c47;
+        background: #dff3eb;
+      }
+
+      .warn {
+        color: #7b4300;
+        background: #fff0d4;
+      }
+
+      .bad {
+        color: #8d2925;
+        background: #f9dddd;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 76px minmax(0, 1fr);
+        min-height: 512px;
+      }
+
+      .rail {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        padding: 14px;
+        border-right: 1px solid var(--line);
+        background: #f6f8f7;
+      }
+
+      .icon {
+        display: grid;
+        width: 46px;
+        height: 46px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        font-weight: 900;
+      }
+
+      .content {
+        padding: 18px;
+      }
+
+      .doc {
+        min-height: 360px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background:
+          linear-gradient(#fff 0 0) padding-box,
+          repeating-linear-gradient(
+            0deg,
+            #edf1ee 0,
+            #edf1ee 1px,
+            transparent 1px,
+            transparent 28px
+          );
+      }
+
+      .doc-header {
+        padding: 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .doc-title {
+        height: 18px;
+        width: 230px;
+        border-radius: 4px;
+        background: #1c2924;
+      }
+
+      .doc-lines {
+        display: grid;
+        gap: 10px;
+        padding: 22px;
+      }
+
+      .line {
+        height: 12px;
+        border-radius: 4px;
+        background: #cfd8d2;
+      }
+
+      .callout {
+        border-left: 4px solid var(--amber);
+        padding: 14px 16px;
+        background: #fff8eb;
+      }
+
+      .stepper {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .step {
+        min-height: 76px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        background: white;
+      }
+
+      .step b {
+        display: block;
+        margin-bottom: 7px;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.1fr);
+        gap: 18px;
+      }
+
+      .upload {
+        display: grid;
+        min-height: 320px;
+        place-items: center;
+        border: 2px dashed #a9b6ae;
+        border-radius: 8px;
+        background: #f8faf8;
+        text-align: center;
+      }
+
+      .upload strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 22px;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 10px;
+      }
+
+      .timeline-row {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+      }
+
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        background: var(--green);
+      }
+
+      .option-a .topbar {
+        background: #10261f;
+        color: white;
+      }
+
+      .option-a .nav span {
+        border-color: #36564b;
+        color: #dce8e3;
+        background: #17362c;
+      }
+
+      .option-a .preview {
+        background: #e8eeeb;
+      }
+
+      .option-b .preview {
+        background: #f4f7fa;
+      }
+
+      .option-b .button {
+        background: var(--blue);
+      }
+
+      .option-b .rail {
+        background: #ebf2f7;
+      }
+
+      .option-c .preview {
+        background: #f4f2f8;
+      }
+
+      .option-c .button {
+        background: var(--violet);
+      }
+
+      .option-c .topbar {
+        background: white;
+      }
+
+      @media (max-width: 900px) {
+        .two,
+        .three,
+        .split,
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .rail {
+          grid-template-columns: repeat(4, 46px);
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .stepper {
+          grid-template-columns: 1fr;
+        }
+
+        .option-head {
+          display: grid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>AP Resolution Agent UI directions</h1>
+      <p class="intro">
+        Three practical directions for the current product: one optimized for
+        operations, one for invoice review, and one for a polished take-home
+        demo. Pick the product feel first; implementation can stay simple.
+      </p>
+    </header>
+
+    <main class="options">
+      <section class="option option-a">
+        <div class="option-head">
+          <div>
+            <h2>Option A: AP Operations Console</h2>
+            <p>
+              Dense, work-focused, and best if the app should feel like a real
+              internal AP tool. Prioritizes run history, state, controls, and
+              ledger impact over a big upload moment.
+            </p>
+          </div>
+          <span class="tag">Best for product credibility</span>
+        </div>
+        <div class="preview">
+          <div class="panel">
+            <div class="topbar">
+              <div class="brand">AP Resolution Agent</div>
+              <div class="nav">
+                <span>Runs</span>
+                <span>Controls</span>
+                <span>Ledger</span>
+                <button class="button">New run</button>
+              </div>
+            </div>
+            <div class="content grid">
+              <div class="grid three">
+                <div class="panel metric">
+                  <span>Total runs</span>
+                  <strong>42</strong>
+                </div>
+                <div class="panel metric">
+                  <span>Auto-cleared</span>
+                  <strong>74%</strong>
+                </div>
+                <div class="panel metric">
+                  <span>Needs review</span>
+                  <strong>11</strong>
+                </div>
+              </div>
+              <div class="grid two">
+                <div class="panel">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Invoice</th>
+                        <th>Vendor</th>
+                        <th>PO</th>
+                        <th>State</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>ACME-2026-001</td>
+                        <td>Acme Industrial</td>
+                        <td>PO-1001</td>
+                        <td><span class="status ok">Posted</span></td>
+                      </tr>
+                      <tr>
+                        <td>DELTA-2026-010</td>
+                        <td>Delta Components</td>
+                        <td>PO-2001</td>
+                        <td><span class="status bad">Review</span></td>
+                      </tr>
+                      <tr>
+                        <td>ACME-2026-004</td>
+                        <td>Acme Industrial</td>
+                        <td>PO-1005</td>
+                        <td><span class="status warn">Confirm</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="panel metric">
+                  <span>Selected run</span>
+                  <h3>ACME-2026-001</h3>
+                  <p class="small">
+                    All required controls passed. Posted once as
+                    LEDGER-ACME-001.
+                  </p>
+                  <div class="grid">
+                    <span class="status ok">Vendor match</span>
+                    <span class="status ok">Line match</span>
+                    <span class="status ok">Receipt capacity</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="option option-b">
+        <div class="option-head">
+          <div>
+            <h2>Option B: Reviewer Workbench</h2>
+            <p>
+              Side-by-side document and decision workspace. Best if the core
+              experience is explaining evidence to a non-technical AP buyer.
+            </p>
+          </div>
+          <span class="tag">Best for review clarity</span>
+        </div>
+        <div class="preview">
+          <div class="panel workspace">
+            <aside class="rail">
+              <div class="icon">R</div>
+              <div class="icon">P</div>
+              <div class="icon">C</div>
+              <div class="icon">L</div>
+            </aside>
+            <div>
+              <div class="topbar">
+                <div>
+                  <div class="brand">ACME-2026-001</div>
+                  <span class="small">PO-1001 - Acme Industrial Supplies</span>
+                </div>
+                <span class="status ok">Auto-cleared</span>
+              </div>
+              <div class="content split">
+                <div class="doc">
+                  <div class="doc-header">
+                    <div class="doc-title"></div>
+                  </div>
+                  <div class="doc-lines">
+                    <div class="line" style="width: 58%"></div>
+                    <div class="line" style="width: 44%"></div>
+                    <div class="line" style="width: 80%"></div>
+                    <div class="line" style="width: 72%"></div>
+                    <div class="line" style="width: 88%"></div>
+                    <div class="line" style="width: 66%"></div>
+                  </div>
+                </div>
+                <div class="grid">
+                  <div class="callout">
+                    <strong>Decision</strong>
+                    <p class="small">
+                      Posted once because vendor, PO, lines, totals, and receipt
+                      capacity passed.
+                    </p>
+                  </div>
+                  <div class="panel">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Control</th>
+                          <th>Result</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>Vendor and PO</td>
+                          <td><span class="status ok">Pass</span></td>
+                        </tr>
+                        <tr>
+                          <td>Line prices</td>
+                          <td><span class="status ok">Pass</span></td>
+                        </tr>
+                        <tr>
+                          <td>Receipt capacity</td>
+                          <td><span class="status ok">Pass</span></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <button class="button">Open ledger entry</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="option option-c">
+        <div class="option-head">
+          <div>
+            <h2>Option C: Guided Demo Flow</h2>
+            <p>
+              More polished and presentation-friendly. Best if this is judged
+              as a take-home demo where the first impression and narrative flow
+              matter.
+            </p>
+          </div>
+          <span class="tag">Best for demo polish</span>
+        </div>
+        <div class="preview">
+          <div class="panel">
+            <div class="topbar">
+              <div class="brand">AP Resolution Agent</div>
+              <div class="nav">
+                <span>Upload</span>
+                <span>Evidence</span>
+                <span>Decision</span>
+              </div>
+            </div>
+            <div class="content grid">
+              <div class="split">
+                <div class="upload">
+                  <div>
+                    <strong>Drop an invoice PDF</strong>
+                    <p class="small">
+                      Synthetic demo documents only. Provider calls stay on the
+                      server.
+                    </p>
+                    <button class="button">Choose PDF</button>
+                  </div>
+                </div>
+                <div class="grid">
+                  <div class="stepper">
+                    <div class="step">
+                      <b>1. Intake</b>
+                      <span class="small">PDF stored</span>
+                    </div>
+                    <div class="step">
+                      <b>2. Extract</b>
+                      <span class="small">Evidence found</span>
+                    </div>
+                    <div class="step">
+                      <b>3. Map</b>
+                      <span class="small">Fields selected</span>
+                    </div>
+                    <div class="step">
+                      <b>4. Check</b>
+                      <span class="small">Controls run</span>
+                    </div>
+                    <div class="step">
+                      <b>5. Post</b>
+                      <span class="small">Ledger updated</span>
+                    </div>
+                  </div>
+                  <div class="panel metric">
+                    <span>Example result</span>
+                    <h3>AUTO_CLEARED</h3>
+                    <p class="small">
+                      The user sees what changed in accounting and which
+                      controls made the decision safe.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div class="timeline">
+                <div class="timeline-row">
+                  <span class="dot"></span>
+                  <strong>Extraction completed</strong>
+                  <span class="small">Azure</span>
+                </div>
+                <div class="timeline-row">
+                  <span class="dot"></span>
+                  <strong>Mapping completed</strong>
+                  <span class="small">Gemini</span>
+                </div>
+                <div class="timeline-row">
+                  <span class="dot"></span>
+                  <strong>Ledger posted</strong>
+                  <span class="small">SQLite</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
