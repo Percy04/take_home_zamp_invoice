@@ -9,7 +9,7 @@
  *   npm run pipeline:workbook -- --fixture missing_po --step run --confirm PO-1002
  *   npm run pipeline:workbook -- --file data/fixtures/02-Invoice-2.pdf --step run
  *
- * Available fixtures: happy, duplicate, missing_po, bundle_known,
+ * Available fixtures: happy, duplicate, missing_po, missing_po_bundle, bundle_known,
  * bundle_unknown, receipt_capacity, tax_inclusive.
  *
  * `run` uses tmp/pipeline-workbook, never data/runtime.

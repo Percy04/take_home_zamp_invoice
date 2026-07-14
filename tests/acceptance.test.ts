@@ -302,6 +302,48 @@ describe("happy-path vertical slice", () => {
     storage.close();
   });
 
+  it("moves from a missing PO confirmation to bundle decomposition review", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-missing-po-bundle-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+
+    const created = await request(app)
+      .post("/api/runs")
+      .field("fixtureId", "missing_po_bundle")
+      .expect(201);
+    const awaitingPo = await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+    const awaitingBundle = await request(app)
+      .post(`/api/runs/${created.body.runId}/confirm-po`)
+      .send({ poNumber: "PO-1004" })
+      .expect(200);
+    const posted = await request(app)
+      .post(`/api/runs/${created.body.runId}/confirm-bundle`)
+      .send({ candidateId: "BUNDLE-CANDIDATE-1" })
+      .expect(200);
+
+    expect(awaitingPo.body).toMatchObject({
+      state: "AWAITING_PO_CONFIRMATION",
+      reasonCode: "MISSING_PO",
+      candidatePo: "PO-1004",
+    });
+    expect(awaitingBundle.body).toMatchObject({
+      state: "AWAITING_BUNDLE_CONFIRMATION",
+      reasonCode: "BUNDLE_MAPPING_REQUIRED",
+      bundleCandidates: [{ id: "BUNDLE-CANDIDATE-1" }],
+    });
+    expect(posted.body).toMatchObject({
+      state: "POSTED",
+      allocations: [
+        { matchType: "BUNDLE_CONFIRMED" },
+        { matchType: "BUNDLE_CONFIRMED" },
+      ],
+    });
+    storage.close();
+  });
+
   it("blocks a repeated missing-PO invoice as a duplicate without offering stale candidates", async () => {
     const runtime = mkdtempSync(path.join(tmpdir(), "zamp-repeat-missing-po-"));
     temporaryDirectories.push(runtime);

@@ -42,7 +42,9 @@ export function DecisionEvidence({ run }: { run: Run }) {
         {!unresolvedRechecks.length && invoiceDataIssues.length > 0 && (
           <InvoiceDataEvidence issues={invoiceDataIssues} />
         )}
-        {run.reasonCode === "DUPLICATE_INVOICE" && <DuplicateEvidenceBlock run={run} />}
+        {run.reasonCode === "DUPLICATE_INVOICE" && inv && run.duplicateMatch && (
+          <DuplicateEvidenceBlock run={run} />
+        )}
         {run.reasonCode === "MISSING_PO" && run.state === "AWAITING_PO_CONFIRMATION" && (
           <PoCandidateBlock run={run} />
         )}

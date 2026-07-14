@@ -26,6 +26,7 @@ const fixtureIds = new Set([
   "happy",
   "duplicate",
   "missing_po",
+  "missing_po_bundle",
   "receipt_capacity",
   "multiple_issues",
   "happy_layout_b",

@@ -482,7 +482,13 @@ export class Storage {
               };
             });
           } catch {
-            allLinesResolvable = false;
+            const bundleResolvable =
+              buildUnknownBundleCandidates(
+                candidateInvoice,
+                context.poLines,
+                context.priorAllocations,
+              ).length > 0;
+            allLinesResolvable = bundleResolvable;
             lines = invoice.lines.flatMap((line, invoiceLineIndex) => {
               const poLine = poLines.find(
                 (candidate) =>
@@ -524,7 +530,9 @@ export class Storage {
                 },
               ];
             });
-            matchedLineCount = lines.length;
+            matchedLineCount = bundleResolvable
+              ? invoice.lines.length
+              : lines.length;
           }
           const purchaseOrderLines = this.db
             .prepare("SELECT * FROM po_lines WHERE po_number = ?")

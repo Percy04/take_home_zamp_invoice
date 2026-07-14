@@ -1445,6 +1445,7 @@ async function recordingForDocument(bytes: Buffer) {
   if (title === "Invoice ACME-2026-003") return "bundle_known";
   if (title === "Invoice ACME-2026-005") return "tax_inclusive";
   if (title === "Invoice ACME-2026-002") return "missing_po";
+  if (title === "Invoice ACME-2026-006") return "missing_po_bundle";
   if (title === "Invoice ACME-2026-004") return "bundle_unknown";
   throw new ProviderError(
     "RECORDED_PROVIDER",

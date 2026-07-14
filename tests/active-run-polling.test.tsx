@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getRouter } from "../client/src/router";
@@ -38,6 +38,28 @@ const run = {
   activity: [],
 } satisfies Run;
 
+const duplicateSummary = {
+  ...run,
+  state: "NEEDS_REVIEW",
+  execution: "BLOCKED",
+  reasonCode: "DUPLICATE_INVOICE",
+  invoice: {
+    vendor: "Acme Industrial Supplies LLC",
+    invoiceNumber: "ACME-2026-001",
+    invoiceDate: null,
+    poNumber: "PO-1001",
+    currency: "USD",
+    observedSubtotal: 990,
+    observedTax: 0,
+    observedTotal: 990,
+    normalizedSubtotal: 990,
+    normalizedTax: 0,
+    normalizedTotal: 990,
+    taxTreatment: "EXCLUSIVE" as const,
+    lines: [],
+  },
+} satisfies Run;
+
 describe("active run polling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -59,5 +81,17 @@ describe("active run polling", () => {
     await waitFor(() => expect(api.getRun).toHaveBeenCalledTimes(2), {
       timeout: 1_000,
     });
+  });
+
+  it("does not render duplicate evidence until the detail fetch supplies the duplicate match", async () => {
+    store.clearRuns();
+    store.upsertRun(duplicateSummary);
+    vi.mocked(api.getRun).mockResolvedValue(duplicateSummary);
+
+    render(<RouterProvider router={getRouter()} />);
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Decision evidence")).toBeVisible(),
+    );
   });
 });

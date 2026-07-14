@@ -9,6 +9,7 @@ export const sampleInvoices = [
   { id: "happy_layout_c_scanned", label: "Scanned invoice", hint: "OCR extraction and review" },
   { id: "duplicate", label: "Duplicate", hint: "Already posted to ledger" },
   { id: "missing_po", label: "Missing PO", hint: "No PO on invoice, suggested match" },
+  { id: "missing_po_bundle", label: "Missing PO bundle", hint: "Confirm PO, then validate bundle" },
   { id: "receipt_capacity", label: "Receipt capacity", hint: "Requested exceeds received" },
   { id: "multiple_issues", label: "Multiple issues", hint: "Price variance and receipt shortfall" },
   { id: "bundle_known", label: "Known bundle", hint: "Trusted bundle definition" },

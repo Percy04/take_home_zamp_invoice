@@ -482,6 +482,38 @@
       },
       "pdf_sha256": "b238ba68ceb0ace9b3dc5704af1babbd779ed15b8b51b826f39712a5acc889bc"
     },
+    "missing_po_bundle": {
+      "expected": {
+        "bundle_candidates": [],
+        "candidate_po": "PO-1004",
+        "decision": "NEEDS_REVIEW",
+        "execution": "AWAITING_CONFIRMATION",
+        "reason_code": "MISSING_PO",
+        "run_state": "AWAITING_PO_CONFIRMATION"
+      },
+      "file": "data/fixtures/missing_po_bundle.pdf",
+      "input": {
+        "currency": "USD",
+        "invoice_date": "2026-07-14",
+        "invoice_number": "ACME-2026-006",
+        "lines": [
+          {
+            "amount": "300.00",
+            "description": "Maintenance Pack",
+            "quantity": "1",
+            "sku": "",
+            "unit_price": "300.00",
+            "uom": "KIT"
+          }
+        ],
+        "po_number": null,
+        "subtotal": "300.00",
+        "tax": "0.00",
+        "total": "300.00",
+        "vendor": "Acme Industrial Supplies LLC"
+      },
+      "pdf_sha256": "1b2b21c26d44cd5efbf774ed0e092658c767d6eb0dc085f8e0ea6bf8a5c979e1"
+    },
     "receipt_capacity": {
       "expected": {
         "allocation_delta": [],
