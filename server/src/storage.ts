@@ -29,6 +29,7 @@ import {
 import {
   buildUnknownBundleCandidates,
   evaluateInvoice,
+  normalize,
   type ControlContext,
 } from "./controls.js";
 
@@ -423,22 +424,7 @@ export class Storage {
       )
       .all(vendor.id, invoice.currency) as Array<{ po_number: string }>;
     const context = this.getControlContext();
-    const poLines = context.poLines as Array<{
-      id: string;
-      po_number: string;
-      sku: string | null;
-      description: string;
-      normalized_sku: string | null;
-      normalized_description: string;
-      uom: string;
-      unit_price: string;
-      ordered_quantity: string;
-      received_quantity: string;
-    }>;
-    const priorAllocations = context.priorAllocations as Array<{
-      po_line_id: string;
-      component_quantity: string;
-    }>;
+    const { poLines, priorAllocations } = context;
     const capacityFor = (poLineId: string) => {
       const poLine = poLines.find((line) => line.id === poLineId);
       if (!poLine) return {};
@@ -847,13 +833,6 @@ function decodeCursor(value: string) {
   } catch {
     throw new Error("INVALID_CURSOR");
   }
-}
-
-function normalize(value: string) {
-  return value
-    .normalize("NFKC")
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "");
 }
 
 function exists(file: string) {
