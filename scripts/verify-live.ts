@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { normalizeInvoice } from "../server/src/controls.js";
+import { normalizeInvoice } from "../server/src/invoice-normalization.js";
 import {
   extractAndMapLive,
   logProviderError,

@@ -26,7 +26,11 @@ import {
   type SourceRef,
   type StageEvent,
 } from "../../shared/contracts.js";
-import { buildUnknownBundleCandidates, evaluateInvoice } from "./controls.js";
+import {
+  buildUnknownBundleCandidates,
+  evaluateInvoice,
+  type ControlContext,
+} from "./controls.js";
 
 type RunRow = {
   id: string;
@@ -320,7 +324,7 @@ export class Storage {
       .run(JSON.stringify(rechecks), new Date().toISOString(), id);
   }
 
-  getHappyContext() {
+  getControlContext(): ControlContext {
     return {
       vendors: this.db.prepare("SELECT * FROM vendors WHERE active = 1").all(),
       purchaseOrders: this.db.prepare("SELECT * FROM purchase_orders").all(),
@@ -338,7 +342,7 @@ export class Storage {
           "SELECT po_line_id, component_quantity, po_basis_amount FROM allocations",
         )
         .all(),
-    };
+    } as ControlContext;
   }
 
   getEvaluation(id: string): Evaluation | null {
@@ -350,17 +354,16 @@ export class Storage {
       : null;
   }
 
-  findDuplicate(invoice: NormalizedInvoice): DuplicateMatch | null {
-    const vendor = this.db
-      .prepare("SELECT id FROM vendors WHERE normalized_name = ?")
-      .get(normalize(invoice.vendor)) as { id: string } | undefined;
-    if (!vendor) return null;
+  findDuplicate(
+    vendorId: string,
+    invoiceNumber: string,
+  ): DuplicateMatch | null {
     const posted = this.db
       .prepare(
         `SELECT id, invoice_number, invoice_date, po_number, total, posted_at
          FROM posted_invoices WHERE vendor_id = ? AND normalized_invoice_number = ?`,
       )
-      .get(vendor.id, normalize(invoice.invoiceNumber)) as
+      .get(vendorId, normalize(invoiceNumber)) as
       | {
           id: string;
           invoice_number: string;
@@ -419,7 +422,7 @@ export class Storage {
         "SELECT * FROM purchase_orders WHERE vendor_id = ? AND status = 'OPEN' AND currency = ?",
       )
       .all(vendor.id, invoice.currency) as Array<{ po_number: string }>;
-    const context = this.getHappyContext();
+    const context = this.getControlContext();
     const poLines = context.poLines as Array<{
       id: string;
       po_number: string;
@@ -587,7 +590,7 @@ export class Storage {
   }
 
   findBundleCandidates(invoice: NormalizedInvoice): BundleCandidate[] {
-    const context = this.getHappyContext();
+    const context = this.getControlContext();
     return buildUnknownBundleCandidates(
       invoice,
       context.poLines,

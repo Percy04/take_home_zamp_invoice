@@ -1,11 +1,14 @@
 import {
   ControlError,
-  buildInvoicePreview,
   evaluateConfirmedBundle,
-  evaluateHappyPath,
+  evaluateDuplicate,
+  evaluateInvoice,
+} from "./controls.js";
+import {
+  buildInvoicePreview,
   NormalizationError,
   normalizeInvoice,
-} from "./controls.js";
+} from "./invoice-normalization.js";
 import { readFile } from "node:fs/promises";
 import {
   extractAndMap,
@@ -153,68 +156,28 @@ export async function processInvoice(runId: string, storage: Storage) {
   }
   storage.addStage(runId, "NORMALIZATION", "COMPLETED");
 
-  // 3. Reject invoices that have already been posted for this vendor.
-  const duplicateMatch = storage.findDuplicate(invoice);
-  if (duplicateMatch) {
-    const checks: CheckResult[] = [
-      {
-        code: "DUPLICATE",
-        passed: false,
-        detail: "Invoice number has already been posted for this vendor.",
-        category: "DUPLICATE",
-        expected: "A new invoice number for this vendor",
-        actual: invoice.invoiceNumber,
-        sourceIds: [invoice.fieldSources.invoiceNumber].filter(Boolean),
-      },
-    ];
-    storage.addStage(runId, "CONTROLS", "FAILED");
-    storage.block(
-      runId,
-      "DUPLICATE",
-      nextActionFor("DUPLICATE"),
-      invoice,
-      checks,
-      { duplicateMatch },
-    );
+  if (duplicatePreflight(runId, storage, invoice, "CONTROLS"))
     return storage.getRun(runId)!;
-  }
 
-  // 4. If the invoice has no PO, pause for confirmation when a candidate can be found.
-  if (!invoice.poNumber) {
-    const candidates = storage.findPoCandidates(invoice);
-    if (candidates.length) {
-      storage.awaitPoConfirmation(
-        runId,
-        invoice,
-        [
-          {
-            code: "MISSING_PO",
-            passed: false,
-            detail: "Invoice omitted its PO reference.",
-          },
-        ],
-        candidates,
-        nextActionFor("MISSING_PO"),
-      );
-      return storage.getRun(runId)!;
-    }
-    storage.block(runId, "MISSING_PO", nextActionFor("MISSING_PO"), invoice, [
-      {
-        code: "MISSING_PO",
-        passed: false,
-        detail:
-          "Invoice omitted its PO reference and no candidate is available.",
-      },
-    ]);
-    return storage.getRun(runId)!;
-  }
-
-  // 5. Run deterministic AP controls against the vendor, PO, lines, prices, and totals.
+  // 3. Run deterministic AP controls against the vendor, PO, lines, prices, and totals.
   let evaluation;
   try {
-    evaluation = evaluateHappyPath(invoice, storage.getHappyContext());
+    evaluation = evaluateInvoice(invoice, storage.getControlContext());
   } catch (caught) {
     if (!(caught instanceof ControlError)) throw caught;
+    if (caught.code === "MISSING_PO") {
+      const candidates = storage.findPoCandidates(invoice);
+      if (candidates.length) {
+        storage.awaitPoConfirmation(
+          runId,
+          invoice,
+          caught.checks,
+          candidates,
+          nextActionFor("MISSING_PO"),
+        );
+        return storage.getRun(runId)!;
+      }
+    }
     if (caught.code === "LINE_MATCH") {
       const candidates = storage.findBundleCandidates(invoice);
       if (candidates.length) {
@@ -247,7 +210,7 @@ export async function processInvoice(runId: string, storage: Storage) {
   }
   storage.addStage(runId, "CONTROLS", "COMPLETED");
 
-  // 6. Post the invoice and its line-to-PO allocations atomically.
+  // 4. Post the invoice and its line-to-PO allocations atomically.
   try {
     storage.post(runId, invoice, evaluation.checks, evaluation.allocations);
   } catch (caught) {
@@ -269,6 +232,31 @@ export async function processInvoice(runId: string, storage: Storage) {
   }
   storage.addStage(runId, "POSTING", "COMPLETED");
   return storage.getRun(runId)!;
+}
+
+function duplicatePreflight(
+  runId: string,
+  storage: Storage,
+  invoice: import("../../shared/contracts.js").NormalizedInvoice,
+  failedStage?: string,
+) {
+  const duplicate = evaluateDuplicate(invoice, storage.getControlContext());
+  if (duplicate.check.passed || !duplicate.vendor) return false;
+  if (failedStage) storage.addStage(runId, failedStage, "FAILED");
+  storage.block(
+    runId,
+    "DUPLICATE",
+    nextActionFor("DUPLICATE"),
+    invoice,
+    [duplicate.check],
+    {
+      duplicateMatch: storage.findDuplicate(
+        duplicate.vendor.id,
+        invoice.invoiceNumber,
+      ),
+    },
+  );
+  return true;
 }
 
 function invalidRecheckFields(
@@ -330,7 +318,9 @@ export function confirmPo(runId: string, storage: Storage, poNumber: string) {
   const confirmedInvoice = { ...invoice, poNumber };
   let evaluation;
   try {
-    evaluation = evaluateHappyPath(confirmedInvoice, storage.getHappyContext());
+    if (duplicatePreflight(runId, storage, confirmedInvoice))
+      return storage.getRun(runId)!;
+    evaluation = evaluateInvoice(confirmedInvoice, storage.getControlContext());
   } catch (caught) {
     if (!(caught instanceof ControlError)) throw caught;
     if (caught.code === "LINE_MATCH") {
@@ -402,12 +392,14 @@ export function confirmBundle(
   if (!candidate) throw new Error("INVALID_CONFIRMATION");
   const invoice = storage.getEvaluation(runId)?.invoice;
   if (!invoice) throw new Error("RUN_EVALUATION_NOT_FOUND");
+  if (duplicatePreflight(runId, storage, invoice))
+    return storage.getRun(runId)!;
   let evaluation: { checks: CheckResult[]; allocations: Allocation[] };
   try {
     evaluation = evaluateConfirmedBundle(
       invoice,
       candidate,
-      storage.getHappyContext(),
+      storage.getControlContext(),
     );
   } catch (caught) {
     if (!(caught instanceof ControlError)) throw caught;

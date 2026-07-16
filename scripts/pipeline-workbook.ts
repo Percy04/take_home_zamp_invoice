@@ -17,11 +17,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  ControlError,
-  evaluateHappyPath,
-  normalizeInvoice,
-} from "../server/src/controls.js";
+import { ControlError, evaluateInvoice } from "../server/src/controls.js";
+import { normalizeInvoice } from "../server/src/invoice-normalization.js";
 import { extractAndMap } from "../server/src/providers.js";
 import {
   confirmBundle,
@@ -35,7 +32,9 @@ const file = argument("--file");
 const step = argument("--step") ?? "all";
 const confirmation = argument("--confirm");
 if (fixture && file) throw new Error("Choose either --fixture or --file.");
-const fixturePath = path.resolve(file ?? `data/fixtures/${fixture ?? "happy"}.pdf`);
+const fixturePath = path.resolve(
+  file ?? `data/fixtures/${fixture ?? "happy"}.pdf`,
+);
 
 if (!new Set(["extract", "normalize", "controls", "run", "all"]).has(step)) {
   throw new Error("--step must be extract, normalize, controls, run, or all.");
@@ -51,7 +50,8 @@ let invoice;
 try {
   if (extracted) {
     invoice = normalizeInvoice(extracted.evidence, extracted.mapping);
-    if (step === "normalize" || step === "all") print("2. normalization", invoice);
+    if (step === "normalize" || step === "all")
+      print("2. normalization", invoice);
   }
 } catch (error) {
   print("2. normalization failed", error);
@@ -61,7 +61,7 @@ try {
 if (invoice && (step === "controls" || step === "all")) {
   const storage = new Storage(path.resolve("tmp/pipeline-workbook/controls"));
   try {
-    print("3. controls", evaluateHappyPath(invoice, storage.getHappyContext()));
+    print("3. controls", evaluateInvoice(invoice, storage.getControlContext()));
   } catch (error) {
     print("3. controls failed", error);
     process.exitCode = 1;
@@ -105,7 +105,9 @@ function argument(name: string) {
 function print(label: string, value: unknown) {
   if (value instanceof ControlError) {
     console.log(`\n${label}`);
-    console.log(JSON.stringify({ code: value.code, checks: value.checks }, null, 2));
+    console.log(
+      JSON.stringify({ code: value.code, checks: value.checks }, null, 2),
+    );
     return;
   }
   console.log(`\n${label}`);
