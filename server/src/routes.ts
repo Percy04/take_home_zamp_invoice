@@ -71,10 +71,9 @@ export function createApi(storage?: Storage) {
       })
       .strict()
       .safeParse(request.query);
+
     if (!parsed.success)
-      return response
-        .status(400)
-        .json(error("INVALID_QUERY", "Run filters are invalid."));
+      return response.status(400).json(error("INVALID_QUERY", "Run filters are invalid."));
     try {
       response.json(storage.listRuns(parsed.data));
     } catch (caught) {

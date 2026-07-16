@@ -18,12 +18,14 @@ import type { Storage } from "./storage.js";
 import type { Allocation, CheckResult } from "../../shared/contracts.js";
 
 export async function processInvoice(runId: string, storage: Storage) {
+  // Resume only runs that are still in the normal processing state.
   const current = storage.getRun(runId);
   if (!current) throw new Error("RUN_NOT_FOUND");
   if (current.state === "POSTED" || current.state === "NEEDS_REVIEW")
     return current;
   if (current.state !== "PROCESSING") throw new Error("INVALID_RUN_STATE");
 
+  // 1. Read the PDF and use the configured provider to extract evidence and map fields.
   storage.addStage(runId, "EXTRACTION", "ACTIVE");
   const pdfPath = storage.getPdfPath(runId);
   if (!pdfPath) throw new Error("RUN_DOCUMENT_NOT_FOUND");
@@ -48,14 +50,20 @@ export async function processInvoice(runId: string, storage: Storage) {
   storage.addStage(runId, "MAPPING", "COMPLETED");
 
   let invoice;
+  // activeMapping is the AI mapping
   let activeMapping = mapping;
   let activeRechecks = aiRechecks;
+
+  // 2. Convert provider output into the validated internal invoice model.
+  // If an AI recheck made a field worse, restore the original mapping and flag it.
   try {
     for (;;) {
       try {
+        // Convert to apps invoice format
         invoice = normalizeInvoice(evidence, activeMapping);
         break;
       } catch (caught) {
+        // If fail, restore original values for the invalid fields and recheck
         const invalidFields = invalidRecheckFields(caught, activeRechecks);
         if (!invalidFields.length) throw caught;
         activeMapping = restoreRecheckedMapping(
@@ -144,6 +152,8 @@ export async function processInvoice(runId: string, storage: Storage) {
     return storage.getRun(runId)!;
   }
   storage.addStage(runId, "NORMALIZATION", "COMPLETED");
+
+  // 3. Reject invoices that have already been posted for this vendor.
   const duplicateMatch = storage.findDuplicate(invoice);
   if (duplicateMatch) {
     const checks: CheckResult[] = [
@@ -168,6 +178,8 @@ export async function processInvoice(runId: string, storage: Storage) {
     );
     return storage.getRun(runId)!;
   }
+
+  // 4. If the invoice has no PO, pause for confirmation when a candidate can be found.
   if (!invoice.poNumber) {
     const candidates = storage.findPoCandidates(invoice);
     if (candidates.length) {
@@ -196,6 +208,8 @@ export async function processInvoice(runId: string, storage: Storage) {
     ]);
     return storage.getRun(runId)!;
   }
+
+  // 5. Run deterministic AP controls against the vendor, PO, lines, prices, and totals.
   let evaluation;
   try {
     evaluation = evaluateHappyPath(invoice, storage.getHappyContext());
@@ -232,6 +246,8 @@ export async function processInvoice(runId: string, storage: Storage) {
     return storage.getRun(runId)!;
   }
   storage.addStage(runId, "CONTROLS", "COMPLETED");
+
+  // 6. Post the invoice and its line-to-PO allocations atomically.
   try {
     storage.post(runId, invoice, evaluation.checks, evaluation.allocations);
   } catch (caught) {
@@ -301,6 +317,7 @@ function sourceIdForField(mapping: InvoiceMapping, field: string) {
 }
 
 export function confirmPo(runId: string, storage: Storage, poNumber: string) {
+  // Re-run controls after the reviewer supplies the missing PO number.
   const current = storage.getRun(runId);
   if (!current) throw new Error("RUN_NOT_FOUND");
   if (current.state === "POSTED") return current;
@@ -373,6 +390,7 @@ export function confirmBundle(
   storage: Storage,
   candidateId: string,
 ) {
+  // Turn the reviewer-selected bundle decomposition into final allocations.
   const current = storage.getRun(runId);
   if (!current) throw new Error("RUN_NOT_FOUND");
   if (current.state === "POSTED") return current;
