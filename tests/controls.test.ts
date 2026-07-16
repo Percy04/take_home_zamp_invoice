@@ -3,6 +3,10 @@ import {
   buildInvoicePreview,
   NormalizationError,
   normalizeInvoice,
+} from "../server/src/invoice-normalization.js";
+import {
+  evaluateDuplicate,
+  type ControlContext,
 } from "../server/src/controls.js";
 import {
   ProviderError,
@@ -397,6 +401,41 @@ describe("deterministic normalization", () => {
         reasonCode: "UNSUPPORTED_STRUCTURE",
       }),
     );
+  });
+});
+
+describe("duplicate controls", () => {
+  it("treats a canonical vendor name and configured alias as the same duplicate", () => {
+    const invoice = normalizeInvoice(inclusiveEvidence(), mapping);
+    const context: ControlContext = {
+      vendors: [
+        {
+          id: "V-ACME",
+          canonical_name: "Acme Industrial Supplies LLC",
+          aliases_json: '["Acme Industrial"]',
+        },
+      ],
+      postedInvoices: [
+        {
+          vendor_id: "V-ACME",
+          normalized_invoice_number: "ACME2026005",
+        },
+      ],
+      purchaseOrders: [],
+      poLines: [],
+      priorAllocations: [],
+      bundleDefinitions: [],
+    };
+
+    const canonical = evaluateDuplicate(invoice, context);
+    const alias = evaluateDuplicate(
+      { ...invoice, vendor: "Acme Industrial" },
+      context,
+    );
+
+    expect(alias.vendor).toEqual(canonical.vendor);
+    expect(alias.check).toEqual(canonical.check);
+    expect(alias.check).toMatchObject({ code: "DUPLICATE", passed: false });
   });
 });
 

@@ -174,6 +174,81 @@ describe("happy-path vertical slice", () => {
     storage.close();
   });
 
+  it("blocks an alias-based duplicate before PO candidate routing", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-alias-duplicate-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const database = new Database(path.join(runtime, "runtime.sqlite"));
+    database
+      .prepare(
+        "UPDATE vendors SET canonical_name = ?, aliases_json = ? WHERE id = 'V-ACME'",
+      )
+      .run("Acme Master", '["Acme Industrial Supplies LLC"]');
+    database.close();
+    const app = createApp({ storage });
+
+    const created = await request(app)
+      .post("/api/runs")
+      .attach("invoice", path.resolve("data/fixtures/duplicate.pdf"))
+      .expect(201);
+    const processed = await request(app)
+      .post(`/api/runs/${created.body.runId}/process`)
+      .expect(200);
+
+    expect(processed.body).toMatchObject({
+      state: "NEEDS_REVIEW",
+      reasonCode: "DUPLICATE",
+      poCandidates: [],
+      bundleCandidates: [],
+    });
+    storage.close();
+  });
+
+  it("returns duplicate review during PO and bundle confirmation", async () => {
+    const runtime = mkdtempSync(path.join(tmpdir(), "zamp-confirm-duplicate-"));
+    temporaryDirectories.push(runtime);
+    const storage = new Storage(runtime);
+    const app = createApp({ storage });
+
+    const missingPo = await request(app)
+      .post("/api/runs")
+      .field("fixtureId", "missing_po")
+      .expect(201);
+    const awaitingPo = await request(app)
+      .post(`/api/runs/${missingPo.body.runId}/process`)
+      .expect(200);
+    insertDuplicate(storage, missingPo.body.runId, "LEDGER-CONFIRM-PO");
+    const poResult = await request(app)
+      .post(`/api/runs/${missingPo.body.runId}/confirm-po`)
+      .send({ poNumber: awaitingPo.body.candidatePo })
+      .expect(200);
+
+    const bundle = await request(app)
+      .post("/api/runs")
+      .field("fixtureId", "bundle_unknown")
+      .expect(201);
+    await request(app)
+      .post(`/api/runs/${bundle.body.runId}/process`)
+      .expect(200);
+    insertDuplicate(storage, bundle.body.runId, "LEDGER-CONFIRM-BUNDLE");
+    const bundleResult = await request(app)
+      .post(`/api/runs/${bundle.body.runId}/confirm-bundle`)
+      .send({ candidateId: "BUNDLE-CANDIDATE-1" })
+      .expect(200);
+
+    expect(poResult.body).toMatchObject({
+      state: "NEEDS_REVIEW",
+      reasonCode: "DUPLICATE",
+      ledgerId: null,
+    });
+    expect(bundleResult.body).toMatchObject({
+      state: "NEEDS_REVIEW",
+      reasonCode: "DUPLICATE",
+      ledgerId: null,
+    });
+    storage.close();
+  });
+
   it.each([
     [
       "tax_inclusive.pdf",
@@ -672,3 +747,31 @@ describe("happy-path vertical slice", () => {
     storage.close();
   });
 });
+
+function insertDuplicate(storage: Storage, runId: string, ledgerId: string) {
+  const invoice = storage.getEvaluation(runId)?.invoice;
+  if (!invoice) throw new Error("RUN_EVALUATION_NOT_FOUND");
+  const database = new Database(
+    path.join(storage.runtimeDirectory, "runtime.sqlite"),
+  );
+  database
+    .prepare(
+      `INSERT INTO posted_invoices
+       (id, run_id, origin, vendor_id, invoice_number, normalized_invoice_number,
+        invoice_date, currency, subtotal, tax, total, po_number, posted_at)
+       VALUES (?, NULL, 'SEED', 'V-ACME', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      ledgerId,
+      invoice.invoiceNumber,
+      invoice.invoiceNumber.replace(/[^A-Z0-9]/gi, "").toUpperCase(),
+      invoice.invoiceDate,
+      invoice.currency,
+      invoice.subtotal,
+      invoice.tax,
+      invoice.total,
+      invoice.poNumber || "PO-1002",
+      new Date().toISOString(),
+    );
+  database.close();
+}
