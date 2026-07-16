@@ -198,15 +198,7 @@ export async function processInvoice(runId: string, storage: Storage) {
           .findPoCandidates(invoice, true)
           .filter((candidate) => candidate.poNumber === invoice.poNumber)
       : [];
-    storage.block(
-      runId,
-      reasonFor(caught.code),
-      nextActionFor(reasonFor(caught.code)),
-      invoice,
-      caught.checks,
-      { poCandidates },
-    );
-    return storage.getRun(runId)!;
+    return blockForControlError(runId, storage, invoice, caught, poCandidates);
   }
   storage.addStage(runId, "CONTROLS", "COMPLETED");
 
@@ -257,6 +249,20 @@ function duplicatePreflight(
     },
   );
   return true;
+}
+
+function blockForControlError(
+  runId: string,
+  storage: Storage,
+  invoice: import("../../shared/contracts.js").NormalizedInvoice,
+  error: ControlError,
+  poCandidates: import("../../shared/contracts.js").PoCandidate[] = [],
+) {
+  const reason = reasonFor(error.code);
+  storage.block(runId, reason, nextActionFor(reason), invoice, error.checks, {
+    poCandidates,
+  });
+  return storage.getRun(runId)!;
 }
 
 function invalidRecheckFields(
@@ -337,15 +343,7 @@ export function confirmPo(runId: string, storage: Storage, poNumber: string) {
         return storage.getRun(runId)!;
       }
     }
-    const reason = reasonFor(caught.code);
-    storage.block(
-      runId,
-      reason,
-      nextActionFor(reason),
-      confirmedInvoice,
-      caught.checks,
-    );
-    return storage.getRun(runId)!;
+    return blockForControlError(runId, storage, confirmedInvoice, caught);
   }
   storage.addStage(runId, "CONFIRMATION", "COMPLETED");
   storage.post(
@@ -403,9 +401,7 @@ export function confirmBundle(
     );
   } catch (caught) {
     if (!(caught instanceof ControlError)) throw caught;
-    const reason = reasonFor(caught.code);
-    storage.block(runId, reason, nextActionFor(reason), invoice, caught.checks);
-    return storage.getRun(runId)!;
+    return blockForControlError(runId, storage, invoice, caught);
   }
   storage.addStage(runId, "CONFIRMATION", "COMPLETED");
   storage.post(runId, invoice, evaluation.checks, evaluation.allocations);
