@@ -102,58 +102,58 @@ The following newest mutually compatible stable versions were verified from the 
 
 Runtime dependencies:
 
-| Package | Version |
-|---|---:|
-| `react` | `19.2.7` |
-| `react-dom` | `19.2.7` |
-| `react-router-dom` | `7.18.1` |
-| `@tanstack/react-query` | `5.101.2` |
-| `express` | `5.2.1` |
-| `zod` | `4.4.3` |
-| `multer` | `2.2.0` |
-| `decimal.js` | `10.6.0` |
-| `better-sqlite3` | `12.11.1` |
-| `@azure-rest/ai-document-intelligence` | `1.1.0` |
-| `@azure/core-auth` | `1.10.1` |
-| `openai` | `6.46.0` |
-| `pdf-lib` | `1.17.1` |
-| `react-pdf` | `10.4.1` |
-| `helmet` | `8.2.0` |
-| `express-rate-limit` | `8.5.2` |
-| `cors` | `2.8.6` |
-| `dotenv` | `17.4.2` |
+| Package                                |   Version |
+| -------------------------------------- | --------: |
+| `react`                                |  `19.2.7` |
+| `react-dom`                            |  `19.2.7` |
+| `react-router-dom`                     |  `7.18.1` |
+| `@tanstack/react-query`                | `5.101.2` |
+| `express`                              |   `5.2.1` |
+| `zod`                                  |   `4.4.3` |
+| `multer`                               |   `2.2.0` |
+| `decimal.js`                           |  `10.6.0` |
+| `better-sqlite3`                       | `12.11.1` |
+| `@azure-rest/ai-document-intelligence` |   `1.1.0` |
+| `@azure/core-auth`                     |  `1.10.1` |
+| `openai`                               |  `6.46.0` |
+| `pdf-lib`                              |  `1.17.1` |
+| `react-pdf`                            |  `10.4.1` |
+| `helmet`                               |   `8.2.0` |
+| `express-rate-limit`                   |   `8.5.2` |
+| `cors`                                 |   `2.8.6` |
+| `dotenv`                               |  `17.4.2` |
 
 Development dependencies:
 
-| Package | Version |
-|---|---:|
-| `typescript` | `6.0.3` |
-| `vite` | `8.1.4` |
-| `@vitejs/plugin-react` | `6.0.3` |
-| `tailwindcss` | `4.3.2` |
-| `@tailwindcss/vite` | `4.3.2` |
-| `tsx` | `4.23.0` |
-| `vitest` | `4.1.10` |
-| `@vitest/coverage-v8` | `4.1.10` |
-| `jsdom` | `29.1.1` |
-| `@testing-library/react` | `16.3.2` |
-| `@testing-library/dom` | `10.4.1` |
-| `@testing-library/jest-dom` | `6.9.1` |
-| `supertest` | `7.2.2` |
-| `eslint` | `10.7.0` |
-| `@eslint/js` | `10.0.1` |
-| `typescript-eslint` | `8.63.0` |
-| `eslint-plugin-react-hooks` | `7.1.1` |
-| `eslint-plugin-react-refresh` | `0.5.3` |
-| `prettier` | `3.9.5` |
-| `@types/node` | `24.13.3` |
-| `@types/react` | `19.2.17` |
-| `@types/react-dom` | `19.2.3` |
-| `@types/express` | `5.0.6` |
-| `@types/multer` | `2.2.0` |
-| `@types/better-sqlite3` | `7.6.13` |
-| `@types/cors` | `2.8.19` |
-| `@types/supertest` | `7.2.0` |
+| Package                       |   Version |
+| ----------------------------- | --------: |
+| `typescript`                  |   `6.0.3` |
+| `vite`                        |   `8.1.4` |
+| `@vitejs/plugin-react`        |   `6.0.3` |
+| `tailwindcss`                 |   `4.3.2` |
+| `@tailwindcss/vite`           |   `4.3.2` |
+| `tsx`                         |  `4.23.0` |
+| `vitest`                      |  `4.1.10` |
+| `@vitest/coverage-v8`         |  `4.1.10` |
+| `jsdom`                       |  `29.1.1` |
+| `@testing-library/react`      |  `16.3.2` |
+| `@testing-library/dom`        |  `10.4.1` |
+| `@testing-library/jest-dom`   |   `6.9.1` |
+| `supertest`                   |   `7.2.2` |
+| `eslint`                      |  `10.7.0` |
+| `@eslint/js`                  |  `10.0.1` |
+| `typescript-eslint`           |  `8.63.0` |
+| `eslint-plugin-react-hooks`   |   `7.1.1` |
+| `eslint-plugin-react-refresh` |   `0.5.3` |
+| `prettier`                    |   `3.9.5` |
+| `@types/node`                 | `24.13.3` |
+| `@types/react`                | `19.2.17` |
+| `@types/react-dom`            |  `19.2.3` |
+| `@types/express`              |   `5.0.6` |
+| `@types/multer`               |   `2.2.0` |
+| `@types/better-sqlite3`       |  `7.6.13` |
+| `@types/cors`                 |  `2.8.19` |
+| `@types/supertest`            |   `7.2.0` |
 
 “Latest” means the latest stable version at the recorded baseline, not an unbounded install instruction. Upgrade intentionally with a separate dependency change that runs type checking, tests, linting, and the production build before updating the lockfile.
 

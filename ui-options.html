@@ -17,8 +17,13 @@
         --red: #a53b36;
         --violet: #6750a4;
         font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-          "Segoe UI", sans-serif;
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
         color: var(--ink);
         background: var(--page);
       }
@@ -262,13 +267,7 @@
         border-radius: 8px;
         background:
           linear-gradient(#fff 0 0) padding-box,
-          repeating-linear-gradient(
-            0deg,
-            #edf1ee 0,
-            #edf1ee 1px,
-            transparent 1px,
-            transparent 28px
-          );
+          repeating-linear-gradient(0deg, #edf1ee 0, #edf1ee 1px, transparent 1px, transparent 28px);
       }
 
       .doc-header {
@@ -432,9 +431,8 @@
     <header>
       <h1>AP Resolution Agent UI directions</h1>
       <p class="intro">
-        Three practical directions for the current product: one optimized for
-        operations, one for invoice review, and one for a polished take-home
-        demo. Pick the product feel first; implementation can stay simple.
+        Three practical directions for the current product: one optimized for operations, one for invoice review, and one for a polished
+        take-home demo. Pick the product feel first; implementation can stay simple.
       </p>
     </header>
 
@@ -444,9 +442,8 @@
           <div>
             <h2>Option A: AP Operations Console</h2>
             <p>
-              Dense, work-focused, and best if the app should feel like a real
-              internal AP tool. Prioritizes run history, state, controls, and
-              ledger impact over a big upload moment.
+              Dense, work-focused, and best if the app should feel like a real internal AP tool. Prioritizes run history, state, controls,
+              and ledger impact over a big upload moment.
             </p>
           </div>
           <span class="tag">Best for product credibility</span>
@@ -513,10 +510,7 @@
                 <div class="panel metric">
                   <span>Selected run</span>
                   <h3>ACME-2026-001</h3>
-                  <p class="small">
-                    All required controls passed. Posted once as
-                    LEDGER-ACME-001.
-                  </p>
+                  <p class="small">All required controls passed. Posted once as LEDGER-ACME-001.</p>
                   <div class="grid">
                     <span class="status ok">Vendor match</span>
                     <span class="status ok">Line match</span>
@@ -534,8 +528,7 @@
           <div>
             <h2>Option B: Reviewer Workbench</h2>
             <p>
-              Side-by-side document and decision workspace. Best if the core
-              experience is explaining evidence to a non-technical AP buyer.
+              Side-by-side document and decision workspace. Best if the core experience is explaining evidence to a non-technical AP buyer.
             </p>
           </div>
           <span class="tag">Best for review clarity</span>
@@ -573,10 +566,7 @@
                 <div class="grid">
                   <div class="callout">
                     <strong>Decision</strong>
-                    <p class="small">
-                      Posted once because vendor, PO, lines, totals, and receipt
-                      capacity passed.
-                    </p>
+                    <p class="small">Posted once because vendor, PO, lines, totals, and receipt capacity passed.</p>
                   </div>
                   <div class="panel">
                     <table>
@@ -615,9 +605,8 @@
           <div>
             <h2>Option C: Guided Demo Flow</h2>
             <p>
-              More polished and presentation-friendly. Best if this is judged
-              as a take-home demo where the first impression and narrative flow
-              matter.
+              More polished and presentation-friendly. Best if this is judged as a take-home demo where the first impression and narrative
+              flow matter.
             </p>
           </div>
           <span class="tag">Best for demo polish</span>
@@ -637,10 +626,7 @@
                 <div class="upload">
                   <div>
                     <strong>Drop an invoice PDF</strong>
-                    <p class="small">
-                      Synthetic demo documents only. Provider calls stay on the
-                      server.
-                    </p>
+                    <p class="small">Synthetic demo documents only. Provider calls stay on the server.</p>
                     <button class="button">Choose PDF</button>
                   </div>
                 </div>
@@ -670,10 +656,7 @@
                   <div class="panel metric">
                     <span>Example result</span>
                     <h3>AUTO_CLEARED</h3>
-                    <p class="small">
-                      The user sees what changed in accounting and which
-                      controls made the decision safe.
-                    </p>
+                    <p class="small">The user sees what changed in accounting and which controls made the decision safe.</p>
                   </div>
                 </div>
               </div>

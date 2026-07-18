@@ -1,35 +1,19 @@
 import { Decimal } from "decimal.js";
-import {
-  normalizedInvoiceSchema,
-  type InvoicePreview,
-  type NormalizedInvoice,
-  type SourceRef,
-} from "../../shared/contracts.js";
+import { normalizedInvoiceSchema, type InvoicePreview, type NormalizedInvoice, type SourceRef } from "../../shared/contracts.js";
 import type { InvoiceMapping } from "./providers.js";
 
-const unsupportedCharge =
-  /FREIGHT|SHIPPING|DISCOUNT|CREDIT|RETAINAGE|SPECIAL\s*CHARGE/i;
-const unsupportedTax =
-  /COMPOUND|EXEMPT|WITHHOLDING|REVERSE[\s-]?CHARGE|RECOVERAB/i;
+const unsupportedCharge = /FREIGHT|SHIPPING|DISCOUNT|CREDIT|RETAINAGE|SPECIAL\s*CHARGE/i;
+const unsupportedTax = /COMPOUND|EXEMPT|WITHHOLDING|REVERSE[\s-]?CHARGE|RECOVERAB/i;
 
-export function buildInvoicePreview(
-  evidence: SourceRef[],
-  mapping: InvoiceMapping,
-  missingField: string | null = null,
-): InvoicePreview {
-  const byId = new Map(
-    evidence.map((source) => [source.id, source.content.trim()]),
-  );
-  const read = (id: string | null | undefined) =>
-    id ? (byId.get(id) ?? null) : null;
+export function buildInvoicePreview(evidence: SourceRef[], mapping: InvoiceMapping, missingField: string | null = null): InvoicePreview {
+  const byId = new Map(evidence.map((source) => [source.id, source.content.trim()]));
+  const read = (id: string | null | undefined) => (id ? (byId.get(id) ?? null) : null);
   return {
     vendor: read(mapping.vendor),
     invoiceNumber: read(mapping.invoiceNumber),
     invoiceDate: read(mapping.invoiceDate),
     poNumber: read(mapping.poNumber),
-    currency:
-      read(mapping.currency) ??
-      (evidence.some((source) => /\$/.test(source.content)) ? "USD" : null),
+    currency: read(mapping.currency) ?? (evidence.some((source) => /\$/.test(source.content)) ? "USD" : null),
     subtotal: read(mapping.subtotal),
     tax: read(mapping.tax),
     total: read(mapping.total),
@@ -45,27 +29,15 @@ export function buildInvoicePreview(
   };
 }
 
-export function normalizeInvoice(
-  evidence: SourceRef[],
-  mapping: InvoiceMapping,
-): NormalizedInvoice {
+export function normalizeInvoice(evidence: SourceRef[], mapping: InvoiceMapping): NormalizedInvoice {
   const byId = new Map(evidence.map((source) => [source.id, source]));
   const lowConfidenceFields = mappedLowConfidenceFields(byId, mapping);
   if (lowConfidenceFields.length > 1) {
-    throw new NormalizationError(
-      "MULTIPLE_ISSUES",
-      undefined,
-      lowConfidenceFields,
-    );
+    throw new NormalizationError("MULTIPLE_ISSUES", undefined, lowConfidenceFields);
   }
   const selected: SourceRef[] = [];
   const fieldSources: Record<string, string> = {};
-  const select = (
-    id: string | null | undefined,
-    required = false,
-    field?: string,
-    sources = fieldSources,
-  ) => {
+  const select = (id: string | null | undefined, required = false, field?: string, sources = fieldSources) => {
     if (!id) {
       if (required) failNormalization("MISSING_REQUIRED_FIELD", field);
       return "";
@@ -74,8 +46,7 @@ export function normalizeInvoice(
     if (!source) failNormalization("MAPPING_FAILED");
     selected.push(source);
     if (field) sources[field] = id;
-    if (source.confidence !== null && source.confidence < 0.75)
-      failNormalization("LOW_CONFIDENCE", field);
+    if (source.confidence !== null && source.confidence < 0.75) failNormalization("LOW_CONFIDENCE", field);
     const value = source.content.normalize("NFKC").trim();
     if (required && !value) failNormalization("MISSING_REQUIRED_FIELD", field);
     return value;
@@ -86,89 +57,42 @@ export function normalizeInvoice(
     const value = parseMoney(source.content, true);
     if (value && !value.isZero()) failNormalization("UNSUPPORTED_STRUCTURE");
   }
-  if (
-    evidence.some((source) =>
-      /CREDIT\s*(?:NOTE|MEMO)|REVERSE[\s-]?CHARGE|COMPOUND\s+TAX/i.test(
-        `${source.label} ${source.content}`,
-      ),
-    )
-  )
+  if (evidence.some((source) => /CREDIT\s*(?:NOTE|MEMO)|REVERSE[\s-]?CHARGE|COMPOUND\s+TAX/i.test(`${source.label} ${source.content}`)))
     failNormalization("UNSUPPORTED_STRUCTURE");
 
   const vendor = select(mapping.vendor, true, "vendor");
   const invoiceNumber = select(mapping.invoiceNumber, true, "invoiceNumber");
-  const invoiceDate = parseDate(
-    select(mapping.invoiceDate, true, "invoiceDate"),
-    "invoiceDate",
-    evidence,
-  );
+  const invoiceDate = parseDate(select(mapping.invoiceDate, true, "invoiceDate"), "invoiceDate", evidence);
   const poNumber = select(mapping.poNumber, false, "poNumber");
-  if (
-    poNumber &&
-    poNumber.split(/[,;/\n]|\s+AND\s+/i).filter(Boolean).length > 1
-  )
-    failNormalization("UNSUPPORTED_STRUCTURE");
-  if (!mapping.lines.length)
-    failNormalization("MISSING_REQUIRED_FIELD", "lines");
+  if (poNumber && poNumber.split(/[,;/\n]|\s+AND\s+/i).filter(Boolean).length > 1) failNormalization("UNSUPPORTED_STRUCTURE");
+  if (!mapping.lines.length) failNormalization("MISSING_REQUIRED_FIELD", "lines");
 
   const observedLines = mapping.lines.map((line, index) => {
     const sourceIds: Record<string, string> = {};
     const rawSku = select(line.sku, false, "sku", sourceIds);
-    const rawDescription = select(
-      line.description,
-      false,
-      "description",
-      sourceIds,
-    );
+    const rawDescription = select(line.description, false, "description", sourceIds);
     const compact = compactLine(rawSku, rawDescription);
     const sku = compact?.sku ?? rawSku;
     const description = compact?.description ?? rawDescription;
-    if (!sku && !description)
-      failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.identity`);
+    if (!sku && !description) failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.identity`);
     const mappedQuantity = select(line.quantity, false, "quantity", sourceIds);
     const quantityReading = compact?.quantity ?? mappedQuantity;
-    const embeddedUom =
-      quantityReading.match(/^[\d.,]+\s*([a-zA-Z]+)$/)?.[1] ?? "";
-    let quantity = quantityReading
-      ? parseQuantity(
-          quantityReading.replace(/\s*[a-zA-Z]+$/, ""),
-          `lines.${index}.quantity`,
-        )
-      : null;
+    const embeddedUom = quantityReading.match(/^[\d.,]+\s*([a-zA-Z]+)$/)?.[1] ?? "";
+    let quantity = quantityReading ? parseQuantity(quantityReading.replace(/\s*[a-zA-Z]+$/, ""), `lines.${index}.quantity`) : null;
     const mappedUom = select(line.uom, false, "uom", sourceIds);
     const uom = parseUom(compact?.uom || mappedUom || embeddedUom || "");
-    const mappedUnitPrice = select(
-      line.unitPrice,
-      false,
-      "observedUnitPrice",
-      sourceIds,
-    );
-    let observedUnitPrice = optionalMoney(
-      compact?.unitPrice ?? mappedUnitPrice,
-      `lines.${index}.observedUnitPrice`,
-    );
-    const mappedAmount = select(
-      line.amount,
-      false,
-      "observedAmount",
-      sourceIds,
-    );
-    let observedAmount = optionalMoney(
-      compact?.amount ?? mappedAmount,
-      `lines.${index}.observedAmount`,
-    );
+    const mappedUnitPrice = select(line.unitPrice, false, "observedUnitPrice", sourceIds);
+    let observedUnitPrice = optionalMoney(compact?.unitPrice ?? mappedUnitPrice, `lines.${index}.observedUnitPrice`);
+    const mappedAmount = select(line.amount, false, "observedAmount", sourceIds);
+    let observedAmount = optionalMoney(compact?.amount ?? mappedAmount, `lines.${index}.observedAmount`);
     const derivations: NormalizedInvoice["lines"][number]["derivations"] = [];
     if (!quantity && observedUnitPrice && observedAmount) {
-      if (observedUnitPrice.isZero())
-        failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.quantity`);
+      if (observedUnitPrice.isZero()) failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.quantity`);
       quantity = observedAmount.div(observedUnitPrice);
       derivations.push({
         field: "quantity",
         formula: `${money(observedAmount)} / ${money(observedUnitPrice)}`,
-        sourceIds: [
-          sourceIds.observedAmount,
-          sourceIds.observedUnitPrice,
-        ].filter((id): id is string => Boolean(id)),
+        sourceIds: [sourceIds.observedAmount, sourceIds.observedUnitPrice].filter((id): id is string => Boolean(id)),
       });
     }
     if (!observedUnitPrice && quantity && observedAmount) {
@@ -176,9 +100,7 @@ export function normalizeInvoice(
       derivations.push({
         field: "unitPrice",
         formula: `${money(observedAmount)} / ${quantity.toString()}`,
-        sourceIds: [sourceIds.observedAmount, sourceIds.quantity].filter(
-          (id): id is string => Boolean(id),
-        ),
+        sourceIds: [sourceIds.observedAmount, sourceIds.quantity].filter((id): id is string => Boolean(id)),
       });
     }
     if (!observedAmount && quantity && observedUnitPrice) {
@@ -186,36 +108,19 @@ export function normalizeInvoice(
       derivations.push({
         field: "amount",
         formula: `${quantity.toString()} * ${money(observedUnitPrice)}`,
-        sourceIds: [sourceIds.quantity, sourceIds.observedUnitPrice].filter(
-          (id): id is string => Boolean(id),
-        ),
+        sourceIds: [sourceIds.quantity, sourceIds.observedUnitPrice].filter((id): id is string => Boolean(id)),
       });
     }
-    if (!quantity)
-      failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.quantity`);
-    if (!observedUnitPrice)
-      failNormalization(
-        "MISSING_REQUIRED_FIELD",
-        `lines.${index}.observedUnitPrice`,
-      );
-    if (!observedAmount)
-      failNormalization(
-        "MISSING_REQUIRED_FIELD",
-        `lines.${index}.observedAmount`,
-      );
-    const taxInclusion = select(
-      line.taxInclusion,
-      false,
-      "taxInclusion",
-      sourceIds,
-    );
+    if (!quantity) failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.quantity`);
+    if (!observedUnitPrice) failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.observedUnitPrice`);
+    if (!observedAmount) failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.observedAmount`);
+    const taxInclusion = select(line.taxInclusion, false, "taxInclusion", sourceIds);
     const taxRate = select(line.taxRate, false, "taxRate", sourceIds);
     const observedTaxAmount = optionalMoney(
       select(line.taxAmount, false, "observedTaxAmount", sourceIds),
       `lines.${index}.observedTaxAmount`,
     );
-    if (quantity.mul(observedUnitPrice).minus(observedAmount).abs().gt("0.01"))
-      failNormalization("TOTAL_MISMATCH");
+    if (quantity.mul(observedUnitPrice).minus(observedAmount).abs().gt("0.01")) failNormalization("TOTAL_MISMATCH");
     return {
       sku,
       description,
@@ -231,18 +136,9 @@ export function normalizeInvoice(
     };
   });
 
-  const observedSubtotal = optionalMoney(
-    select(mapping.subtotal, false, "observedSubtotal"),
-    "observedSubtotal",
-  );
-  const observedTax = optionalMoney(
-    select(mapping.tax, false, "observedTax"),
-    "observedTax",
-  );
-  const observedTotal = requiredMoney(
-    select(mapping.total, true, "observedTotal"),
-    "observedTotal",
-  );
+  const observedSubtotal = optionalMoney(select(mapping.subtotal, false, "observedSubtotal"), "observedSubtotal");
+  const observedTax = optionalMoney(select(mapping.tax, false, "observedTax"), "observedTax");
+  const observedTotal = requiredMoney(select(mapping.total, true, "observedTotal"), "observedTotal");
   const taxNote = select(mapping.taxNote, false, "taxNote");
   if (unsupportedTax.test(taxNote)) failNormalization("UNSUPPORTED_STRUCTURE");
 
@@ -253,36 +149,25 @@ export function normalizeInvoice(
     .join(" ");
   const currency = explicitCurrency
     ? parseCurrency(explicitCurrency)
-    : /\$|\b(?:USD|US\s+DOLLARS?)\b/i.test(moneyText) &&
-        !/[€£¥]|\b(?:EUR|GBP|JPY|CAD|AUD)\b/i.test(moneyText)
+    : /\$|\b(?:USD|US\s+DOLLARS?)\b/i.test(moneyText) && !/[€£¥]|\b(?:EUR|GBP|JPY|CAD|AUD)\b/i.test(moneyText)
       ? "USD"
       : "";
-  if (!currency && /[€£¥]|\b(?:EUR|GBP|JPY|CAD|AUD)\b/i.test(moneyText))
-    failNormalization("UNSUPPORTED_STRUCTURE");
+  if (!currency && /[€£¥]|\b(?:EUR|GBP|JPY|CAD|AUD)\b/i.test(moneyText)) failNormalization("UNSUPPORTED_STRUCTURE");
   if (!currency) failNormalization("MISSING_REQUIRED_FIELD", "currency");
 
   const documentInclusionClaim = claimsTaxInclusion(taxNote);
   const documentRate = parseTaxRate(taxNote);
-  if (documentInclusionClaim && !documentRate)
-    failNormalization("TAX_TREATMENT_UNRESOLVED");
+  if (documentInclusionClaim && !documentRate) failNormalization("TAX_TREATMENT_UNRESOLVED");
 
   const lines = observedLines.map((line) => {
     const lineTaxText = `${line.taxInclusion} ${line.taxRate}`.trim();
     const hasLineTaxEvidence = Boolean(line.taxInclusion || line.taxRate);
-    const inclusionClaim = hasLineTaxEvidence
-      ? claimsTaxInclusion(lineTaxText)
-      : documentInclusionClaim;
+    const inclusionClaim = hasLineTaxEvidence ? claimsTaxInclusion(lineTaxText) : documentInclusionClaim;
     const rate = hasLineTaxEvidence ? parseTaxRate(lineTaxText) : documentRate;
     if (inclusionClaim && !rate) failNormalization("TAX_TREATMENT_UNRESOLVED");
-    const amount = inclusionClaim
-      ? money(line.observedAmount.div(new Decimal(1).plus(rate!)))
-      : money(line.observedAmount);
-    const unitPrice = inclusionClaim
-      ? money(new Decimal(amount).div(line.quantity))
-      : money(line.observedUnitPrice);
-    const taxAmount = inclusionClaim
-      ? money(line.observedAmount.minus(amount))
-      : money(line.observedTaxAmount ?? 0);
+    const amount = inclusionClaim ? money(line.observedAmount.div(new Decimal(1).plus(rate!))) : money(line.observedAmount);
+    const unitPrice = inclusionClaim ? money(new Decimal(amount).div(line.quantity)) : money(line.observedUnitPrice);
+    const taxAmount = inclusionClaim ? money(line.observedAmount.minus(amount)) : money(line.observedTaxAmount ?? 0);
     return {
       sku: line.sku,
       description: line.description,
@@ -290,9 +175,7 @@ export function normalizeInvoice(
       uom: line.uom,
       observedUnitPrice: money(line.observedUnitPrice),
       observedAmount: money(line.observedAmount),
-      observedTaxAmount: line.observedTaxAmount
-        ? money(line.observedTaxAmount)
-        : null,
+      observedTaxAmount: line.observedTaxAmount ? money(line.observedTaxAmount) : null,
       unitPrice,
       amount,
       taxAmount,
@@ -310,55 +193,30 @@ export function normalizeInvoice(
               {
                 field: "amount",
                 formula: `${money(line.observedAmount)} / (1 + ${rate!.toString()})`,
-                sourceIds: [
-                  line.sourceIds.observedAmount,
-                  fieldSources.taxNote,
-                ].filter((id): id is string => Boolean(id)),
+                sourceIds: [line.sourceIds.observedAmount, fieldSources.taxNote].filter((id): id is string => Boolean(id)),
               },
             ]
           : []),
       ],
     };
   });
-  const goodsSubtotal = lines.reduce(
-    (sum, line) => sum.plus(line.amount),
-    new Decimal(0),
-  );
-  if (
-    observedSubtotal &&
-    observedSubtotal.minus(goodsSubtotal).abs().gt("0.01")
-  )
-    failNormalization("TOTAL_MISMATCH");
+  const goodsSubtotal = lines.reduce((sum, line) => sum.plus(line.amount), new Decimal(0));
+  if (observedSubtotal && observedSubtotal.minus(goodsSubtotal).abs().gt("0.01")) failNormalization("TOTAL_MISMATCH");
 
   let taxTreatment: NormalizedInvoice["taxTreatment"];
   let normalizedTax: Decimal;
-  const inclusiveLines = lines.filter(
-    (line) => line.taxTreatment === "INCLUSIVE",
-  );
+  const inclusiveLines = lines.filter((line) => line.taxTreatment === "INCLUSIVE");
   const hasInclusiveLines = inclusiveLines.length > 0;
   const hasNonInclusiveLines = inclusiveLines.length < lines.length;
   if (hasInclusiveLines && hasNonInclusiveLines) {
-    if (
-      lines.some(
-        (line) =>
-          line.taxTreatment !== "INCLUSIVE" &&
-          !line.sourceIds.observedTaxAmount,
-      )
-    )
+    if (lines.some((line) => line.taxTreatment !== "INCLUSIVE" && !line.sourceIds.observedTaxAmount))
       failNormalization("TAX_TREATMENT_UNRESOLVED");
     taxTreatment = "MIXED";
-    normalizedTax = lines.reduce(
-      (sum, line) => sum.plus(line.taxAmount),
-      new Decimal(0),
-    );
+    normalizedTax = lines.reduce((sum, line) => sum.plus(line.taxAmount), new Decimal(0));
   } else if (hasInclusiveLines) {
     taxTreatment = "INCLUSIVE";
-    normalizedTax = lines.reduce(
-      (sum, line) => sum.plus(line.taxAmount),
-      new Decimal(0),
-    );
-    if (observedTax && observedTax.minus(normalizedTax).abs().gt("0.01"))
-      failNormalization("TOTAL_MISMATCH");
+    normalizedTax = lines.reduce((sum, line) => sum.plus(line.taxAmount), new Decimal(0));
+    if (observedTax && observedTax.minus(normalizedTax).abs().gt("0.01")) failNormalization("TOTAL_MISMATCH");
   } else if (observedTax) {
     taxTreatment = observedTax.isZero() ? "ZERO" : "EXCLUSIVE";
     normalizedTax = observedTax;
@@ -369,8 +227,7 @@ export function normalizeInvoice(
     failNormalization("TOTAL_MISMATCH");
   }
 
-  if (goodsSubtotal.plus(normalizedTax).minus(observedTotal).abs().gt("0.01"))
-    failNormalization("TOTAL_MISMATCH");
+  if (goodsSubtotal.plus(normalizedTax).minus(observedTotal).abs().gt("0.01")) failNormalization("TOTAL_MISMATCH");
 
   return normalizedInvoiceSchema.parse({
     vendor,
@@ -382,11 +239,7 @@ export function normalizeInvoice(
     observedTax: observedTax ? money(observedTax) : null,
     observedTotal: money(observedTotal),
     taxTreatment,
-    taxRate:
-      taxTreatment === "INCLUSIVE" &&
-      new Set(lines.map((line) => line.taxRate)).size === 1
-        ? lines[0]!.taxRate
-        : null,
+    taxRate: taxTreatment === "INCLUSIVE" && new Set(lines.map((line) => line.taxRate)).size === 1 ? lines[0]!.taxRate : null,
     subtotal: money(goodsSubtotal),
     tax: money(normalizedTax),
     total: money(observedTotal),
@@ -402,10 +255,7 @@ export function normalizeInvoice(
           {
             field: "tax",
             formula: `${money(observedTotal)} - ${money(goodsSubtotal)}`,
-            sourceIds: [
-              fieldSources.observedTotal,
-              fieldSources.taxNote,
-            ].filter((id): id is string => Boolean(id)),
+            sourceIds: [fieldSources.observedTotal, fieldSources.taxNote].filter((id): id is string => Boolean(id)),
           },
         ]
       : [],
@@ -422,10 +272,7 @@ export class NormalizationError extends Error {
   }
 }
 
-function mappedLowConfidenceFields(
-  evidence: Map<string, SourceRef>,
-  mapping: InvoiceMapping,
-) {
+function mappedLowConfidenceFields(evidence: Map<string, SourceRef>, mapping: InvoiceMapping) {
   const fields: Array<[string, string | null | undefined]> = [
     ["vendor", mapping.vendor],
     ["invoiceNumber", mapping.invoiceNumber],
@@ -450,9 +297,7 @@ function mappedLowConfidenceFields(
   ];
   return fields.flatMap(([field, sourceId]) => {
     const confidence = sourceId ? evidence.get(sourceId)?.confidence : null;
-    return confidence !== null && confidence !== undefined && confidence < 0.75
-      ? [field]
-      : [];
+    return confidence !== null && confidence !== undefined && confidence < 0.75 ? [field] : [];
   });
 }
 
@@ -472,10 +317,7 @@ function optionalMoney(value: string, field?: string) {
 function parseMoney(value: string, allowUnparseable: boolean, field?: string) {
   let normalized = value.normalize("NFKC").replace(/\s/g, "").trim();
   if (!normalized) return null;
-  const negative =
-    /^\(.*\)$/.test(normalized) ||
-    /^-/.test(normalized) ||
-    /-$/.test(normalized);
+  const negative = /^\(.*\)$/.test(normalized) || /^-/.test(normalized) || /-$/.test(normalized);
   normalized = normalized
     .replace(/^\((.*)\)$/, "$1")
     .replace(/^-|-$|^(?:USD|US\$|\$)/i, "")
@@ -527,9 +369,7 @@ function compactLine(...values: string[]) {
   const arithmetic = parts
     .slice(2)
     .join(" ")
-    .match(
-      /(-?\d+(?:[.,]\d+)?)\s*(?:EA|EACH|PC|PCS|KIT|HRS?|HOURS?)?\s*[x×]\s*\$?([\d,.]+)\s*=\s*\$?([\d,.]+)/i,
-    );
+    .match(/(-?\d+(?:[.,]\d+)?)\s*(?:EA|EACH|PC|PCS|KIT|HRS?|HOURS?)?\s*[x×]\s*\$?([\d,.]+)\s*=\s*\$?([\d,.]+)/i);
   return {
     sku: parts[0]!,
     description: parts[1]!,
@@ -547,9 +387,7 @@ function parseDate(value: string, field?: string, evidence: SourceRef[] = []) {
   let day: number;
   let match = normalized.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
   if (match) [, year, month, day] = match.map(Number);
-  else if (
-    (match = normalized.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/))
-  ) {
+  else if ((match = normalized.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/))) {
     const [, first, second, parsedYear] = match.map(Number);
     year = parsedYear!;
     if (first! > 12 && second! <= 12) [day, month] = [first!, second!];
@@ -562,12 +400,8 @@ function parseDate(value: string, field?: string, evidence: SourceRef[] = []) {
       else failNormalization("AMBIGUOUS_DATE", field);
     }
   } else {
-    const dayFirst = normalized.match(
-      /^(\d{1,2})(?:st|nd|rd|th)?[\s.-]+([A-Za-z]{3,9})[\s,.-]+(\d{4})$/i,
-    );
-    const monthFirst = normalized.match(
-      /^([A-Za-z]{3,9})[\s.-]+(\d{1,2})(?:st|nd|rd|th)?[,]?[\s.-]+(\d{4})$/i,
-    );
+    const dayFirst = normalized.match(/^(\d{1,2})(?:st|nd|rd|th)?[\s.-]+([A-Za-z]{3,9})[\s,.-]+(\d{4})$/i);
+    const monthFirst = normalized.match(/^([A-Za-z]{3,9})[\s.-]+(\d{1,2})(?:st|nd|rd|th)?[,]?[\s.-]+(\d{4})$/i);
     if (dayFirst) {
       day = Number(dayFirst[1]);
       month = monthNumber(dayFirst[2]!);
@@ -579,11 +413,7 @@ function parseDate(value: string, field?: string, evidence: SourceRef[] = []) {
     } else failNormalization("MISSING_REQUIRED_FIELD", field);
   }
   const date = new Date(Date.UTC(year!, month! - 1, day!));
-  if (
-    date.getUTCFullYear() !== year! ||
-    date.getUTCMonth() + 1 !== month! ||
-    date.getUTCDate() !== day!
-  )
+  if (date.getUTCFullYear() !== year! || date.getUTCMonth() + 1 !== month! || date.getUTCDate() !== day!)
     failNormalization("MISSING_REQUIRED_FIELD", field);
   return `${String(year!).padStart(4, "0")}-${String(month!).padStart(2, "0")}-${String(day!).padStart(2, "0")}`;
 }
@@ -592,9 +422,7 @@ function numericDateOrder(evidence: SourceRef[]) {
   const orders = new Set<"MONTH_FIRST" | "DAY_FIRST">();
   for (const source of evidence) {
     if (!/DUE[\s_-]*DATE/i.test(source.label)) continue;
-    const match = source.content
-      .trim()
-      .match(/^(\d{1,2})[./-](\d{1,2})[./-]\d{4}$/);
+    const match = source.content.trim().match(/^(\d{1,2})[./-](\d{1,2})[./-]\d{4}$/);
     if (!match) continue;
     const first = Number(match[1]);
     const second = Number(match[2]);
@@ -621,37 +449,19 @@ function canonicalNumber(value: string) {
     return fraction.length === 3 ? parts.join("") : parts.join(".");
   }
   const fraction = parts.at(-1)!;
-  return fraction.length === 3
-    ? parts.join("")
-    : `${parts.slice(0, -1).join("")}.${fraction}`;
+  return fraction.length === 3 ? parts.join("") : `${parts.slice(0, -1).join("")}.${fraction}`;
 }
 
 function parseCurrency(value: string) {
   const normalized = value.toUpperCase().replace(/[^A-Z$]/g, "");
-  if (["USD", "US$", "$", "USDOLLAR", "USDOLLARS"].includes(normalized))
-    return "USD";
+  if (["USD", "US$", "$", "USDOLLAR", "USDOLLARS"].includes(normalized)) return "USD";
   failNormalization("UNSUPPORTED_STRUCTURE");
 }
 
 function monthNumber(value: string) {
-  const names = [
-    "JANUARY",
-    "FEBRUARY",
-    "MARCH",
-    "APRIL",
-    "MAY",
-    "JUNE",
-    "JULY",
-    "AUGUST",
-    "SEPTEMBER",
-    "OCTOBER",
-    "NOVEMBER",
-    "DECEMBER",
-  ];
+  const names = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
   const normalized = value.toUpperCase();
-  const month = names.findIndex(
-    (name) => name === normalized || name.slice(0, 3) === normalized,
-  );
+  const month = names.findIndex((name) => name === normalized || name.slice(0, 3) === normalized);
   if (month < 0) failNormalization("MISSING_REQUIRED_FIELD", "invoiceDate");
   return month + 1;
 }
@@ -667,15 +477,11 @@ function parseTaxRate(value: string) {
 }
 
 function claimsTaxInclusion(value: string) {
-  return /(?:INCLUD(?:E|ES|ED|ING)|INCL\.?).*?(?:TAX|VAT|GST)|(?:TAX|VAT|GST).*?(?:INCLUD|INCL\.?)/i.test(
-    value,
-  );
+  return /(?:INCLUD(?:E|ES|ED|ING)|INCL\.?).*?(?:TAX|VAT|GST)|(?:TAX|VAT|GST).*?(?:INCLUD|INCL\.?)/i.test(value);
 }
 
 function money(value: Decimal.Value) {
-  return new Decimal(value)
-    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
-    .toFixed(2);
+  return new Decimal(value).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
 }
 
 function failNormalization(reasonCode: string, field?: string): never {

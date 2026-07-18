@@ -10,8 +10,7 @@ import { Storage } from "../server/src/storage.js";
 const temporaryDirectories: string[] = [];
 
 afterEach(() => {
-  for (const directory of temporaryDirectories.splice(0))
-    rmSync(directory, { recursive: true });
+  for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true });
 });
 
 describe("GET /api/health", () => {
@@ -23,9 +22,7 @@ describe("GET /api/health", () => {
       status: "ok",
       database: "not-initialized",
     });
-    expect(response.headers["content-security-policy"]).toContain(
-      "font-src 'self' https://fonts.gstatic.com",
-    );
+    expect(response.headers["content-security-policy"]).toContain("font-src 'self' https://fonts.gstatic.com");
   });
 });
 
@@ -36,13 +33,8 @@ describe("GET /api/runs", () => {
     const storage = new Storage(runtime);
     const app = createApp({ storage });
 
-    const created = await request(app)
-      .post("/api/runs")
-      .field("fixtureId", "happy")
-      .expect(201);
-    await request(app)
-      .post(`/api/runs/${created.body.runId}/process`)
-      .expect(200);
+    const created = await request(app).post("/api/runs").field("fixtureId", "happy").expect(201);
+    await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
     const listed = await request(app).get("/api/runs").expect(200);
 
     expect(listed.body).toMatchObject({
@@ -71,14 +63,8 @@ describe("confirmation errors", () => {
     const storage = new Storage(runtime);
     const app = createApp({ storage });
 
-    const created = await request(app)
-      .post("/api/runs")
-      .field("fixtureId", "happy")
-      .expect(201);
-    const response = await request(app)
-      .post(`/api/runs/${created.body.runId}/confirm-po`)
-      .send({ poNumber: "PO-1001" })
-      .expect(409);
+    const created = await request(app).post("/api/runs").field("fixtureId", "happy").expect(201);
+    const response = await request(app).post(`/api/runs/${created.body.runId}/confirm-po`).send({ poNumber: "PO-1001" }).expect(409);
 
     expect(response.body).toMatchObject({
       error: {
@@ -97,22 +83,15 @@ describe("processing re-entry", () => {
     temporaryDirectories.push(runtime);
     const storage = new Storage(runtime);
     const app = createApp({ storage });
-    const created = await request(app)
-      .post("/api/runs")
-      .field("fixtureId", "happy")
-      .expect(201);
+    const created = await request(app).post("/api/runs").field("fixtureId", "happy").expect(201);
 
     const responses = await Promise.all([
       request(app).post(`/api/runs/${created.body.runId}/process`),
       request(app).post(`/api/runs/${created.body.runId}/process`),
     ]);
 
-    expect(responses.map((response) => response.status).sort()).toEqual([
-      200, 202,
-    ]);
-    expect(
-      responses.find((response) => response.status === 202)?.body,
-    ).toMatchObject({
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 202]);
+    expect(responses.find((response) => response.status === 202)?.body).toMatchObject({
       runId: created.body.runId,
       state: "PROCESSING",
     });
@@ -127,30 +106,15 @@ describe("API hardening", () => {
     const storage = new Storage(runtime);
     const app = createApp({ storage });
 
-    const first = await request(app)
-      .post("/api/runs")
-      .set("Idempotency-Key", "same-upload")
-      .field("fixtureId", "happy")
-      .expect(201);
-    const retried = await request(app)
-      .post("/api/runs")
-      .set("Idempotency-Key", "same-upload")
-      .field("fixtureId", "duplicate")
-      .expect(200);
-    await request(app)
-      .post("/api/runs")
-      .field("fixtureId", "duplicate")
-      .expect(201);
+    const first = await request(app).post("/api/runs").set("Idempotency-Key", "same-upload").field("fixtureId", "happy").expect(201);
+    const retried = await request(app).post("/api/runs").set("Idempotency-Key", "same-upload").field("fixtureId", "duplicate").expect(200);
+    await request(app).post("/api/runs").field("fixtureId", "duplicate").expect(201);
 
     expect(retried.body.runId).toBe(first.body.runId);
-    const page = await request(app)
-      .get("/api/runs?state=PROCESSING&limit=1")
-      .expect(200);
+    const page = await request(app).get("/api/runs?state=PROCESSING&limit=1").expect(200);
     expect(page.body.items).toHaveLength(1);
     expect(page.body.nextCursor).toEqual(expect.any(String));
-    const next = await request(app)
-      .get(`/api/runs?state=PROCESSING&limit=1&cursor=${page.body.nextCursor}`)
-      .expect(200);
+    const next = await request(app).get(`/api/runs?state=PROCESSING&limit=1&cursor=${page.body.nextCursor}`).expect(200);
     expect(next.body.items).toHaveLength(1);
     expect(next.body.items[0].runId).not.toBe(page.body.items[0].runId);
     storage.close();
@@ -161,18 +125,13 @@ describe("API hardening", () => {
     temporaryDirectories.push(runtime);
     const storage = new Storage(runtime);
     const app = createApp({ storage });
-    const created = await request(app)
-      .post("/api/runs")
-      .field("fixtureId", "happy")
-      .expect(201);
+    const created = await request(app).post("/api/runs").field("fixtureId", "happy").expect(201);
 
     const response = await request(app)
       .post(`/api/runs/${created.body.runId}/confirm-po`)
       .send({ poNumber: "PO-1001", approve: true })
       .expect(400);
-    expect(response.headers["content-security-policy"]).toContain(
-      "default-src 'self'",
-    );
+    expect(response.headers["content-security-policy"]).toContain("default-src 'self'");
     expect(response.headers["x-correlation-id"]).toEqual(expect.any(String));
     expect(response.body.error.code).toBe("INVALID_CONFIRMATION");
     storage.close();

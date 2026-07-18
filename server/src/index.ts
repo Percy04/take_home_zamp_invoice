@@ -3,10 +3,7 @@ import { createApp } from "./app.js";
 import { env } from "./env.js";
 import { Storage } from "./storage.js";
 
-const clientDirectory =
-  env.NODE_ENV === "production"
-    ? path.resolve(process.cwd(), "dist/client")
-    : undefined;
+const clientDirectory = env.NODE_ENV === "production" ? path.resolve(process.cwd(), "dist/client") : undefined;
 
 const storage = new Storage(env.RUNTIME_DIR);
 const server = createApp({ clientDirectory, storage }).listen(env.PORT, () => {

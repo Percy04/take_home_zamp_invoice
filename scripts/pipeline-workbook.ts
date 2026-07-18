@@ -20,11 +20,7 @@ import path from "node:path";
 import { ControlError, evaluateInvoice } from "../server/src/controls.js";
 import { normalizeInvoice } from "../server/src/invoice-normalization.js";
 import { extractAndMap } from "../server/src/providers.js";
-import {
-  confirmBundle,
-  confirmPo,
-  processInvoice,
-} from "../server/src/pipeline.js";
+import { confirmBundle, confirmPo, processInvoice } from "../server/src/pipeline.js";
 import { Storage } from "../server/src/storage.js";
 
 const fixture = argument("--fixture");
@@ -32,9 +28,7 @@ const file = argument("--file");
 const step = argument("--step") ?? "all";
 const confirmation = argument("--confirm");
 if (fixture && file) throw new Error("Choose either --fixture or --file.");
-const fixturePath = path.resolve(
-  file ?? `data/fixtures/${fixture ?? "happy"}.pdf`,
-);
+const fixturePath = path.resolve(file ?? `data/fixtures/${fixture ?? "happy"}.pdf`);
 
 if (!new Set(["extract", "normalize", "controls", "run", "all"]).has(step)) {
   throw new Error("--step must be extract, normalize, controls, run, or all.");
@@ -43,15 +37,13 @@ if (!new Set(["extract", "normalize", "controls", "run", "all"]).has(step)) {
 const pdf = await readFile(fixturePath);
 const extracted = step === "run" ? null : await extractAndMap(pdf);
 
-if (extracted && (step === "extract" || step === "all"))
-  print("1. extraction + mapping", extracted);
+if (extracted && (step === "extract" || step === "all")) print("1. extraction + mapping", extracted);
 
 let invoice;
 try {
   if (extracted) {
     invoice = normalizeInvoice(extracted.evidence, extracted.mapping);
-    if (step === "normalize" || step === "all")
-      print("2. normalization", invoice);
+    if (step === "normalize" || step === "all") print("2. normalization", invoice);
   }
 } catch (error) {
   print("2. normalization failed", error);
@@ -72,9 +64,7 @@ if (invoice && (step === "controls" || step === "all")) {
 
 if (step === "run" || step === "all") {
   const runId = randomUUID();
-  const storage = new Storage(
-    path.resolve(`tmp/pipeline-workbook/run-${runId}`),
-  );
+  const storage = new Storage(path.resolve(`tmp/pipeline-workbook/run-${runId}`));
   storage.createRun({
     id: runId,
     filename: path.basename(fixturePath),
@@ -105,9 +95,7 @@ function argument(name: string) {
 function print(label: string, value: unknown) {
   if (value instanceof ControlError) {
     console.log(`\n${label}`);
-    console.log(
-      JSON.stringify({ code: value.code, checks: value.checks }, null, 2),
-    );
+    console.log(JSON.stringify({ code: value.code, checks: value.checks }, null, 2));
     return;
   }
   console.log(`\n${label}`);

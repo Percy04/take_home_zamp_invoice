@@ -15,12 +15,9 @@ vi.mock("../client/src/lib/api", () => ({
   documentUrl: vi.fn(() => "/document.pdf"),
 }));
 
-vi.mock(
-  "../client/src/components/DocumentPreview",
-  () => ({
-    DocumentPreview: () => <div>Source document</div>,
-  }),
-);
+vi.mock("../client/src/components/DocumentPreview", () => ({
+  DocumentPreview: () => <div>Source document</div>,
+}));
 
 const run = {
   runId: "11111111-1111-4111-8111-111111111111",
@@ -90,8 +87,6 @@ describe("active run polling", () => {
 
     render(<RouterProvider router={getRouter()} />);
 
-    await waitFor(() =>
-      expect(screen.getByLabelText("Decision evidence")).toBeVisible(),
-    );
+    await waitFor(() => expect(screen.getByLabelText("Decision evidence")).toBeVisible());
   });
 });

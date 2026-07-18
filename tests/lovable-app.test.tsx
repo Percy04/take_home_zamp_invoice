@@ -7,9 +7,7 @@ import { getRouter } from "../client/src/router";
 
 vi.mock("react-pdf", () => ({
   pdfjs: { GlobalWorkerOptions: {} },
-  Document: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
+  Document: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Page: () => <div>PDF page</div>,
 }));
 
@@ -41,14 +39,10 @@ describe("main Lovable frontend", () => {
   it("uses one dashboard with an invoice upload modal", async () => {
     render(<RouterProvider router={getRouter()} />);
 
-    expect(
-      await screen.findByRole("heading", { name: "Recent invoice runs" }),
-    ).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Recent invoice runs" })).toBeVisible();
     expect(screen.queryByText("Intake")).not.toBeInTheDocument();
     expect(screen.queryByText("Activity")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add invoice" }));
-    expect(
-      screen.getByRole("dialog", { name: "Upload an invoice" }),
-    ).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "Upload an invoice" })).toBeVisible();
   });
 });

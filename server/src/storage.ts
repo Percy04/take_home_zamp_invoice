@@ -26,12 +26,7 @@ import {
   type SourceRef,
   type StageEvent,
 } from "../../shared/contracts.js";
-import {
-  buildUnknownBundleCandidates,
-  evaluateInvoice,
-  normalize,
-  type ControlContext,
-} from "./controls.js";
+import { buildUnknownBundleCandidates, evaluateInvoice, normalize, type ControlContext } from "./controls.js";
 
 type RunRow = {
   id: string;
@@ -67,16 +62,12 @@ export class Storage {
   private readonly databasePath: string;
   private db: Database.Database;
 
-  constructor(
-    runtimeDirectory: string,
-    seedPath = path.resolve("data/seed.sqlite"),
-  ) {
+  constructor(runtimeDirectory: string, seedPath = path.resolve("data/seed.sqlite")) {
     this.runtimeDirectory = path.resolve(runtimeDirectory);
     this.seedPath = seedPath;
     this.databasePath = path.join(this.runtimeDirectory, "runtime.sqlite");
     mkdirSync(this.runtimeDirectory, { recursive: true });
-    if (!exists(this.databasePath))
-      copyFileSync(this.seedPath, this.databasePath);
+    if (!exists(this.databasePath)) copyFileSync(this.seedPath, this.databasePath);
     this.db = this.open();
     this.migrate();
   }
@@ -92,48 +83,26 @@ export class Storage {
     const columns = this.db.prepare("PRAGMA table_info(runs)").all() as Array<{
       name: string;
     }>;
-    if (!columns.some((column) => column.name === "idempotency_key"))
-      this.db.exec("ALTER TABLE runs ADD COLUMN idempotency_key TEXT");
-    if (!columns.some((column) => column.name === "ai_rechecks_json"))
-      this.db.exec("ALTER TABLE runs ADD COLUMN ai_rechecks_json TEXT");
-    this.db.exec(
-      "CREATE UNIQUE INDEX IF NOT EXISTS runs_idempotency_key ON runs(idempotency_key) WHERE idempotency_key IS NOT NULL",
-    );
+    if (!columns.some((column) => column.name === "idempotency_key")) this.db.exec("ALTER TABLE runs ADD COLUMN idempotency_key TEXT");
+    if (!columns.some((column) => column.name === "ai_rechecks_json")) this.db.exec("ALTER TABLE runs ADD COLUMN ai_rechecks_json TEXT");
+    this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS runs_idempotency_key ON runs(idempotency_key) WHERE idempotency_key IS NOT NULL");
   }
 
-  createRun(input: {
-    id: string;
-    filename: string;
-    sha256: string;
-    pdfPath: string;
-    idempotencyKey?: string;
-  }): RunDetail {
+  createRun(input: { id: string; filename: string; sha256: string; pdfPath: string; idempotencyKey?: string }): RunDetail {
     const now = new Date().toISOString();
-    const stages: StageEvent[] = [
-      { stage: "INTAKE", status: "COMPLETED", at: now },
-    ];
+    const stages: StageEvent[] = [{ stage: "INTAKE", status: "COMPLETED", at: now }];
     this.db
       .prepare(
         `INSERT INTO runs
          (id, created_at, updated_at, filename, file_sha256, pdf_path, state, stage_events_json, idempotency_key)
-         VALUES (?, ?, ?, ?, ?, ?, 'PROCESSING', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?,' 'PROCESSING, ?, ?)`,
       )
-      .run(
-        input.id,
-        now,
-        now,
-        input.filename,
-        input.sha256,
-        input.pdfPath,
-        JSON.stringify(stages),
-        input.idempotencyKey ?? null,
-      );
+      .run(input.id, now, now, input.filename, input.sha256, input.pdfPath, JSON.stringify(stages), input.idempotencyKey ?? null);
     return this.getRun(input.id)!;
   }
 
   getRun(id: string): RunDetail | null {
-    const row = this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as
-      RunRow | undefined;
+    const row = this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as RunRow | undefined;
     if (!row) return null;
     const evaluation = row.evaluation_json
       ? (JSON.parse(row.evaluation_json) as Evaluation)
@@ -150,24 +119,16 @@ export class Storage {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       stages: stageEventSchema.array().parse(JSON.parse(row.stage_events_json)),
-      evidence: row.extraction_json
-        ? sourceRefSchema.array().parse(JSON.parse(row.extraction_json))
-        : [],
-      aiRechecks: aiRecheckSchema
-        .array()
-        .parse(JSON.parse(row.ai_rechecks_json ?? "[]")),
-      invoice: evaluation.invoice
-        ? normalizedInvoiceSchema.parse(evaluation.invoice)
-        : null,
+      evidence: row.extraction_json ? sourceRefSchema.array().parse(JSON.parse(row.extraction_json)) : [],
+      aiRechecks: aiRecheckSchema.array().parse(JSON.parse(row.ai_rechecks_json ?? "[]")),
+      invoice: evaluation.invoice ? normalizedInvoiceSchema.parse(evaluation.invoice) : null,
       invoicePreview: evaluation.invoicePreview ?? null,
       duplicateMatch: evaluation.duplicateMatch ?? null,
       checks: checkResultSchema.array().parse(evaluation.checks),
       allocations: allocationSchema.array().parse(evaluation.allocations),
       candidatePo: parsePoCandidates(row.candidates_json)[0]?.poNumber ?? null,
       poCandidates: parsePoCandidates(row.candidates_json),
-      bundleCandidates: bundleCandidateSchema
-        .array()
-        .parse(JSON.parse(row.bundle_candidates_json ?? "[]")),
+      bundleCandidates: bundleCandidateSchema.array().parse(JSON.parse(row.bundle_candidates_json ?? "[]")),
     });
   }
 
@@ -253,29 +214,18 @@ export class Storage {
     };
     return {
       items,
-      nextCursor:
-        hasMore && last
-          ? encodeCursor({ createdAt: last.created_at, id: last.id })
-          : null,
+      nextCursor: hasMore && last ? encodeCursor({ createdAt: last.created_at, id: last.id }) : null,
       metrics: {
         totalRuns: metrics.total_runs,
         postedCount: metrics.posted_count,
         reviewCount: metrics.review_count,
-        autoClearRate:
-          metrics.total_runs === 0
-            ? "0.0"
-            : new Decimal(metrics.posted_count)
-                .div(metrics.total_runs)
-                .mul(100)
-                .toFixed(1),
+        autoClearRate: metrics.total_runs === 0 ? "0.0" : new Decimal(metrics.posted_count).div(metrics.total_runs).mul(100).toFixed(1),
       },
     };
   }
 
   getRunByIdempotencyKey(key: string) {
-    const row = this.db
-      .prepare("SELECT id FROM runs WHERE idempotency_key = ?")
-      .get(key) as { id: string } | undefined;
+    const row = this.db.prepare("SELECT id FROM runs WHERE idempotency_key = ?").get(key) as { id: string } | undefined;
     return row ? this.getRun(row.id) : null;
   }
 
@@ -284,44 +234,32 @@ export class Storage {
   }
 
   getPdfPath(id: string): string | null {
-    const row = this.db
-      .prepare("SELECT pdf_path FROM runs WHERE id = ?")
-      .get(id) as { pdf_path: string | null } | undefined;
+    const row = this.db.prepare("SELECT pdf_path FROM runs WHERE id = ?").get(id) as { pdf_path: string | null } | undefined;
     return row?.pdf_path ?? null;
   }
 
   addStage(id: string, stage: string, status: StageEvent["status"]) {
-    const row = this.db
-      .prepare("SELECT stage_events_json FROM runs WHERE id = ?")
-      .get(id) as {
+    const row = this.db.prepare("SELECT stage_events_json FROM runs WHERE id = ?").get(id) as {
       stage_events_json: string;
     };
-    const stages = stageEventSchema
-      .array()
-      .parse(JSON.parse(row.stage_events_json));
+    const stages = stageEventSchema.array().parse(JSON.parse(row.stage_events_json));
     stages.push({ stage, status, at: new Date().toISOString() });
     this.db
-      .prepare(
-        "UPDATE runs SET stage_events_json = ?, updated_at = ? WHERE id = ?",
-      )
+      .prepare("UPDATE runs SET stage_events_json = ?, updated_at = ? WHERE id = ?")
       .run(JSON.stringify(stages), new Date().toISOString(), id);
   }
 
   saveEvidence(id: string, evidence: SourceRef[]) {
     sourceRefSchema.array().parse(evidence);
     this.db
-      .prepare(
-        "UPDATE runs SET extraction_json = ?, updated_at = ? WHERE id = ?",
-      )
+      .prepare("UPDATE runs SET extraction_json = ?, updated_at = ? WHERE id = ?")
       .run(JSON.stringify(evidence), new Date().toISOString(), id);
   }
 
   saveAiRechecks(id: string, rechecks: AiRecheck[]) {
     aiRecheckSchema.array().parse(rechecks);
     this.db
-      .prepare(
-        "UPDATE runs SET ai_rechecks_json = ?, updated_at = ? WHERE id = ?",
-      )
+      .prepare("UPDATE runs SET ai_rechecks_json = ?, updated_at = ? WHERE id = ?")
       .run(JSON.stringify(rechecks), new Date().toISOString(), id);
   }
 
@@ -330,35 +268,18 @@ export class Storage {
       vendors: this.db.prepare("SELECT * FROM vendors WHERE active = 1").all(),
       purchaseOrders: this.db.prepare("SELECT * FROM purchase_orders").all(),
       poLines: this.db.prepare("SELECT * FROM po_lines").all(),
-      postedInvoices: this.db
-        .prepare(
-          "SELECT vendor_id, normalized_invoice_number FROM posted_invoices",
-        )
-        .all(),
-      bundleDefinitions: this.db
-        .prepare("SELECT * FROM bundle_definitions WHERE active = 1")
-        .all(),
-      priorAllocations: this.db
-        .prepare(
-          "SELECT po_line_id, component_quantity, po_basis_amount FROM allocations",
-        )
-        .all(),
+      postedInvoices: this.db.prepare("SELECT vendor_id, normalized_invoice_number FROM posted_invoices").all(),
+      bundleDefinitions: this.db.prepare("SELECT * FROM bundle_definitions WHERE active = 1").all(),
+      priorAllocations: this.db.prepare("SELECT po_line_id, component_quantity, po_basis_amount FROM allocations").all(),
     } as ControlContext;
   }
 
   getEvaluation(id: string): Evaluation | null {
-    const row = this.db
-      .prepare("SELECT evaluation_json FROM runs WHERE id = ?")
-      .get(id) as { evaluation_json: string | null } | undefined;
-    return row?.evaluation_json
-      ? (JSON.parse(row.evaluation_json) as Evaluation)
-      : null;
+    const row = this.db.prepare("SELECT evaluation_json FROM runs WHERE id = ?").get(id) as { evaluation_json: string | null } | undefined;
+    return row?.evaluation_json ? (JSON.parse(row.evaluation_json) as Evaluation) : null;
   }
 
-  findDuplicate(
-    vendorId: string,
-    invoiceNumber: string,
-  ): DuplicateMatch | null {
+  findDuplicate(vendorId: string, invoiceNumber: string): DuplicateMatch | null {
     const posted = this.db
       .prepare(
         `SELECT id, invoice_number, invoice_date, po_number, total, posted_at
@@ -410,18 +331,12 @@ export class Storage {
     };
   }
 
-  findPoCandidates(
-    invoice: NormalizedInvoice,
-    includeUnresolved = false,
-  ): PoCandidate[] {
-    const vendor = this.db
-      .prepare("SELECT id FROM vendors WHERE normalized_name = ?")
-      .get(normalize(invoice.vendor)) as { id: string } | undefined;
+  findPoCandidates(invoice: NormalizedInvoice, includeUnresolved = false): PoCandidate[] {
+    const vendor = this.db.prepare("SELECT id FROM vendors WHERE normalized_name = ?").get(normalize(invoice.vendor)) as
+      { id: string } | undefined;
     if (!vendor) return [];
     const purchaseOrders = this.db
-      .prepare(
-        "SELECT * FROM purchase_orders WHERE vendor_id = ? AND status = 'OPEN' AND currency = ?",
-      )
+      .prepare("SELECT * FROM purchase_orders WHERE vendor_id = ? AND status = 'OPEN' AND currency = ?")
       .all(vendor.id, invoice.currency) as Array<{ po_number: string }>;
     const context = this.getControlContext();
     const { poLines, priorAllocations } = context;
@@ -430,10 +345,7 @@ export class Storage {
       if (!poLine) return {};
       const previouslyInvoicedQuantity = priorAllocations
         .filter((allocation) => allocation.po_line_id === poLineId)
-        .reduce(
-          (total, allocation) => total.plus(allocation.component_quantity),
-          new Decimal(0),
-        );
+        .reduce((total, allocation) => total.plus(allocation.component_quantity), new Decimal(0));
       return {
         orderedQuantity: poLine.ordered_quantity,
         receivedQuantity: poLine.received_quantity,
@@ -463,20 +375,13 @@ export class Storage {
                 poSku: allocation.sku,
                 poDescription: allocation.poDescription ?? allocation.sku,
                 poUnitPrice: allocation.poUnitPrice ?? "0.00",
-                availableOrderedQuantity:
-                  allocation.availableOrderedQuantity ?? allocation.quantity,
-                availableReceivedQuantity:
-                  allocation.availableReceivedQuantity ?? allocation.quantity,
+                availableOrderedQuantity: allocation.availableOrderedQuantity ?? allocation.quantity,
+                availableReceivedQuantity: allocation.availableReceivedQuantity ?? allocation.quantity,
                 ...capacityFor(allocation.poLineId),
               };
             });
           } catch {
-            const bundleResolvable =
-              buildUnknownBundleCandidates(
-                candidateInvoice,
-                context.poLines,
-                context.priorAllocations,
-              ).length > 0;
+            const bundleResolvable = buildUnknownBundleCandidates(candidateInvoice, context.poLines, context.priorAllocations).length > 0;
             allLinesResolvable = bundleResolvable;
             lines = invoice.lines.flatMap((line, invoiceLineIndex) => {
               const poLine = poLines.find(
@@ -485,17 +390,12 @@ export class Storage {
                   candidate.uom === line.uom &&
                   (line.sku
                     ? candidate.normalized_sku === normalize(line.sku)
-                    : candidate.normalized_description ===
-                      normalize(line.description)),
+                    : candidate.normalized_description === normalize(line.description)),
               );
               if (!poLine) return [];
               const consumed = priorAllocations
                 .filter((allocation) => allocation.po_line_id === poLine.id)
-                .reduce(
-                  (total, allocation) =>
-                    total.plus(allocation.component_quantity),
-                  new Decimal(0),
-                );
+                .reduce((total, allocation) => total.plus(allocation.component_quantity), new Decimal(0));
               return [
                 {
                   invoiceLineIndex,
@@ -507,31 +407,20 @@ export class Storage {
                   poSku: poLine.sku ?? "",
                   poDescription: poLine.description,
                   poUnitPrice: poLine.unit_price,
-                  availableOrderedQuantity: new Decimal(poLine.ordered_quantity)
-                    .minus(consumed)
-                    .toString(),
-                  availableReceivedQuantity: new Decimal(
-                    poLine.received_quantity,
-                  )
-                    .minus(consumed)
-                    .toString(),
+                  availableOrderedQuantity: new Decimal(poLine.ordered_quantity).minus(consumed).toString(),
+                  availableReceivedQuantity: new Decimal(poLine.received_quantity).minus(consumed).toString(),
                   ...capacityFor(poLine.id),
                 },
               ];
             });
-            matchedLineCount = bundleResolvable
-              ? invoice.lines.length
-              : lines.length;
+            matchedLineCount = bundleResolvable ? invoice.lines.length : lines.length;
           }
-          const purchaseOrderLines = this.db
-            .prepare("SELECT * FROM po_lines WHERE po_number = ?")
-            .all(po.po_number) as Array<{
+          const purchaseOrderLines = this.db.prepare("SELECT * FROM po_lines WHERE po_number = ?").all(po.po_number) as Array<{
             ordered_quantity: string;
             unit_price: string;
           }>;
           const totalBasis = purchaseOrderLines.reduce(
-            (sum, line) =>
-              sum.plus(new Decimal(line.ordered_quantity).mul(line.unit_price)),
+            (sum, line) => sum.plus(new Decimal(line.ordered_quantity).mul(line.unit_price)),
             new Decimal(0),
           );
           const priorBasis = this.db
@@ -540,35 +429,22 @@ export class Storage {
                JOIN po_lines p ON p.id = a.po_line_id WHERE p.po_number = ?`,
             )
             .all(po.po_number) as Array<{ po_basis_amount: string }>;
-          const remaining = priorBasis.reduce(
-            (value, row) => value.minus(row.po_basis_amount),
-            totalBasis,
-          );
+          const remaining = priorBasis.reduce((value, row) => value.minus(row.po_basis_amount), totalBasis);
           return {
             poNumber: po.po_number,
             allLinesResolvable,
             matchedLineCount,
             remainingPoBasisValue: remaining.toFixed(2),
-            subtotalDifference: remaining
-              .minus(invoice.subtotal)
-              .abs()
-              .toFixed(2),
+            subtotalDifference: remaining.minus(invoice.subtotal).abs().toFixed(2),
             lines,
           };
         })
-        .filter((candidate) =>
-          includeUnresolved
-            ? candidate.matchedLineCount > 0
-            : candidate.allLinesResolvable,
-        )
+        .filter((candidate) => (includeUnresolved ? candidate.matchedLineCount > 0 : candidate.allLinesResolvable))
         .sort(
           (left, right) =>
-            Number(right.allLinesResolvable) -
-              Number(left.allLinesResolvable) ||
+            Number(right.allLinesResolvable) - Number(left.allLinesResolvable) ||
             right.matchedLineCount - left.matchedLineCount ||
-            new Decimal(left.subtotalDifference).comparedTo(
-              right.subtotalDifference,
-            ) ||
+            new Decimal(left.subtotalDifference).comparedTo(right.subtotalDifference) ||
             normalize(left.poNumber).localeCompare(normalize(right.poNumber)),
         )
         .slice(0, 3),
@@ -577,33 +453,17 @@ export class Storage {
 
   findBundleCandidates(invoice: NormalizedInvoice): BundleCandidate[] {
     const context = this.getControlContext();
-    return buildUnknownBundleCandidates(
-      invoice,
-      context.poLines,
-      context.priorAllocations,
-    );
+    return buildUnknownBundleCandidates(invoice, context.poLines, context.priorAllocations);
   }
 
-  awaitPoConfirmation(
-    id: string,
-    invoice: NormalizedInvoice,
-    checks: CheckResult[],
-    candidates: PoCandidate[],
-    nextAction: string,
-  ) {
+  awaitPoConfirmation(id: string, invoice: NormalizedInvoice, checks: CheckResult[], candidates: PoCandidate[], nextAction: string) {
     this.db
       .prepare(
         `UPDATE runs SET state = 'AWAITING_PO_CONFIRMATION', decision = 'NEEDS_REVIEW',
          execution = 'AWAITING_CONFIRMATION', primary_reason_code = 'MISSING_PO',
          next_action = ?, evaluation_json = ?, candidates_json = ?, updated_at = ? WHERE id = ?`,
       )
-      .run(
-        nextAction,
-        JSON.stringify({ invoice, checks, allocations: [] }),
-        JSON.stringify(candidates),
-        new Date().toISOString(),
-        id,
-      );
+      .run(nextAction, JSON.stringify({ invoice, checks, allocations: [] }), JSON.stringify(candidates), new Date().toISOString(), id);
   }
 
   awaitBundleConfirmation(
@@ -619,76 +479,42 @@ export class Storage {
          execution = 'AWAITING_CONFIRMATION', primary_reason_code = 'BUNDLE_MAPPING_REQUIRED',
          next_action = ?, evaluation_json = ?, bundle_candidates_json = ?, updated_at = ? WHERE id = ?`,
       )
-      .run(
-        nextAction,
-        JSON.stringify({ invoice, checks, allocations: [] }),
-        JSON.stringify(candidates),
-        new Date().toISOString(),
-        id,
-      );
+      .run(nextAction, JSON.stringify({ invoice, checks, allocations: [] }), JSON.stringify(candidates), new Date().toISOString(), id);
   }
 
   getPoCandidates(id: string) {
-    const row = this.db
-      .prepare("SELECT candidates_json FROM runs WHERE id = ?")
-      .get(id) as { candidates_json: string | null } | undefined;
+    const row = this.db.prepare("SELECT candidates_json FROM runs WHERE id = ?").get(id) as { candidates_json: string | null } | undefined;
     return parsePoCandidates(row?.candidates_json ?? null);
   }
 
   getBundleCandidates(id: string) {
-    const row = this.db
-      .prepare("SELECT bundle_candidates_json FROM runs WHERE id = ?")
-      .get(id) as { bundle_candidates_json: string | null } | undefined;
-    return bundleCandidateSchema
-      .array()
-      .parse(JSON.parse(row?.bundle_candidates_json ?? "[]"));
+    const row = this.db.prepare("SELECT bundle_candidates_json FROM runs WHERE id = ?").get(id) as
+      { bundle_candidates_json: string | null } | undefined;
+    return bundleCandidateSchema.array().parse(JSON.parse(row?.bundle_candidates_json ?? "[]"));
   }
 
-  post(
-    id: string,
-    invoice: NormalizedInvoice,
-    checks: CheckResult[],
-    allocations: Allocation[],
-  ) {
+  post(id: string, invoice: NormalizedInvoice, checks: CheckResult[], allocations: Allocation[]) {
     const transaction = this.db.transaction(() => {
-      const existing = this.db
-        .prepare("SELECT id FROM posted_invoices WHERE run_id = ?")
-        .get(id) as { id: string } | undefined;
+      const existing = this.db.prepare("SELECT id FROM posted_invoices WHERE run_id = ?").get(id) as { id: string } | undefined;
       if (existing) return existing.id;
 
-      const vendor = this.db
-        .prepare("SELECT id FROM vendors WHERE normalized_name = ?")
-        .get(normalize(invoice.vendor)) as { id: string };
+      const vendor = this.db.prepare("SELECT id FROM vendors WHERE normalized_name = ?").get(normalize(invoice.vendor)) as { id: string };
       const duplicate = this.db
-        .prepare(
-          "SELECT id FROM posted_invoices WHERE vendor_id = ? AND normalized_invoice_number = ?",
-        )
+        .prepare("SELECT id FROM posted_invoices WHERE vendor_id = ? AND normalized_invoice_number = ?")
         .get(vendor.id, normalize(invoice.invoiceNumber));
       if (duplicate) throw new Error("DUPLICATE");
       for (const allocation of allocations) {
         const capacity = this.db
-          .prepare(
-            "SELECT ordered_quantity, received_quantity FROM po_lines WHERE id = ?",
-          )
+          .prepare("SELECT ordered_quantity, received_quantity FROM po_lines WHERE id = ?")
           .get(allocation.poLineId) as {
           ordered_quantity: string;
           received_quantity: string;
         };
-        const prior = this.db
-          .prepare(
-            "SELECT component_quantity FROM allocations WHERE po_line_id = ?",
-          )
-          .all(allocation.poLineId) as Array<{ component_quantity: string }>;
-        const after = prior
-          .reduce(
-            (sum, row) => sum.plus(row.component_quantity),
-            new Decimal(0),
-          )
-          .plus(allocation.quantity);
-        if (
-          after.gt(capacity.ordered_quantity) ||
-          after.gt(capacity.received_quantity)
-        ) {
+        const prior = this.db.prepare("SELECT component_quantity FROM allocations WHERE po_line_id = ?").all(allocation.poLineId) as Array<{
+          component_quantity: string;
+        }>;
+        const after = prior.reduce((sum, row) => sum.plus(row.component_quantity), new Decimal(0)).plus(allocation.quantity);
+        if (after.gt(capacity.ordered_quantity) || after.gt(capacity.received_quantity)) {
           throw new Error("CAPACITY_CHANGED");
         }
       }
@@ -743,15 +569,7 @@ export class Storage {
            candidates_json = '[]', bundle_candidates_json = '[]',
            ledger_invoice_id = ?, evaluation_json = ?, updated_at = ? WHERE id = ?`,
         )
-        .run(
-          vendor.id,
-          normalize(invoice.invoiceNumber),
-          invoice.poNumber,
-          ledgerId,
-          JSON.stringify(evaluation),
-          now,
-          id,
-        );
+        .run(vendor.id, normalize(invoice.invoiceNumber), invoice.poNumber, ledgerId, JSON.stringify(evaluation), now, id);
       return ledgerId;
     });
     return transaction.immediate();
@@ -821,14 +639,11 @@ function encodeCursor(cursor: { createdAt: string; id: string }) {
 
 function decodeCursor(value: string) {
   try {
-    const parsed = JSON.parse(
-      Buffer.from(value, "base64url").toString("utf8"),
-    ) as {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
       createdAt?: unknown;
       id?: unknown;
     };
-    if (typeof parsed.createdAt !== "string" || typeof parsed.id !== "string")
-      throw new Error("INVALID_CURSOR");
+    if (typeof parsed.createdAt !== "string" || typeof parsed.id !== "string") throw new Error("INVALID_CURSOR");
     return { createdAt: parsed.createdAt, id: parsed.id };
   } catch {
     throw new Error("INVALID_CURSOR");

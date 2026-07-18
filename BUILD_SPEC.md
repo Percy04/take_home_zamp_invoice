@@ -673,25 +673,25 @@ Any failure rolls the whole transaction back. Database uniqueness conflicts from
 
 Use only these stable codes:
 
-| Reason code | Meaning | User-facing next action |
-| --- | --- | --- |
-| DOCUMENT_UNREADABLE | File failed local PDF validation. | Upload a valid, unencrypted PDF within the size and page limits. |
-| EXTRACTION_FAILED | Azure did not return usable evidence. | Retry once; if it repeats, verify service configuration or use a clearer PDF. |
-| LOW_CONFIDENCE | Selected critical evidence is below 0.75 confidence. | Verify the highlighted field in the source document; this demo does not support overrides. |
-| MAPPING_FAILED | OpenAI mapping failed or referenced unknown evidence. | Inspect the extracted evidence and retry; no values were assumed. |
-| MISSING_REQUIRED_FIELD | A required invoice value is absent or unparseable. | Correct the invoice or provide a document containing the highlighted field. |
-| TAX_TREATMENT_UNRESOLVED | Inclusion, rate, scope, or PO price basis cannot be established deterministically. | Provide explicit tax treatment and rate evidence or route the invoice for manual tax review. |
-| VENDOR_OR_PO_MISMATCH | Vendor or explicit PO is unknown, closed, wrong-vendor, or non-USD. | Verify the vendor and PO reference in the source system. |
-| MISSING_PO | The invoice omitted its PO reference. | Confirm one of the stored candidates, or correct the invoice when no candidate exists. |
-| BUNDLE_MAPPING_REQUIRED | A line may represent multiple PO components, but no trusted or reviewer-confirmed decomposition is available. | Confirm a stored decomposition when offered; otherwise provide trusted bundle master data or an itemized invoice. |
-| LINE_MATCH_FAILED | A unique exact invoice-to-PO line assignment was not possible. | Verify SKU, description, and UOM; manual remapping is out of scope. |
-| DUPLICATE | Vendor and normalized invoice number already exist in the posted ledger. | Review the existing ledger invoice; do not repost. |
-| RECEIPT_CAPACITY_EXCEEDED | A direct or bundle-component quantity exceeds remaining received quantity. | Record or correct the goods receipt before retrying. |
-| PO_CAPACITY_EXCEEDED | A direct or component quantity or PO-basis value exceeds remaining ordered capacity. | Amend the PO or correct the invoice before retrying. |
-| PRICE_VARIANCE_EXCEEDED | A direct line exceeds 1%, aggregate direct variance exceeds $5.00, or a bundle differs from component PO basis by more than $0.01. | Review the invoice price against the PO or bundle definition. |
-| TOTAL_MISMATCH | Line, subtotal, tax, or total arithmetic does not reconcile within $0.01. | Correct the invoice arithmetic. |
-| UNSUPPORTED_STRUCTURE | Invoice contains an explicitly out-of-scope structure. | Route it to the normal manual AP process. |
-| PROCESSING_ERROR | An unexpected internal error was safely contained. | Retry; if it repeats, inspect application diagnostics without reposting. |
+| Reason code               | Meaning                                                                                                                            | User-facing next action                                                                                           |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| DOCUMENT_UNREADABLE       | File failed local PDF validation.                                                                                                  | Upload a valid, unencrypted PDF within the size and page limits.                                                  |
+| EXTRACTION_FAILED         | Azure did not return usable evidence.                                                                                              | Retry once; if it repeats, verify service configuration or use a clearer PDF.                                     |
+| LOW_CONFIDENCE            | Selected critical evidence is below 0.75 confidence.                                                                               | Verify the highlighted field in the source document; this demo does not support overrides.                        |
+| MAPPING_FAILED            | OpenAI mapping failed or referenced unknown evidence.                                                                              | Inspect the extracted evidence and retry; no values were assumed.                                                 |
+| MISSING_REQUIRED_FIELD    | A required invoice value is absent or unparseable.                                                                                 | Correct the invoice or provide a document containing the highlighted field.                                       |
+| TAX_TREATMENT_UNRESOLVED  | Inclusion, rate, scope, or PO price basis cannot be established deterministically.                                                 | Provide explicit tax treatment and rate evidence or route the invoice for manual tax review.                      |
+| VENDOR_OR_PO_MISMATCH     | Vendor or explicit PO is unknown, closed, wrong-vendor, or non-USD.                                                                | Verify the vendor and PO reference in the source system.                                                          |
+| MISSING_PO                | The invoice omitted its PO reference.                                                                                              | Confirm one of the stored candidates, or correct the invoice when no candidate exists.                            |
+| BUNDLE_MAPPING_REQUIRED   | A line may represent multiple PO components, but no trusted or reviewer-confirmed decomposition is available.                      | Confirm a stored decomposition when offered; otherwise provide trusted bundle master data or an itemized invoice. |
+| LINE_MATCH_FAILED         | A unique exact invoice-to-PO line assignment was not possible.                                                                     | Verify SKU, description, and UOM; manual remapping is out of scope.                                               |
+| DUPLICATE                 | Vendor and normalized invoice number already exist in the posted ledger.                                                           | Review the existing ledger invoice; do not repost.                                                                |
+| RECEIPT_CAPACITY_EXCEEDED | A direct or bundle-component quantity exceeds remaining received quantity.                                                         | Record or correct the goods receipt before retrying.                                                              |
+| PO_CAPACITY_EXCEEDED      | A direct or component quantity or PO-basis value exceeds remaining ordered capacity.                                               | Amend the PO or correct the invoice before retrying.                                                              |
+| PRICE_VARIANCE_EXCEEDED   | A direct line exceeds 1%, aggregate direct variance exceeds $5.00, or a bundle differs from component PO basis by more than $0.01. | Review the invoice price against the PO or bundle definition.                                                     |
+| TOTAL_MISMATCH            | Line, subtotal, tax, or total arithmetic does not reconcile within $0.01.                                                          | Correct the invoice arithmetic.                                                                                   |
+| UNSUPPORTED_STRUCTURE     | Invoice contains an explicitly out-of-scope structure.                                                                             | Route it to the normal manual AP process.                                                                         |
+| PROCESSING_ERROR          | An unexpected internal error was safely contained.                                                                                 | Retry; if it repeats, inspect application diagnostics without reposting.                                          |
 
 Only MISSING_PO with stored PO candidates and BUNDLE_MAPPING_REQUIRED with stored decompositions expose in-app resolution controls. Other outcomes show guidance but no override.
 

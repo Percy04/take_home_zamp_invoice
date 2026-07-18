@@ -31,8 +31,7 @@ async function requestRun(url: string, init?: RequestInit): Promise<Run> {
 }
 
 export async function createRun(input: { file?: File; fixtureId?: SampleInvoiceId }): Promise<Run> {
-  if (Boolean(input.file) === Boolean(input.fixtureId))
-    throw new Error("Choose an invoice PDF or a prepared invoice.");
+  if (Boolean(input.file) === Boolean(input.fixtureId)) throw new Error("Choose an invoice PDF or a prepared invoice.");
   const body = new FormData();
   if (input.file) body.append("invoice", input.file);
   else body.append("fixtureId", input.fixtureId!);

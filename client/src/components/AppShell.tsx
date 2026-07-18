@@ -17,9 +17,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="min-w-0">
-        <div className="mx-auto w-full max-w-[1600px] px-4 py-5 md:px-6 md:py-6 xl:px-8">
-          {children}
-        </div>
+        <div className="mx-auto w-full max-w-[1600px] px-4 py-5 md:px-6 md:py-6 xl:px-8">{children}</div>
       </main>
     </div>
   );
@@ -32,10 +30,7 @@ function BrandMark() {
       aria-label="AP Resolution dashboard"
       className="flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <div
-        aria-hidden
-        className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground"
-      >
+      <div aria-hidden className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground">
         <svg
           width="14"
           height="14"
@@ -51,9 +46,7 @@ function BrandMark() {
       </div>
       <div className="leading-tight">
         <div className="text-[13px] font-semibold tracking-tight">AP Resolution</div>
-        <div className="text-[10.5px] uppercase tracking-wider text-muted-foreground">
-          Invoice review
-        </div>
+        <div className="text-[10.5px] uppercase tracking-wider text-muted-foreground">Invoice review</div>
       </div>
     </Link>
   );
@@ -76,18 +69,10 @@ function ResetButton({ compact = false }: { compact?: boolean }) {
     >
       <div className="flex items-center justify-between">
         <span>Reset workspace</span>
-        {done ? (
-          <span className="text-success">Done</span>
-        ) : busy ? (
-          <span>…</span>
-        ) : (
-          <span className="opacity-60">Ready</span>
-        )}
+        {done ? <span className="text-success">Done</span> : busy ? <span>…</span> : <span className="opacity-60">Ready</span>}
       </div>
       {!compact && (
-        <div className="mt-0.5 text-[11px] leading-snug opacity-70">
-          Clear invoice history and restore the starting workspace.
-        </div>
+        <div className="mt-0.5 text-[11px] leading-snug opacity-70">Clear invoice history and restore the starting workspace.</div>
       )}
     </button>
   );

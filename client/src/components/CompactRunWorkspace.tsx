@@ -29,20 +29,16 @@ export function CompactRunWorkspace({ run, children }: { run: Run; children: Rea
                 {invoice?.vendor ?? invoice?.invoiceNumber ?? run.filename}
               </h1>
               <p className="mt-2 text-[12.5px] text-muted-foreground">
-                Invoice{" "}
-                <span className="font-mono text-foreground">{invoice?.invoiceNumber ?? "—"}</span>
+                Invoice <span className="font-mono text-foreground">{invoice?.invoiceNumber ?? "—"}</span>
                 <span className="mx-2">·</span>
-                PO{" "}
-                <span className="font-mono text-foreground">{invoice?.poNumber ?? "Not found"}</span>
+                PO <span className="font-mono text-foreground">{invoice?.poNumber ?? "Not found"}</span>
                 <span className="mx-2">·</span>
                 Updated {relTime(run.updatedAt)}
               </p>
             </div>
             <div className="lg:text-right">
               <div className="eyebrow">Invoice total</div>
-              <div className="mt-1 font-mono text-[25px] font-semibold tabular text-foreground">
-                {money(total, invoice?.currency)}
-              </div>
+              <div className="mt-1 font-mono text-[25px] font-semibold tabular text-foreground">{money(total, invoice?.currency)}</div>
             </div>
           </div>
         </header>

@@ -62,9 +62,7 @@ function RunPage() {
           <>
             <p className="eyebrow">Status unavailable</p>
             <h1 className="mt-1 text-lg font-semibold">Processing status is unavailable</h1>
-            <p className="mt-1 text-[13px] text-muted-foreground">
-              The server may still be processing this invoice.
-            </p>
+            <p className="mt-1 text-[13px] text-muted-foreground">The server may still be processing this invoice.</p>
             <div className="mt-4 flex justify-center gap-2">
               <button
                 onClick={() => setStatusError(false)}

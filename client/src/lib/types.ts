@@ -1,9 +1,4 @@
-export type RunState =
-  | "PROCESSING"
-  | "POSTED"
-  | "AWAITING_PO_CONFIRMATION"
-  | "AWAITING_BUNDLE_CONFIRMATION"
-  | "NEEDS_REVIEW";
+export type RunState = "PROCESSING" | "POSTED" | "AWAITING_PO_CONFIRMATION" | "AWAITING_BUNDLE_CONFIRMATION" | "NEEDS_REVIEW";
 
 export type Execution = "POSTED" | "BLOCKED" | "AWAITING_CONFIRMATION" | "PENDING";
 
@@ -174,8 +169,7 @@ export interface StageState {
   detail?: string;
 }
 
-export type ControlCategory =
-  "IDENTITY" | "DUPLICATE" | "LINE_MATCH" | "PRICE" | "CAPACITY" | "ARITHMETIC" | "TAX";
+export type ControlCategory = "IDENTITY" | "DUPLICATE" | "LINE_MATCH" | "PRICE" | "CAPACITY" | "ARITHMETIC" | "TAX";
 
 export interface ControlResult {
   code: string;

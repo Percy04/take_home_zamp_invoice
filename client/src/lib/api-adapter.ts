@@ -6,9 +6,7 @@ const number = (value: string | null | undefined) => {
   if (!raw) return Number.NaN;
   if (/^-?\d+(?:\.\d+)?$/.test(raw)) return Number(raw);
 
-  const groupedUsd = raw.match(
-    /^(?:USD\s*)?(-?)\$?((?:\d+|\d{1,3}(?:[ ,]\d{3})+))(\.\d+)?$/i,
-  );
+  const groupedUsd = raw.match(/^(?:USD\s*)?(-?)\$?((?:\d+|\d{1,3}(?:[ ,]\d{3})+))(\.\d+)?$/i);
   if (!groupedUsd) return Number.NaN;
   return Number(`${groupedUsd[1]}${groupedUsd[2].replace(/[ ,]/g, "")}${groupedUsd[3] ?? ""}`);
 };
@@ -82,10 +80,7 @@ function invoice(detail: RunDetail): Invoice | null {
     normalizedTax: number(preview.tax),
     normalizedTotal: number(preview.total),
     taxTreatment: "EXCLUSIVE",
-    missingFields:
-      detail.reasonCode === "MISSING_REQUIRED_FIELD" && preview.missingField
-        ? [preview.missingField]
-        : undefined,
+    missingFields: detail.reasonCode === "MISSING_REQUIRED_FIELD" && preview.missingField ? [preview.missingField] : undefined,
     lines: preview.lines.map((line) => {
       const parsedQuantity = quantity(line.quantity);
       return {
@@ -147,10 +142,8 @@ function activity(detail: RunDetail): ActivityEntry[] {
     message: `${text(event.stage)} ${event.status === "ACTIVE" ? "started" : event.status.toLowerCase()}.`,
     kind: event.status === "FAILED" ? ("error" as const) : ("info" as const),
   }));
-  if (detail.state === "POSTED")
-    entries.push({ at: detail.updatedAt, message: "Approved and posted.", kind: "success" });
-  if (detail.state === "NEEDS_REVIEW")
-    entries.push({ at: detail.updatedAt, message: "Routed for review.", kind: "warn" });
+  if (detail.state === "POSTED") entries.push({ at: detail.updatedAt, message: "Approved and posted.", kind: "success" });
+  if (detail.state === "NEEDS_REVIEW") entries.push({ at: detail.updatedAt, message: "Routed for review.", kind: "warn" });
   return entries;
 }
 
@@ -170,12 +163,7 @@ export function toUiRun(detail: RunDetail): Run {
     stages: detail.stages.map((event) => ({
       stage: event.stage as Stage,
       label: text(event.stage),
-      status:
-        event.status === "ACTIVE"
-          ? "IN_PROGRESS"
-          : event.status === "COMPLETED"
-            ? "DONE"
-            : "FAILED",
+      status: event.status === "ACTIVE" ? "IN_PROGRESS" : event.status === "COMPLETED" ? "DONE" : "FAILED",
     })),
     invoice: inv,
     duplicateMatch: detail.duplicateMatch
@@ -199,11 +187,7 @@ export function toUiRun(detail: RunDetail): Run {
     poCandidates: detail.poCandidates.map((candidate) => ({
       poNumber: candidate.poNumber,
       vendor: inv?.vendor ?? "Unknown vendor",
-      confidence: candidate.allLinesResolvable
-        ? "HIGH"
-        : candidate.matchedLineCount
-          ? "MEDIUM"
-          : "LOW",
+      confidence: candidate.allLinesResolvable ? "HIGH" : candidate.matchedLineCount ? "MEDIUM" : "LOW",
       aggregateDifference: number(candidate.subtotalDifference),
       lines: candidate.lines.map((line) => {
         const quantity = number(line.requestedQuantity);
@@ -223,9 +207,7 @@ export function toUiRun(detail: RunDetail): Run {
           receivedAvailable: number(line.availableReceivedQuantity),
           orderedQuantity: line.orderedQuantity ? number(line.orderedQuantity) : undefined,
           receivedQuantity: line.receivedQuantity ? number(line.receivedQuantity) : undefined,
-          previouslyInvoicedQuantity: line.previouslyInvoicedQuantity
-            ? number(line.previouslyInvoicedQuantity)
-            : undefined,
+          previouslyInvoicedQuantity: line.previouslyInvoicedQuantity ? number(line.previouslyInvoicedQuantity) : undefined,
           remainingPoValue: number(candidate.remainingPoBasisValue),
           priceVariancePct: 0,
           amountDifference: number(candidate.subtotalDifference),
@@ -234,8 +216,7 @@ export function toUiRun(detail: RunDetail): Run {
     })),
     bundleCandidates: detail.bundleCandidates.map((candidate) => ({
       candidateId: candidate.id,
-      invoiceItemDescription:
-        inv?.lines[candidate.invoiceLineIndex]?.description ?? "Invoice bundle",
+      invoiceItemDescription: inv?.lines[candidate.invoiceLineIndex]?.description ?? "Invoice bundle",
       invoiceItemSku: inv?.lines[candidate.invoiceLineIndex]?.sku,
       invoiceQuantity: number(candidate.bundleQuantity),
       poNumber: detail.candidatePo ?? inv?.poNumber ?? "",
@@ -270,8 +251,7 @@ export function toUiRun(detail: RunDetail): Run {
             const receivedAfter = number(item.remainingReceivedQuantity);
             return {
               invoiceSku: inv?.lines[item.invoiceLineIndex]?.sku ?? item.sku,
-              invoiceDescription:
-                inv?.lines[item.invoiceLineIndex]?.description ?? item.poDescription ?? item.sku,
+              invoiceDescription: inv?.lines[item.invoiceLineIndex]?.description ?? item.poDescription ?? item.sku,
               requestedQuantity: quantity,
               uom: inv?.lines[item.invoiceLineIndex]?.uom ?? "",
               poNumber: item.poNumber,
@@ -282,9 +262,7 @@ export function toUiRun(detail: RunDetail): Run {
               poBasis: number(item.poBasisAmount),
               orderedQuantity: item.orderedQuantity ? number(item.orderedQuantity) : undefined,
               receivedQuantity: item.receivedQuantity ? number(item.receivedQuantity) : undefined,
-              previouslyInvoicedQuantity: item.previouslyInvoicedQuantity
-                ? number(item.previouslyInvoicedQuantity)
-                : undefined,
+              previouslyInvoicedQuantity: item.previouslyInvoicedQuantity ? number(item.previouslyInvoicedQuantity) : undefined,
               orderedBefore: number(item.availableOrderedQuantity) || orderedAfter + quantity,
               orderedAfter,
               receivedBefore: number(item.availableReceivedQuantity) || receivedAfter + quantity,
@@ -341,10 +319,8 @@ export function toUiRun(detail: RunDetail): Run {
       outcome: recheck.outcome,
     })),
     activity: activity(detail),
-    extractionError:
-      detail.reasonCode === "EXTRACTION_FAILED" ? (detail.nextAction ?? undefined) : undefined,
-    mappingError:
-      detail.reasonCode === "MAPPING_FAILED" ? (detail.nextAction ?? undefined) : undefined,
+    extractionError: detail.reasonCode === "EXTRACTION_FAILED" ? (detail.nextAction ?? undefined) : undefined,
+    mappingError: detail.reasonCode === "MAPPING_FAILED" ? (detail.nextAction ?? undefined) : undefined,
     issueCount: failedChecks.length || undefined,
   };
 }
