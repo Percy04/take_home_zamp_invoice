@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import type { Express } from "express";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -12,6 +13,15 @@ const temporaryDirectories: string[] = [];
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true });
 });
+
+async function waitForRun(app: Express, runId: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const response = await request(app).get(`/api/runs/${runId}`).expect(200);
+    if (response.body.state !== "PROCESSING") return response;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Run ${runId} did not finish processing.`);
+}
 
 describe("happy-path vertical slice", () => {
   it("lists review runs even when preview currency is only a printed symbol", () => {
@@ -61,8 +71,8 @@ describe("happy-path vertical slice", () => {
 
     await request(app).post("/api/reset").expect(200);
     const created = await request(app).post("/api/runs").attach("invoice", path.resolve("data/fixtures/happy.pdf")).expect(201);
-    const processed = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
-    const retried = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
+    const processed = await waitForRun(app, created.body.runId);
+    const retried = await request(app).get(`/api/runs/${created.body.runId}`).expect(200);
     const restored = await request(app).get(`/api/runs/${created.body.runId}`).expect(200);
 
     expect(processed.body).toMatchObject({
@@ -98,7 +108,7 @@ describe("happy-path vertical slice", () => {
       .post("/api/runs")
       .attach("invoice", path.resolve(`data/fixtures/${fixture}`))
       .expect(201);
-    const processed = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
+    const processed = await waitForRun(app, created.body.runId);
 
     expect(processed.body).toMatchObject({
       state: "NEEDS_REVIEW",
@@ -166,7 +176,7 @@ describe("happy-path vertical slice", () => {
     const app = createApp({ storage });
 
     const created = await request(app).post("/api/runs").attach("invoice", path.resolve("data/fixtures/duplicate.pdf")).expect(201);
-    const processed = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
+    const processed = await waitForRun(app, created.body.runId);
 
     expect(processed.body).toMatchObject({
       state: "NEEDS_REVIEW",
@@ -184,19 +194,19 @@ describe("happy-path vertical slice", () => {
     const app = createApp({ storage });
 
     const missingPo = await request(app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
-    const awaitingPo = await request(app).post(`/api/runs/${missingPo.body.runId}/process`).expect(200);
+    const awaitingPo = await waitForRun(app, missingPo.body.runId);
     insertDuplicate(storage, missingPo.body.runId, "LEDGER-CONFIRM-PO");
     const poResult = await request(app)
-      .post(`/api/runs/${missingPo.body.runId}/confirm-po`)
-      .send({ poNumber: awaitingPo.body.candidatePo })
+      .post(`/api/runs/${missingPo.body.runId}/review`)
+      .send({ action: "confirm_po", poNumber: awaitingPo.body.candidatePo })
       .expect(200);
 
     const bundle = await request(app).post("/api/runs").field("fixtureId", "bundle_unknown").expect(201);
-    await request(app).post(`/api/runs/${bundle.body.runId}/process`).expect(200);
+    await waitForRun(app, bundle.body.runId);
     insertDuplicate(storage, bundle.body.runId, "LEDGER-CONFIRM-BUNDLE");
     const bundleResult = await request(app)
-      .post(`/api/runs/${bundle.body.runId}/confirm-bundle`)
-      .send({ candidateId: "BUNDLE-CANDIDATE-1" })
+      .post(`/api/runs/${bundle.body.runId}/review`)
+      .send({ action: "confirm_bundle", candidateId: "BUNDLE-CANDIDATE-1" })
       .expect(200);
 
     expect(poResult.body).toMatchObject({
@@ -246,8 +256,8 @@ describe("happy-path vertical slice", () => {
       .post("/api/runs")
       .attach("invoice", path.resolve(`data/fixtures/${fixture}`))
       .expect(201);
-    const processed = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
-    const retried = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
+    const processed = await waitForRun(app, created.body.runId);
+    const retried = await request(app).get(`/api/runs/${created.body.runId}`).expect(200);
 
     expect(processed.body).toMatchObject({
       state: "POSTED",
@@ -284,9 +294,9 @@ describe("happy-path vertical slice", () => {
     const app = createApp({ storage });
 
     const created = await request(app).post("/api/runs").attach("invoice", path.resolve("data/fixtures/missing_po.pdf")).expect(201);
-    const awaiting = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
-    const confirmed = await request(app).post(`/api/runs/${created.body.runId}/confirm-po`).send({ poNumber: "PO-1002" }).expect(200);
-    const retried = await request(app).post(`/api/runs/${created.body.runId}/confirm-po`).send({ poNumber: "PO-1002" }).expect(200);
+    const awaiting = await waitForRun(app, created.body.runId);
+    const confirmed = await request(app).post(`/api/runs/${created.body.runId}/review`).send({ action: "confirm_po", poNumber: "PO-1002" }).expect(200);
+    const retried = await request(app).post(`/api/runs/${created.body.runId}/review`).send({ action: "confirm_po", poNumber: "PO-1002" }).expect(200);
 
     expect(awaiting.body).toMatchObject({
       state: "AWAITING_PO_CONFIRMATION",
@@ -328,11 +338,11 @@ describe("happy-path vertical slice", () => {
     const app = createApp({ storage });
 
     const created = await request(app).post("/api/runs").field("fixtureId", "missing_po_bundle").expect(201);
-    const awaitingPo = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
-    const awaitingBundle = await request(app).post(`/api/runs/${created.body.runId}/confirm-po`).send({ poNumber: "PO-1004" }).expect(200);
+    const awaitingPo = await waitForRun(app, created.body.runId);
+    const awaitingBundle = await request(app).post(`/api/runs/${created.body.runId}/review`).send({ action: "confirm_po", poNumber: "PO-1004" }).expect(200);
     const posted = await request(app)
-      .post(`/api/runs/${created.body.runId}/confirm-bundle`)
-      .send({ candidateId: "BUNDLE-CANDIDATE-1" })
+      .post(`/api/runs/${created.body.runId}/review`)
+      .send({ action: "confirm_bundle", candidateId: "BUNDLE-CANDIDATE-1" })
       .expect(200);
 
     expect(awaitingPo.body).toMatchObject({
@@ -359,8 +369,8 @@ describe("happy-path vertical slice", () => {
     const app = createApp({ storage });
 
     const first = await request(app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
-    const awaiting = await request(app).post(`/api/runs/${first.body.runId}/process`).expect(200);
-    await request(app).post(`/api/runs/${first.body.runId}/confirm-po`).send({ poNumber: awaiting.body.candidatePo }).expect(200);
+    const awaiting = await waitForRun(app, first.body.runId);
+    await request(app).post(`/api/runs/${first.body.runId}/review`).send({ action: "confirm_po", poNumber: awaiting.body.candidatePo }).expect(200);
     const postedInvoice = storage.getEvaluation(first.body.runId)!.invoice!;
     expect(
       storage.findPoCandidates({
@@ -371,7 +381,7 @@ describe("happy-path vertical slice", () => {
     ).toEqual([]);
 
     const second = await request(app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
-    const repeated = await request(app).post(`/api/runs/${second.body.runId}/process`).expect(200);
+    const repeated = await waitForRun(app, second.body.runId);
 
     expect(repeated.body).toMatchObject({
       state: "NEEDS_REVIEW",
@@ -388,9 +398,9 @@ describe("happy-path vertical slice", () => {
     const storage = new Storage(runtime);
     const app = createApp({ storage });
     const created = await request(app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
-    await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
+    await waitForRun(app, created.body.runId);
 
-    const declined = await request(app).post(`/api/runs/${created.body.runId}/reject-po`).expect(200);
+    const declined = await request(app).post(`/api/runs/${created.body.runId}/review`).send({ action: "reject_po" }).expect(200);
 
     expect(declined.body).toMatchObject({
       state: "NEEDS_REVIEW",
@@ -399,7 +409,7 @@ describe("happy-path vertical slice", () => {
       candidatePo: null,
       poCandidates: [],
     });
-    await request(app).post(`/api/runs/${created.body.runId}/confirm-po`).send({ poNumber: "PO-1002" }).expect(409);
+    await request(app).post(`/api/runs/${created.body.runId}/review`).send({ action: "confirm_po", poNumber: "PO-1002" }).expect(409);
     storage.close();
   });
 
@@ -415,7 +425,7 @@ describe("happy-path vertical slice", () => {
     const app = createApp({ storage });
     const created = await request(app).post("/api/runs").field("fixtureId", "happy").expect(201);
 
-    const processed = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
+    const processed = await waitForRun(app, created.body.runId);
     const failedCodes = processed.body.checks
       .filter((check: { passed: boolean }) => !check.passed)
       .map((check: { code: string }) => check.code);
@@ -454,7 +464,7 @@ describe("happy-path vertical slice", () => {
     const storage = new Storage(runtime);
     const app = createApp({ storage });
     const created = await request(app).post("/api/runs").attach("invoice", path.resolve("data/fixtures/multiple_issues.pdf")).expect(201);
-    const processed = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
+    const processed = await waitForRun(app, created.body.runId);
 
     expect(processed.body).toMatchObject({
       state: "NEEDS_REVIEW",
@@ -483,14 +493,14 @@ describe("happy-path vertical slice", () => {
     const app = createApp({ storage });
 
     const created = await request(app).post("/api/runs").attach("invoice", path.resolve("data/fixtures/bundle_unknown.pdf")).expect(201);
-    const awaiting = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
+    const awaiting = await waitForRun(app, created.body.runId);
     const confirmed = await request(app)
-      .post(`/api/runs/${created.body.runId}/confirm-bundle`)
-      .send({ candidateId: "BUNDLE-CANDIDATE-1" })
+      .post(`/api/runs/${created.body.runId}/review`)
+      .send({ action: "confirm_bundle", candidateId: "BUNDLE-CANDIDATE-1" })
       .expect(200);
     const retried = await request(app)
-      .post(`/api/runs/${created.body.runId}/confirm-bundle`)
-      .send({ candidateId: "BUNDLE-CANDIDATE-1" })
+      .post(`/api/runs/${created.body.runId}/review`)
+      .send({ action: "confirm_bundle", candidateId: "BUNDLE-CANDIDATE-1" })
       .expect(200);
 
     expect(awaiting.body).toMatchObject({
@@ -539,9 +549,9 @@ describe("happy-path vertical slice", () => {
     const storage = new Storage(runtime);
     const app = createApp({ storage });
     const created = await request(app).post("/api/runs").field("fixtureId", "bundle_unknown").expect(201);
-    await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
+    await waitForRun(app, created.body.runId);
 
-    const rejected = await request(app).post(`/api/runs/${created.body.runId}/reject-bundle`).expect(200);
+    const rejected = await request(app).post(`/api/runs/${created.body.runId}/review`).send({ action: "reject_bundle" }).expect(200);
 
     expect(rejected.body).toMatchObject({
       state: "NEEDS_REVIEW",
@@ -559,7 +569,7 @@ describe("happy-path vertical slice", () => {
     const app = createApp({ storage });
     const created = await request(app).post("/api/runs").field("fixtureId", "receipt_capacity").expect(201);
 
-    const result = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
+    const result = await waitForRun(app, created.body.runId);
 
     expect(result.body).toMatchObject({
       state: "NEEDS_REVIEW",
@@ -599,18 +609,18 @@ describe("happy-path vertical slice", () => {
     const app = createApp({ storage });
 
     const created = await request(app).post("/api/runs").field("fixtureId", fixtureId).expect(201);
-    let result = await request(app).post(`/api/runs/${created.body.runId}/process`).expect(200);
+    let result = await waitForRun(app, created.body.runId);
 
     if (result.body.state === "AWAITING_PO_CONFIRMATION") {
       result = await request(app)
-        .post(`/api/runs/${created.body.runId}/confirm-po`)
-        .send({ poNumber: result.body.candidatePo })
+        .post(`/api/runs/${created.body.runId}/review`)
+        .send({ action: "confirm_po", poNumber: result.body.candidatePo })
         .expect(200);
     }
     if (result.body.state === "AWAITING_BUNDLE_CONFIRMATION") {
       result = await request(app)
-        .post(`/api/runs/${created.body.runId}/confirm-bundle`)
-        .send({ candidateId: result.body.bundleCandidates[0].id })
+        .post(`/api/runs/${created.body.runId}/review`)
+        .send({ action: "confirm_bundle", candidateId: result.body.bundleCandidates[0].id })
         .expect(200);
     }
 

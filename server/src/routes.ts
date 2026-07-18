@@ -6,7 +6,6 @@ import { rateLimit } from "express-rate-limit";
 import multer from "multer";
 import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
-import { runStateSchema } from "../../shared/contracts.js";
 import { env } from "./env.js";
 import { confirmBundle, confirmPo, processInvoice, rejectBundle, rejectPo } from "./pipeline.js";
 import type { Storage } from "./storage.js";
@@ -34,12 +33,41 @@ const fixtureIds = new Set([
   "tax_inclusive",
 ]);
 
+const reviewActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("confirm_po"), poNumber: z.string().trim().min(1) }).strict(),
+  z.object({ action: z.literal("reject_po") }).strict(),
+  z.object({ action: z.literal("confirm_bundle"), candidateId: z.string().trim().min(1) }).strict(),
+  z.object({ action: z.literal("reject_bundle") }).strict(),
+]);
+
 // Build the API router and attach all run-management endpoints to it.
 export function createApi(storage?: Storage) {
   const api = Router();
 
   // Track runs currently being processed so the same run cannot be processed twice at once.
   const processingRuns = new Set<string>();
+
+  // Start a persisted run once; a retry can safely recover an interrupted browser request.
+  function launchProcessing(runId: string) {
+    if (processingRuns.has(runId) || storage?.getRun(runId)?.state !== "PROCESSING") return;
+    processingRuns.add(runId);
+    void (async () => {
+      try {
+        await processInvoice(runId, storage!);
+      } catch {
+        try {
+          if (storage!.getRun(runId)?.state === "PROCESSING") {
+            storage!.addStage(runId, "PROCESSING", "FAILED");
+            storage!.block(runId, "PROCESSING_ERROR", "Retry; if it repeats, inspect application diagnostics without reposting.");
+          }
+        } catch {
+          // A storage failure cannot be persisted, but it must not become an unhandled rejection.
+        }
+      } finally {
+        processingRuns.delete(runId);
+      }
+    })();
+  }
 
   // Limit write operations to 30 requests per minute.
   const writeLimit = rateLimit({
@@ -65,27 +93,12 @@ export function createApi(storage?: Storage) {
   // The health endpoint works without storage; all remaining endpoints require it.
   if (!storage) return api;
 
-  // Return stored runs, optionally filtered by state and paginated with a cursor.
+  // Return every stored run, newest first.
   api.get("/runs", (request, response) => {
-    const parsed = z
-      .object({
-        state: runStateSchema.optional(),
-        limit: z.coerce.number().int().min(1).max(100).default(25),
-        cursor: z.string().min(1).optional(),
-      })
-      .strict()
-      .safeParse(request.query);
+    const parsed = z.object({}).strict().safeParse(request.query);
 
-    if (!parsed.success) 
-      return response.status(400).json(error("INVALID_QUERY", "Run filters are invalid."));
-
-    try {
-      response.json(storage.listRuns(parsed.data));
-    } catch (caught) {
-      if (caught instanceof Error && caught.message === "INVALID_CURSOR")
-        return response.status(400).json(error("INVALID_CURSOR", "The pagination cursor is invalid."));
-      throw caught;
-    }
+    if (!parsed.success) return response.status(400).json(error("INVALID_QUERY", "Run filters are invalid."));
+    response.json(storage.listRuns());
   });
 
   // Accept a PDF upload or a known fixture, validate it, save it, and create a run record.
@@ -96,10 +109,13 @@ export function createApi(storage?: Storage) {
       if (idempotencyKey && idempotencyKey.length > 200)
         return response.status(400).json(error("INVALID_IDEMPOTENCY_KEY", "Idempotency-Key is too long."));
 
-      
+
       if (idempotencyKey) {
         const existing = storage.getRunByIdempotencyKey(idempotencyKey);
-        if (existing) return response.location(`/api/runs/${existing.runId}`).status(200).json(existing);
+        if (existing) {
+          launchProcessing(existing.runId);
+          return response.location(`/api/runs/${existing.runId}`).status(200).json(existing);
+        }
       }
 
       const fixtureId = typeof request.body.fixtureId === "string" ? request.body.fixtureId : undefined;
@@ -140,95 +156,30 @@ export function createApi(storage?: Storage) {
         idempotencyKey,
       });
 
+      launchProcessing(runId);
       response.location(`/api/runs/${runId}`).status(201).json(run);
     } catch (caught) {
       next(caught);
     }
   });
 
-  // Process a stored invoice and update its run state with the extraction results.
-  api.post("/runs/:runId/process", writeLimit, async (request, response, next) => {
+  // Apply the selected review decision to an awaiting run.
+  api.post("/runs/:runId/review", writeLimit, (request, response, next) => {
     try {
       const runId = validRunId(request.params.runId);
-      if (!runId) 
-        return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
-
-      if (!emptyBody(request.body)) 
-        return response.status(400).json(error("INVALID_BODY", "This action accepts no request body.", runId));
-
-      const run = storage.getRun(runId);
-      if (!run)   
-        return response.status(404).json(error("RUN_NOT_FOUND", "Run not found."));
-      if (processingRuns.has(runId)) 
-        return response.status(202).json(run);
-
-      processingRuns.add(runId);
-
-      try {
-        response.json(await processInvoice(runId, storage));
-      } finally {
-        processingRuns.delete(runId);
+      if (!runId) return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
+      const action = reviewActionSchema.safeParse(request.body);
+      if (!action.success) return response.status(400).json(error("INVALID_REVIEW", "Provide a valid review action.", runId));
+      switch (action.data.action) {
+        case "confirm_po":
+          return response.json(confirmPo(runId, storage, action.data.poNumber));
+        case "reject_po":
+          return response.json(rejectPo(runId, storage));
+        case "confirm_bundle":
+          return response.json(confirmBundle(runId, storage, action.data.candidateId));
+        case "reject_bundle":
+          return response.json(rejectBundle(runId, storage));
       }
-    } catch (caught) {
-      next(caught);
-    }
-  });
-
-  // Confirm the purchase-order candidate selected for a run.
-  api.post("/runs/:runId/confirm-po", writeLimit, async (request, response, next) => {
-    try {
-      const runId = validRunId(request.params.runId);
-      if (!runId) return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
-      const body = z
-        .object({ poNumber: z.string().trim().min(1) })
-        .strict()
-        .safeParse(request.body);
-      if (!body.success) return response.status(400).json(error("INVALID_CONFIRMATION", "Provide exactly one PO candidate.", runId));
-      const run = storage.getRun(runId);
-      if (!run) return response.status(404).json(error("RUN_NOT_FOUND", "Run not found."));
-      response.json(confirmPo(runId, storage, body.data.poNumber));
-    } catch (caught) {
-      next(caught);
-    }
-  });
-
-  // Reject the purchase-order candidates for a run.
-  api.post("/runs/:runId/reject-po", writeLimit, (request, response, next) => {
-    try {
-      const runId = validRunId(request.params.runId);
-      if (!runId) return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
-      if (!emptyBody(request.body)) return response.status(400).json(error("INVALID_BODY", "This action accepts no request body.", runId));
-      response.json(rejectPo(runId, storage));
-    } catch (caught) {
-      next(caught);
-    }
-  });
-
-  // Confirm the bundle candidate selected for a run.
-  api.post("/runs/:runId/confirm-bundle", writeLimit, async (request, response, next) => {
-    try {
-      const runId = validRunId(request.params.runId);
-      if (!runId) return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
-      const body = z
-        .object({ candidateId: z.string().trim().min(1) })
-        .strict()
-        .safeParse(request.body);
-      if (!body.success) return response.status(400).json(error("INVALID_CONFIRMATION", "Provide exactly one bundle candidate.", runId));
-      const run = storage.getRun(runId);
-      if (!run) return response.status(404).json(error("RUN_NOT_FOUND", "Run not found."));
-      response.json(confirmBundle(runId, storage, body.data.candidateId));
-    } catch (caught) {
-      next(caught);
-    }
-  });
-
-  // Reject the bundle candidates for a run.
-  api.post("/runs/:runId/reject-bundle", writeLimit, (request, response, next) => {
-    try {
-      const runId = validRunId(request.params.runId);
-      if (!runId) return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
-      if (!emptyBody(request.body)) return response.status(400).json(error("INVALID_BODY", "This action accepts no request body.", runId));
-      response.json(rejectBundle(runId, storage));
     } catch (caught) {
       next(caught);
     }

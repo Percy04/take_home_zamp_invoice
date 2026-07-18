@@ -305,13 +305,6 @@ export const runSummarySchema = z.object({
 
 export const runListSchema = z.object({
   items: z.array(runSummarySchema),
-  nextCursor: z.string().nullable(),
-  metrics: z.object({
-    totalRuns: z.number().int().nonnegative(),
-    postedCount: z.number().int().nonnegative(),
-    reviewCount: z.number().int().nonnegative(),
-    autoClearRate: z.string(),
-  }),
 });
 
 export const apiErrorSchema = z.object({

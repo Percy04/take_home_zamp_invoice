@@ -95,7 +95,7 @@ export class Storage {
       .prepare(
         `INSERT INTO runs
          (id, created_at, updated_at, filename, file_sha256, pdf_path, state, stage_events_json, idempotency_key)
-         VALUES (?, ?, ?, ?, ?, ?,' 'PROCESSING, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, 'PROCESSING', ?, ?)`,
       )
       .run(input.id, now, now, input.filename, input.sha256, input.pdfPath, JSON.stringify(stages), input.idempotencyKey ?? null);
     return this.getRun(input.id)!;
@@ -132,26 +132,7 @@ export class Storage {
     });
   }
 
-  listRuns(
-    input: {
-      state?: RunSummary["state"];
-      limit?: number;
-      cursor?: string;
-    } = {},
-  ) {
-    const limit = input.limit ?? 25;
-    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
-    const conditions: string[] = [];
-    const parameters: Array<string | number> = [];
-    if (input.state) {
-      conditions.push("state = ?");
-      parameters.push(input.state);
-    }
-    if (cursor) {
-      conditions.push("(created_at < ? OR (created_at = ? AND id < ?))");
-      parameters.push(cursor.createdAt, cursor.createdAt, cursor.id);
-    }
-    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  listRuns() {
     const rows = this.db
       .prepare(
         `SELECT id, filename, state, decision, execution, primary_reason_code,
@@ -161,9 +142,9 @@ export class Storage {
          COALESCE(json_extract(evaluation_json, '$.invoice.poNumber'), json_extract(evaluation_json, '$.invoicePreview.poNumber')) AS po_number,
          COALESCE(json_extract(evaluation_json, '$.invoice.total'), json_extract(evaluation_json, '$.invoicePreview.total')) AS total,
          COALESCE(json_extract(evaluation_json, '$.invoice.currency'), json_extract(evaluation_json, '$.invoicePreview.currency')) AS currency
-         FROM runs ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
+         FROM runs ORDER BY created_at DESC, id DESC`,
       )
-      .all(...parameters, limit + 1) as Array<{
+      .all() as Array<{
       id: string;
       filename: string;
       state: RunSummary["state"];
@@ -179,10 +160,8 @@ export class Storage {
       created_at: string;
       updated_at: string;
     }>;
-    const hasMore = rows.length > limit;
-    const page = rows.slice(0, limit);
     const items = runSummarySchema.array().parse(
-      page.map((row) => ({
+      rows.map((row) => ({
         runId: row.id,
         filename: row.filename,
         vendor: row.vendor,
@@ -199,29 +178,7 @@ export class Storage {
         updatedAt: row.updated_at,
       })),
     );
-    const last = page.at(-1);
-    const metrics = this.db
-      .prepare(
-        `SELECT COUNT(*) AS total_runs,
-         SUM(CASE WHEN state = 'POSTED' THEN 1 ELSE 0 END) AS posted_count,
-         SUM(CASE WHEN state IN ('NEEDS_REVIEW', 'AWAITING_PO_CONFIRMATION', 'AWAITING_BUNDLE_CONFIRMATION') THEN 1 ELSE 0 END) AS review_count
-         FROM runs`,
-      )
-      .get() as {
-      total_runs: number;
-      posted_count: number;
-      review_count: number;
-    };
-    return {
-      items,
-      nextCursor: hasMore && last ? encodeCursor({ createdAt: last.created_at, id: last.id }) : null,
-      metrics: {
-        totalRuns: metrics.total_runs,
-        postedCount: metrics.posted_count,
-        reviewCount: metrics.review_count,
-        autoClearRate: metrics.total_runs === 0 ? "0.0" : new Decimal(metrics.posted_count).div(metrics.total_runs).mul(100).toFixed(1),
-      },
-    };
+    return { items };
   }
 
   getRunByIdempotencyKey(key: string) {
@@ -631,23 +588,6 @@ export class Storage {
 function parsePoCandidates(value: string | null): PoCandidate[] {
   if (!value) return [];
   return poCandidateSchema.array().parse(JSON.parse(value));
-}
-
-function encodeCursor(cursor: { createdAt: string; id: string }) {
-  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
-}
-
-function decodeCursor(value: string) {
-  try {
-    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
-      createdAt?: unknown;
-      id?: unknown;
-    };
-    if (typeof parsed.createdAt !== "string" || typeof parsed.id !== "string") throw new Error("INVALID_CURSOR");
-    return { createdAt: parsed.createdAt, id: parsed.id };
-  } catch {
-    throw new Error("INVALID_CURSOR");
-  }
 }
 
 function exists(file: string) {
