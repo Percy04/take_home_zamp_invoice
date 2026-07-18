@@ -10,7 +10,6 @@ import * as api from "../client/src/lib/api";
 
 vi.mock("../client/src/lib/api", () => ({
   getRun: vi.fn(),
-  processRun: vi.fn(),
   resetWorkspace: vi.fn(),
   documentUrl: vi.fn(() => "/document.pdf"),
 }));
@@ -64,17 +63,15 @@ describe("active run polling", () => {
     store.upsertRun(run);
     window.history.replaceState({}, "", `/runs/${run.runId}`);
     vi.mocked(api.getRun).mockResolvedValue(run);
-    vi.mocked(api.processRun).mockResolvedValue(run);
   });
 
   afterEach(() => {
     store.clearRuns();
   });
 
-  it("starts processing once and polls server stages while the run is active", async () => {
+  it("polls server stages while the run is active", async () => {
     render(<RouterProvider router={getRouter()} />);
 
-    await waitFor(() => expect(api.processRun).toHaveBeenCalledWith(run.runId));
     await waitFor(() => expect(api.getRun).toHaveBeenCalledTimes(2), {
       timeout: 1_000,
     });

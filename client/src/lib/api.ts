@@ -18,6 +18,11 @@ export const sampleInvoices = [
 ] as const;
 
 export type SampleInvoiceId = (typeof sampleInvoices)[number]["id"];
+export type ReviewAction =
+  | { action: "confirm_po"; poNumber: string }
+  | { action: "reject_po" }
+  | { action: "confirm_bundle"; candidateId: string }
+  | { action: "reject_bundle" };
 
 async function requestRun(url: string, init?: RequestInit): Promise<Run> {
   const response = await fetch(url, init);
@@ -40,7 +45,6 @@ export async function createRun(input: { file?: File; fixtureId?: SampleInvoiceI
     headers: { "Idempotency-Key": crypto.randomUUID() },
     body,
   });
-  void processRun(run.runId);
   return run;
 }
 
@@ -60,32 +64,12 @@ export async function getRun(runId: string): Promise<Run | undefined> {
   }
 }
 
-export function processRun(runId: string) {
-  return requestRun(`/api/runs/${runId}/process`, { method: "POST" });
-}
-
-export function confirmPo(runId: string, poNumber: string) {
-  return requestRun(`/api/runs/${runId}/confirm-po`, {
+export function reviewRun(runId: string, action: ReviewAction) {
+  return requestRun(`/api/runs/${runId}/review`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ poNumber }),
+    body: JSON.stringify(action),
   });
-}
-
-export function rejectPo(runId: string) {
-  return requestRun(`/api/runs/${runId}/reject-po`, { method: "POST" });
-}
-
-export function confirmBundle(runId: string, candidateId: string) {
-  return requestRun(`/api/runs/${runId}/confirm-bundle`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ candidateId }),
-  });
-}
-
-export function rejectBundle(runId: string) {
-  return requestRun(`/api/runs/${runId}/reject-bundle`, { method: "POST" });
 }
 
 export async function resetWorkspace(): Promise<void> {

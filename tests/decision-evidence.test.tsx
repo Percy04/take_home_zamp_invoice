@@ -8,8 +8,7 @@ import { reviewIssues, reviewSummary } from "../client/src/lib/review-issues";
 import type { Run } from "../client/src/lib/types";
 
 vi.mock("../client/src/lib/api", () => ({
-  confirmBundle: vi.fn(),
-  rejectBundle: vi.fn(),
+  reviewRun: vi.fn(),
 }));
 
 const base = {
@@ -309,7 +308,7 @@ describe("DecisionEvidence", () => {
         },
       ],
     };
-    vi.mocked(api.confirmBundle).mockRejectedValueOnce(new Error("The requested run action is not valid."));
+    vi.mocked(api.reviewRun).mockRejectedValueOnce(new Error("The requested run action is not valid."));
     render(<DecisionEvidence run={run} />);
 
     expect(screen.getAllByText("Invoice item needs a component mapping")).toHaveLength(1);

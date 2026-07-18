@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import * as api from "@/lib/api";
 import { useStore } from "@/lib/store";
 import type { Run } from "@/lib/types";
@@ -22,7 +22,6 @@ function RunPage() {
   const navigate = useNavigate();
   const run = useStore((s) => s.runs.find((r) => r.runId === runId));
   const [statusError, setStatusError] = useState(false);
-  const processStarted = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,16 +36,6 @@ function RunPage() {
       cancelled = true;
     };
   }, [runId]);
-
-  useEffect(() => {
-    processStarted.current = false;
-  }, [runId]);
-
-  useEffect(() => {
-    if (run?.state !== "PROCESSING" || processStarted.current) return;
-    processStarted.current = true;
-    void api.processRun(runId).catch(() => setStatusError(true));
-  }, [run?.state, runId]);
 
   useEffect(() => {
     if (run?.state !== "PROCESSING") return;

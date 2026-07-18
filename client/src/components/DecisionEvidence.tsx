@@ -257,7 +257,7 @@ function PoCandidateBlock({ run }: { run: Run }) {
               setBusy("reject");
               setActionError(undefined);
               try {
-                await api.rejectPo(run.runId);
+                await api.reviewRun(run.runId, { action: "reject_po" });
               } catch (caught) {
                 setActionError(caught instanceof Error ? caught.message : "Could not reject the purchase order.");
               } finally {
@@ -274,7 +274,7 @@ function PoCandidateBlock({ run }: { run: Run }) {
               setBusy("confirm");
               setActionError(undefined);
               try {
-                await api.confirmPo(run.runId, c.poNumber);
+                await api.reviewRun(run.runId, { action: "confirm_po", poNumber: c.poNumber });
               } catch (caught) {
                 setActionError(caught instanceof Error ? caught.message : "Could not confirm the purchase order.");
               } finally {
@@ -357,7 +357,7 @@ function BundleCandidateBlock({ run }: { run: Run }) {
               setBusy("reject");
               setActionError(undefined);
               try {
-                await api.rejectBundle(run.runId);
+                await api.reviewRun(run.runId, { action: "reject_bundle" });
               } catch (caught) {
                 setActionError(caught instanceof Error ? caught.message : "Could not reject the decomposition.");
               } finally {
@@ -374,7 +374,7 @@ function BundleCandidateBlock({ run }: { run: Run }) {
               setBusy("confirm");
               setActionError(undefined);
               try {
-                await api.confirmBundle(run.runId, b.candidateId);
+                await api.reviewRun(run.runId, { action: "confirm_bundle", candidateId: b.candidateId });
               } catch (caught) {
                 setActionError(caught instanceof Error ? caught.message : "Could not confirm the decomposition.");
               } finally {
