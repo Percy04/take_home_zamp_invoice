@@ -52,6 +52,12 @@ Use `--file` for any PDF and `--fixture` for a recorded demo case. `--step all` 
 
 The production server exposes the client at `http://localhost:3000` and readiness at `http://localhost:3000/api/health`.
 
+## API
+
+Creating a run with `POST /api/runs` validates and stores one PDF (or a demo `fixtureId`), starts processing in the Node process, and immediately returns `201` with a `PROCESSING` run and its `Location`. The UI polls `GET /api/runs/:runId`; there is no process endpoint.
+
+The product endpoints are `POST /api/runs`, `GET /api/runs`, `GET /api/runs/:runId`, `GET /api/runs/:runId/document`, and `POST /api/runs/:runId/review`. Listing always returns newest-first `{ "items": [...] }` and rejects query parameters. Review uses one strict payload: `confirm_po` with `poNumber`, `reject_po`, `confirm_bundle` with `candidateId`, or `reject_bundle`. `GET /api/health` and demo-only guarded `POST /api/reset` remain available.
+
 Preserved deterministic assets:
 
 - `data/fixtures/`: ten acceptance and regression invoice PDFs.

@@ -4,4 +4,4 @@ Deploy the repository as one Docker web service using `render.yaml`. The compile
 
 The Render blueprint runs `PROVIDER_MODE=live`. Set the Azure credentials, `MAPPING_PROVIDER=openai` or `gemini`, and only the selected mapper's API key in Render before deploying; production startup rejects recorded mode and incomplete live configuration. Keep recorded mode for local offline development and automated tests only.
 
-Verify after deployment: `/api/health`, a live uploaded invoice, PDF preview, refresh recovery, and one posted ledger row after repeated process/confirmation calls.
+Verify after deployment: `/api/health`, a live uploaded invoice that immediately returns `PROCESSING`, polling to its final run state, PDF preview, refresh recovery, and one posted ledger row after an idempotent upload retry and repeated unified review call.
