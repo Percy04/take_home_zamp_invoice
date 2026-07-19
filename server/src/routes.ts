@@ -47,7 +47,6 @@ export function createApi(storage?: Storage) {
   // Track runs currently being processed so the same run cannot be processed twice at once.
   const processingRuns = new Set<string>();
 
-  // Start a persisted run once; a retry can safely recover an interrupted browser request.
   function launchProcessing(runId: string) {
     if (processingRuns.has(runId) || storage?.getRun(runId)?.state !== "PROCESSING") return;
     processingRuns.add(runId);
@@ -97,8 +96,10 @@ export function createApi(storage?: Storage) {
   api.get("/runs", (request, response) => {
     const parsed = z.object({}).strict().safeParse(request.query);
 
-    if (!parsed.success) return response.status(400).json(error("INVALID_QUERY", "Run filters are invalid."));
-    response.json(storage.listRuns());
+    if (!parsed.success) 
+      return response.status(400).json(error("INVALID_QUERY", "Run filters are invalid."));
+
+    return response.json(storage.listRuns());
   });
 
   // Accept a PDF upload or a known fixture, validate it, save it, and create a run record.
@@ -108,7 +109,6 @@ export function createApi(storage?: Storage) {
       const idempotencyKey = request.get("Idempotency-Key")?.trim();
       if (idempotencyKey && idempotencyKey.length > 200)
         return response.status(400).json(error("INVALID_IDEMPOTENCY_KEY", "Idempotency-Key is too long."));
-
 
       if (idempotencyKey) {
         const existing = storage.getRunByIdempotencyKey(idempotencyKey);
@@ -148,6 +148,7 @@ export function createApi(storage?: Storage) {
 
       await writeFile(pdfPath, bytes);
 
+      // Persist run in storage
       const run = storage.createRun({
         id: runId,
         filename,
@@ -156,8 +157,11 @@ export function createApi(storage?: Storage) {
         idempotencyKey,
       });
 
+      // Start processing
       launchProcessing(runId);
-      response.location(`/api/runs/${runId}`).status(201).json(run);
+
+      // return location
+      return response.location(`/api/runs/${runId}`).status(201).json(run);
     } catch (caught) {
       next(caught);
     }
@@ -167,9 +171,13 @@ export function createApi(storage?: Storage) {
   api.post("/runs/:runId/review", writeLimit, (request, response, next) => {
     try {
       const runId = validRunId(request.params.runId);
-      if (!runId) return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
+      if (!runId) 
+        return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
+
       const action = reviewActionSchema.safeParse(request.body);
-      if (!action.success) return response.status(400).json(error("INVALID_REVIEW", "Provide a valid review action.", runId));
+      if (!action.success) 
+        return response.status(400).json(error("INVALID_REVIEW", "Provide a valid review action.", runId));
+
       switch (action.data.action) {
         case "confirm_po":
           return response.json(confirmPo(runId, storage, action.data.poNumber));
@@ -197,14 +205,19 @@ export function createApi(storage?: Storage) {
   // Stream the stored PDF for a run back to the client.
   api.get("/runs/:runId/document", (request, response) => {
     const runId = validRunId(request.params.runId);
-    if (!runId) return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
+    if (!runId) 
+      return response.status(400).json(error("INVALID_RUN_ID", "Run ID is invalid."));
+
     const pdfPath = storage.getPdfPath(runId);
-    if (!pdfPath) return response.status(404).json(error("RUN_NOT_FOUND", "Run not found."));
+    if (!pdfPath) 
+      return response.status(404).json(error("RUN_NOT_FOUND", "Run not found."));
+
     response.type("application/pdf").set({
       "Content-Disposition": "inline",
       "X-Content-Type-Options": "nosniff",
     });
-    response.sendFile(path.resolve(pdfPath));
+
+    return response.sendFile(path.resolve(pdfPath));
   });
 
   // Reset demo data when explicitly enabled and no run is currently processing.

@@ -25,6 +25,7 @@ export async function processInvoice(runId: string, storage: Storage) {
   storage.addStage(runId, "EXTRACTION", "ACTIVE");
   const pdfPath = storage.getPdfPath(runId);
   if (!pdfPath) throw new Error("RUN_DOCUMENT_NOT_FOUND");
+  
   let providerResult;
   try {
     providerResult = await extractAndMap(await readFile(pdfPath));

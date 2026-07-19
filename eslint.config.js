@@ -14,6 +14,9 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
+    rules: {
+      curly: ["error", "all"],
+    },
   },
   {
     files: ["client/src/routes/**/*.tsx"],

@@ -58,6 +58,7 @@ export async function extractAndMapLive(bytes: Buffer) {
     env.MAPPING_PROVIDER === "openai" && !env.OPENAI_API_KEY ? "OPENAI_API_KEY" : null,
     env.MAPPING_PROVIDER === "gemini" && !env.GEMINI_API_KEY ? "GEMINI_API_KEY" : null,
   ].filter(Boolean);
+
   if (
     !env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT ||
     !env.AZURE_DOCUMENT_INTELLIGENCE_KEY ||
@@ -65,9 +66,11 @@ export async function extractAndMapLive(bytes: Buffer) {
   ) {
     throw new ProviderError("CONFIG", "Live providers are not configured.", { missing: missing.join(", ") });
   }
+
   const adapter = configuredAiAdapter();
   const client = DocumentIntelligence(env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT, { key: env.AZURE_DOCUMENT_INTELLIGENCE_KEY });
   let result: AzureResult;
+
   try {
     const initial = await client.path("/documentModels/{modelId}:analyze", "prebuilt-invoice").post({
       contentType: "application/json",
@@ -75,8 +78,11 @@ export async function extractAndMapLive(bytes: Buffer) {
       queryParameters: { features: ["keyValuePairs"] },
       abortSignal: AbortSignal.timeout(60_000),
     });
+
     if (isUnexpected(initial)) throw new ProviderError("AZURE_ANALYZE", "Azure analyze request failed.", { status: initial.status });
+
     const poller = getLongRunningPoller(client, initial);
+
     result = (await withTimeout(poller.pollUntilDone(), 60_000, "Azure extraction timed out.")).body as unknown as AzureResult;
   } catch (caught) {
     if (caught instanceof ProviderError) throw caught;
@@ -87,12 +93,15 @@ export async function extractAndMapLive(bytes: Buffer) {
   const evidence = buildSourceCatalogue(result, true);
   if (!evidence.length)
     return recheckMissingFieldsWithFullDocument(bytes, evidence, emptyInvoiceMapping(), adapter.readDocument.bind(adapter), adapter.model);
+
   const mapping = await withOneMappingRetry(async () => {
     const resultMapping = await adapter.mapEvidence(evidence);
     validateMapping(resultMapping, evidence);
     return resultMapping;
   });
+
   const reread = await recheckLowConfidenceFields(bytes, evidence, mapping, adapter.readPage.bind(adapter), adapter.model);
+
   const fullDocument = await recheckMissingFieldsWithFullDocument(
     bytes,
     reread.evidence,
@@ -100,6 +109,7 @@ export async function extractAndMapLive(bytes: Buffer) {
     adapter.readDocument.bind(adapter),
     adapter.model,
   );
+
   return {
     ...fullDocument,
     originalMapping: mapping,
