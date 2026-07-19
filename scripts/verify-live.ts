@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { mappedEvidenceFields } from "../server/src/invoice-mapping.js";
 import { normalizeInvoice } from "../server/src/invoice-normalization.js";
-import { extractAndMapLive, logProviderError, ProviderError } from "../server/src/providers.js";
+import { extractAndMapLive, logProviderError } from "../server/src/providers.js";
+import { ProviderError } from "../server/src/provider-errors.js";
 import { env } from "../server/src/env.js";
 
 const input = process.argv[2];
@@ -23,18 +25,7 @@ try {
   console.log("Provider flow: succeeded");
   console.log(`Evidence count: ${result.evidence.length}`);
   console.log(`Mapped invoice lines: ${result.mapping.lines.length}`);
-  const selectedIds = [
-    result.mapping.vendor,
-    result.mapping.invoiceNumber,
-    result.mapping.invoiceDate,
-    result.mapping.poNumber,
-    result.mapping.currency,
-    result.mapping.subtotal,
-    result.mapping.tax,
-    result.mapping.total,
-    result.mapping.taxNote,
-    ...result.mapping.lines.flatMap((line) => Object.values(line)),
-  ].filter((id): id is string => typeof id === "string");
+  const selectedIds = mappedEvidenceFields(result.mapping).flatMap(({ id }) => (id ? [id] : []));
   const lowConfidence = result.evidence
     .filter((source) => selectedIds.includes(source.id) && source.confidence !== null && source.confidence < 0.75)
     .map((source) => ({

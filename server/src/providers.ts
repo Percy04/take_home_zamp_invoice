@@ -7,52 +7,40 @@ import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
 import { sourceRefSchema, type AiRecheck, type SourceRef } from "../../shared/contracts.js";
 import { env } from "./env.js";
+import {
+  completeInvoiceExtraction,
+  emptyInvoiceMapping,
+  extractedValueFields,
+  fullDocumentTargets,
+  fullInvoiceExtractionSchema,
+  fullInvoiceJsonSchema,
+  invoiceMappingJsonSchemaForEvidence,
+  invoiceMappingSchema,
+  invoiceMappingSchemaForEvidence,
+  lowConfidenceMappedFields,
+  mappingHeaderFields,
+  mappingLineFields,
+  mergeFullDocumentMapping,
+  needsFullDocumentFallback,
+  preferReliableEvidence,
+  replaceMappedEvidence,
+  restoreRecheckedMapping,
+  validateMapping,
+  type InvoiceExtraction,
+  type InvoiceMapping,
+} from "./invoice-mapping.js";
+import { ProviderError, providerError, safeError, safeResponseError, withOneMappingRetry } from "./provider-errors.js";
 
-const lineMappingSchema = z.object({
-  sku: z.string().nullable(),
-  description: z.string().nullable(),
-  quantity: z.string().nullable(),
-  uom: z.string().nullable(),
-  unitPrice: z.string().nullable(),
-  amount: z.string().nullable(),
-  taxInclusion: z.string().nullable().optional(),
-  taxRate: z.string().nullable().optional(),
-  taxAmount: z.string().nullable().optional(),
-});
-
-export const invoiceMappingSchema = z.object({
-  vendor: z.string().nullable(),
-  invoiceNumber: z.string().nullable(),
-  invoiceDate: z.string().nullable(),
-  poNumber: z.string().nullable(),
-  currency: z.string().nullable(),
-  subtotal: z.string().nullable(),
-  tax: z.string().nullable(),
-  total: z.string().nullable(),
-  taxNote: z.string().nullable().optional(),
-  lines: z.array(lineMappingSchema),
-});
-
-export type InvoiceMapping = z.infer<typeof invoiceMappingSchema>;
-/** Text read directly from the full-document vision response, before it becomes evidence IDs. */
-declare const fullInvoiceExtractionBrand: unique symbol;
-export type InvoiceExtraction = InvoiceMapping & {
-  readonly [fullInvoiceExtractionBrand]: true;
+export {
+  invoiceMappingSchema,
+  invoiceMappingSchemaForEvidence,
+  preferReliableEvidence,
+  restoreRecheckedMapping,
+  validateMapping,
+  ProviderError,
+  withOneMappingRetry,
 };
-const fullInvoiceExtractionSchema = invoiceMappingSchema.transform((value) => value as InvoiceExtraction);
-
-const mappingHeaderFields = [
-  "vendor",
-  "invoiceNumber",
-  "invoiceDate",
-  "poNumber",
-  "currency",
-  "subtotal",
-  "tax",
-  "total",
-  "taxNote",
-] as const;
-const mappingLineFields = ["sku", "description", "quantity", "uom", "unitPrice", "amount", "taxInclusion", "taxRate", "taxAmount"] as const;
+export type { InvoiceExtraction, InvoiceMapping };
 
 type AzureField = {
   content?: string;
@@ -98,96 +86,6 @@ type AzureResult = {
     }>;
   };
 };
-
-type ProviderStage =
-  | "CONFIG"
-  | "AZURE_ANALYZE"
-  | "AZURE_POLL"
-  | "AZURE_RESULT"
-  | "AZURE_EVIDENCE"
-  | "OPENAI_MAPPING"
-  | "GEMINI_MAPPING"
-  | "AI_RECHECK"
-  | "MAPPING_VALIDATION"
-  | "RECORDED_PROVIDER";
-
-type ProviderDiagnostic = string | number | boolean | null | undefined;
-
-export class ProviderError extends Error {
-  constructor(
-    readonly stage: ProviderStage,
-    message: string,
-    readonly diagnostics: Record<string, ProviderDiagnostic> = {},
-  ) {
-    super(message);
-  }
-}
-
-export function invoiceMappingSchemaForEvidence(evidence: SourceRef[]) {
-  const ids = [...new Set(evidence.map((source) => source.id))];
-  if (!ids.length) throw new Error("Evidence is required for source mapping.");
-  const sourceId = z.enum(ids as [string, ...string[]]);
-  const optionalSourceId = sourceId.nullable();
-  const line = z.object({
-    sku: optionalSourceId,
-    description: optionalSourceId,
-    quantity: optionalSourceId,
-    uom: optionalSourceId,
-    unitPrice: optionalSourceId,
-    amount: optionalSourceId,
-    taxInclusion: optionalSourceId.optional(),
-    taxRate: optionalSourceId.optional(),
-    taxAmount: optionalSourceId.optional(),
-  });
-  return z.object({
-    vendor: optionalSourceId,
-    invoiceNumber: optionalSourceId,
-    invoiceDate: optionalSourceId,
-    poNumber: optionalSourceId,
-    currency: optionalSourceId,
-    subtotal: optionalSourceId,
-    tax: optionalSourceId,
-    total: optionalSourceId,
-    taxNote: optionalSourceId.optional(),
-    lines: z.array(line),
-  });
-}
-
-function invoiceMappingJsonSchemaForEvidence(evidence: SourceRef[]) {
-  const ids = [...new Set(evidence.map((source) => source.id))];
-  const optionalSourceId = { type: ["string", "null"], enum: [...ids, null] };
-  const line = {
-    type: "object",
-    properties: {
-      sku: optionalSourceId,
-      description: optionalSourceId,
-      quantity: optionalSourceId,
-      uom: optionalSourceId,
-      unitPrice: optionalSourceId,
-      amount: optionalSourceId,
-      taxInclusion: optionalSourceId,
-      taxRate: optionalSourceId,
-      taxAmount: optionalSourceId,
-    },
-    required: ["sku", "description", "quantity", "uom", "unitPrice", "amount", "taxInclusion", "taxRate", "taxAmount"],
-  };
-  return {
-    type: "object",
-    properties: {
-      vendor: optionalSourceId,
-      invoiceNumber: optionalSourceId,
-      invoiceDate: optionalSourceId,
-      poNumber: optionalSourceId,
-      currency: optionalSourceId,
-      subtotal: optionalSourceId,
-      tax: optionalSourceId,
-      total: optionalSourceId,
-      taxNote: optionalSourceId,
-      lines: { type: "array", items: line },
-    },
-    required: ["vendor", "invoiceNumber", "invoiceDate", "poNumber", "currency", "subtotal", "tax", "total", "taxNote", "lines"],
-  };
-}
 
 export async function extractAndMap(bytes: Buffer): Promise<{
   evidence: SourceRef[];
@@ -405,162 +303,12 @@ export async function recheckMissingFieldsWithFullDocument(
   };
 }
 
-function needsFullDocumentFallback(mapping: InvoiceMapping) {
-  return (
-    [mapping.vendor, mapping.invoiceNumber, mapping.invoiceDate, mapping.poNumber, mapping.currency, mapping.total].some((id) => !id) ||
-    !mapping.lines.length ||
-    mapping.lines.some((line) => (!line.sku && !line.description) || !line.quantity || !line.unitPrice || !line.amount)
-  );
-}
-
-function fullDocumentTargets(mapping: InvoiceMapping, extracted: InvoiceExtraction | null) {
-  const requiredHeaders = new Set<keyof InvoiceMapping>(["vendor", "invoiceNumber", "invoiceDate", "total"]);
-  const targets: Array<{ field: string; id: string | null | undefined }> = [];
-  for (const field of mappingHeaderFields) {
-    if (mapping[field]) continue;
-    if (requiredHeaders.has(field) || extracted?.[field]?.trim()) targets.push({ field, id: null });
-  }
-  const lineCount = Math.max(mapping.lines.length, extracted?.lines.length ?? 0);
-  for (let index = 0; index < lineCount; index += 1) {
-    const existing = mapping.lines[index];
-    const reread = extracted?.lines[index];
-    for (const field of mappingLineFields) {
-      if (!existing?.[field] && reread?.[field]?.trim())
-        targets.push({
-          field: `lines.${index}.${field}`,
-          id: existing?.[field] ?? null,
-        });
-    }
-    const hasIdentity = Boolean(existing?.sku || existing?.description || reread?.sku?.trim() || reread?.description?.trim());
-    if (!hasIdentity) targets.push({ field: `lines.${index}.identity`, id: null });
-    const arithmetic = ["quantity", "unitPrice", "amount"] as const;
-    const available = arithmetic.filter((field) => existing?.[field] || reread?.[field]?.trim());
-    if (available.length < 2)
-      for (const field of arithmetic)
-        if (!existing?.[field] && !reread?.[field]?.trim()) targets.push({ field: `lines.${index}.${field}`, id: null });
-  }
-  if (!lineCount) targets.push({ field: "lines", id: null });
-  return targets;
-}
-
-function mergeFullDocumentMapping(mapping: InvoiceMapping, extracted: InvoiceExtraction | null, replacements: Map<string, string>) {
-  if (!extracted) return mapping;
-  const lineCount = Math.max(mapping.lines.length, extracted.lines.length);
-  return replaceMappedEvidence(
-    invoiceMappingSchema.parse({
-      ...mapping,
-      lines: Array.from(
-        { length: lineCount },
-        (_, index) => mapping.lines[index] ?? Object.fromEntries(mappingLineFields.map((field) => [field, null])),
-      ),
-    }),
-    replacements,
-  );
-}
-
-function extractedValueFields(extraction: InvoiceExtraction) {
-  return [
-    ...mappingHeaderFields.map((field) => ({
-      field,
-      value: extraction[field],
-    })),
-    ...extraction.lines.flatMap((line, index) =>
-      mappingLineFields.map((field) => ({
-        field: `lines.${index}.${field}`,
-        value: line[field],
-      })),
-    ),
-  ];
-}
-
-function completeInvoiceExtraction(extraction: InvoiceExtraction) {
-  const requiredHeaders = [extraction.vendor, extraction.invoiceNumber, extraction.invoiceDate, extraction.total];
-  return (
-    requiredHeaders.every((value) => Boolean(value?.trim())) &&
-    extraction.lines.length > 0 &&
-    extraction.lines.every(
-      (line) =>
-        Boolean((line.sku || line.description)?.trim()) &&
-        [line.quantity, line.unitPrice, line.amount].filter((value) => Boolean(value?.trim())).length >= 2,
-    )
-  );
-}
-
 async function singlePageNumber(bytes: Buffer) {
   try {
     return (await PDFDocument.load(bytes)).getPageCount() === 1 ? 1 : null;
   } catch {
     return null;
   }
-}
-
-function emptyInvoiceMapping(): InvoiceMapping {
-  return {
-    vendor: null,
-    invoiceNumber: null,
-    invoiceDate: null,
-    poNumber: null,
-    currency: null,
-    subtotal: null,
-    tax: null,
-    total: null,
-    taxNote: null,
-    lines: [],
-  };
-}
-
-function lowConfidenceMappedFields(evidence: SourceRef[], mapping: InvoiceMapping) {
-  const byId = new Map(evidence.map((source) => [source.id, source]));
-  return mappedEvidenceFields(mapping).flatMap(({ field, id }) => {
-    const source = id ? byId.get(id) : undefined;
-    return source && source.confidence !== null && source.confidence < 0.75 ? [{ field, source }] : [];
-  });
-}
-
-function mappedEvidenceFields(mapping: InvoiceMapping) {
-  return [
-    ...mappingHeaderFields.map((field) => ({ field, id: mapping[field] })),
-    ...mapping.lines.flatMap((line, index) =>
-      mappingLineFields.map((field) => ({
-        field: `lines.${index}.${field}`,
-        id: line[field],
-      })),
-    ),
-  ];
-}
-
-function replaceMappedEvidence(mapping: InvoiceMapping, replacements: Map<string, string | null>): InvoiceMapping {
-  const replace = (field: string, id: string | null | undefined) =>
-    replacements.has(field) ? (replacements.get(field) ?? null) : (id ?? null);
-  return invoiceMappingSchema.parse({
-    ...mapping,
-    vendor: replace("vendor", mapping.vendor),
-    invoiceNumber: replace("invoiceNumber", mapping.invoiceNumber),
-    invoiceDate: replace("invoiceDate", mapping.invoiceDate),
-    poNumber: replace("poNumber", mapping.poNumber),
-    currency: replace("currency", mapping.currency),
-    subtotal: replace("subtotal", mapping.subtotal),
-    tax: replace("tax", mapping.tax),
-    total: replace("total", mapping.total),
-    taxNote: replace("taxNote", mapping.taxNote),
-    lines: mapping.lines.map((line, index) => ({
-      ...line,
-      sku: replace(`lines.${index}.sku`, line.sku),
-      description: replace(`lines.${index}.description`, line.description),
-      quantity: replace(`lines.${index}.quantity`, line.quantity),
-      uom: replace(`lines.${index}.uom`, line.uom),
-      unitPrice: replace(`lines.${index}.unitPrice`, line.unitPrice),
-      amount: replace(`lines.${index}.amount`, line.amount),
-      taxInclusion: replace(`lines.${index}.taxInclusion`, line.taxInclusion),
-      taxRate: replace(`lines.${index}.taxRate`, line.taxRate),
-      taxAmount: replace(`lines.${index}.taxAmount`, line.taxAmount),
-    })),
-  });
-}
-
-export function restoreRecheckedMapping(mapping: InvoiceMapping, originalMapping: InvoiceMapping, fields: string[]) {
-  const originalIds = new Map(mappedEvidenceFields(originalMapping).map(({ field, id }) => [field, id ?? null]));
-  return replaceMappedEvidence(mapping, new Map(fields.map((field) => [field, originalIds.get(field) ?? null])));
 }
 
 function recheckRecord(field: LowConfidenceField, aiValue: string | null, outcome: AiRecheck["outcome"], model: string | null): AiRecheck {
@@ -741,23 +489,6 @@ async function readFullDocumentWithConfiguredAi(documentPdf: Buffer): Promise<In
   return fullInvoiceExtractionSchema.parse(JSON.parse(output));
 }
 
-function fullInvoiceJsonSchema() {
-  const value = { type: ["string", "null"] };
-  const line = {
-    type: "object",
-    properties: Object.fromEntries(mappingLineFields.map((field) => [field, value])),
-    required: [...mappingLineFields],
-  };
-  return {
-    type: "object",
-    properties: {
-      ...Object.fromEntries(mappingHeaderFields.map((field) => [field, value])),
-      lines: { type: "array", items: line },
-    },
-    required: [...mappingHeaderFields, "lines"],
-  };
-}
-
 async function singlePagePdf(bytes: Buffer, page: number) {
   const source = await PDFDocument.load(bytes, {
     ignoreEncryption: false,
@@ -784,16 +515,6 @@ export async function mapEvidenceWithRetry(evidence: SourceRef[], provider = env
     validateMapping(mapping, evidence);
     return mapping;
   });
-}
-
-export async function withOneMappingRetry<T>(operation: () => Promise<T>) {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      return await operation();
-    } catch (caught) {
-      if (attempt >= 1 || !isRetryableMappingError(caught)) throw caught;
-    }
-  }
 }
 
 async function mapWithOpenAI(evidence: SourceRef[]) {
@@ -1000,91 +721,6 @@ function spansOverlap(left: { offset: number; length: number }, right: { offset:
   return left.offset < right.offset + right.length && right.offset < left.offset + left.length;
 }
 
-export function validateMapping(mapping: InvoiceMapping, evidence: SourceRef[]) {
-  const known = new Set(evidence.map((source) => source.id));
-  const ids = [
-    mapping.vendor,
-    mapping.invoiceNumber,
-    mapping.invoiceDate,
-    mapping.poNumber,
-    mapping.currency,
-    mapping.subtotal,
-    mapping.tax,
-    mapping.total,
-    mapping.taxNote,
-    ...mapping.lines.flatMap(Object.values),
-  ].filter((id): id is string => typeof id === "string");
-  const unknownIds = [...new Set(ids.filter((id) => !known.has(id)))];
-  if (unknownIds.length) {
-    throw new ProviderError("MAPPING_VALIDATION", "Mapper referenced unknown evidence.", {
-      evidenceCount: evidence.length,
-      unknownIds: unknownIds.slice(0, 10).join(", "),
-      malformed: true,
-    });
-  }
-}
-
-export function preferReliableEvidence(mapping: InvoiceMapping, evidence: SourceRef[]): InvoiceMapping {
-  const byId = new Map(evidence.map((source) => [source.id, source]));
-  const replace = (id: string | null | undefined) => {
-    if (!id) return id ?? null;
-    const selected = byId.get(id);
-    if (!selected || selected.confidence === null || selected.confidence >= 0.75) return id;
-    const content = selected.content.normalize("NFKC").trim();
-    const candidates = evidence
-      .filter(
-        (candidate) =>
-          candidate.id !== id &&
-          candidate.content.normalize("NFKC").trim() === content &&
-          candidate.confidence !== null &&
-          candidate.confidence >= 0.75,
-      )
-      .sort((left, right) => evidencePriority(left) - evidencePriority(right) || left.id.localeCompare(right.id));
-    const bestPriority = candidates[0] ? evidencePriority(candidates[0]) : null;
-    const best = candidates.filter((candidate) => evidencePriority(candidate) === bestPriority);
-    return best.length === 1 ? best[0]!.id : id;
-  };
-  return invoiceMappingSchema.parse({
-    ...mapping,
-    vendor: replace(mapping.vendor),
-    invoiceNumber: replace(mapping.invoiceNumber),
-    invoiceDate: replace(mapping.invoiceDate),
-    poNumber: replace(mapping.poNumber),
-    currency: replace(mapping.currency),
-    subtotal: replace(mapping.subtotal),
-    tax: replace(mapping.tax),
-    total: replace(mapping.total),
-    taxNote: replace(mapping.taxNote),
-    lines: mapping.lines.map((line) => ({
-      ...line,
-      sku: replace(line.sku),
-      description: replace(line.description),
-      quantity: replace(line.quantity),
-      uom: replace(line.uom),
-      unitPrice: replace(line.unitPrice),
-      amount: replace(line.amount),
-      taxInclusion: replace(line.taxInclusion),
-      taxRate: replace(line.taxRate),
-      taxAmount: replace(line.taxAmount),
-    })),
-  });
-}
-
-function evidencePriority(source: SourceRef) {
-  return (
-    {
-      FIELD: 0,
-      ITEM: 0,
-      TAX: 0,
-      KEY_VALUE: 1,
-      TABLE: 2,
-      OCR_LINE: 3,
-      RECORDED: 4,
-      AI_RECHECK: 0,
-    }[source.sourceKind ?? "RECORDED"] ?? 4
-  );
-}
-
 async function extractAndMapRecorded(bytes: Buffer): Promise<{
   evidence: SourceRef[];
   mapping: InvoiceMapping;
@@ -1265,45 +901,6 @@ function extractGeminiOutput(body: unknown) {
   if (typeof record.outputText === "string") return record.outputText;
   const candidateText = record.candidates?.[0]?.content?.parts?.find((part) => typeof part.text === "string")?.text;
   return typeof candidateText === "string" ? candidateText : null;
-}
-
-function providerError(stage: ProviderStage, message: string, caught: unknown, extra: Record<string, ProviderDiagnostic> = {}) {
-  return new ProviderError(stage, message, { ...extra, ...safeError(caught) });
-}
-
-function safeError(error: unknown): Record<string, ProviderDiagnostic> {
-  if (!(error instanceof Error)) return { errorType: typeof error };
-  const shaped = error as Error & {
-    status?: number;
-    code?: string;
-    type?: string;
-  };
-  return {
-    name: shaped.name,
-    message: shaped.message,
-    status: shaped.status,
-    code: shaped.code,
-    type: shaped.type,
-  };
-}
-
-async function safeResponseError(response: Response) {
-  try {
-    const body = (await response.json()) as {
-      error?: { code?: unknown; status?: unknown; message?: unknown };
-    };
-    const message = typeof body.error?.message === "string" ? body.error.message.slice(0, 500) : undefined;
-    return [body.error?.code, body.error?.status, message].filter((part) => part !== undefined).join(" ");
-  } catch {
-    return undefined;
-  }
-}
-
-function isRetryableMappingError(error: unknown) {
-  if (!(error instanceof ProviderError)) return true;
-  const status = error.diagnostics.status;
-  if (error.diagnostics.malformed) return true;
-  return typeof status !== "number" || status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
 async function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string) {
