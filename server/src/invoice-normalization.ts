@@ -1,6 +1,6 @@
 import { Decimal } from "decimal.js";
 import { normalizedInvoiceSchema, type InvoicePreview, type NormalizedInvoice, type SourceRef } from "../../shared/contracts.js";
-import type { InvoiceMapping } from "./providers.js";
+import { mappedEvidenceFields, type InvoiceMapping } from "./invoice-mapping.js";
 
 const unsupportedCharge = /FREIGHT|SHIPPING|DISCOUNT|CREDIT|RETAINAGE|SPECIAL\s*CHARGE/i;
 const unsupportedTax = /COMPOUND|EXEMPT|WITHHOLDING|REVERSE[\s-]?CHARGE|RECOVERAB/i;
@@ -273,32 +273,20 @@ export class NormalizationError extends Error {
 }
 
 function mappedLowConfidenceFields(evidence: Map<string, SourceRef>, mapping: InvoiceMapping) {
-  const fields: Array<[string, string | null | undefined]> = [
-    ["vendor", mapping.vendor],
-    ["invoiceNumber", mapping.invoiceNumber],
-    ["invoiceDate", mapping.invoiceDate],
-    ["poNumber", mapping.poNumber],
-    ["currency", mapping.currency],
-    ["observedSubtotal", mapping.subtotal],
-    ["observedTax", mapping.tax],
-    ["observedTotal", mapping.total],
-    ["taxNote", mapping.taxNote],
-    ...(mapping.lines.flatMap((line, index) => [
-      [`lines.${index}.sku`, line.sku],
-      [`lines.${index}.description`, line.description],
-      [`lines.${index}.quantity`, line.quantity],
-      [`lines.${index}.uom`, line.uom],
-      [`lines.${index}.unitPrice`, line.unitPrice],
-      [`lines.${index}.amount`, line.amount],
-      [`lines.${index}.taxInclusion`, line.taxInclusion],
-      [`lines.${index}.taxRate`, line.taxRate],
-      [`lines.${index}.taxAmount`, line.taxAmount],
-    ]) as Array<[string, string | null | undefined]>),
-  ];
-  return fields.flatMap(([field, sourceId]) => {
-    const confidence = sourceId ? evidence.get(sourceId)?.confidence : null;
-    return confidence !== null && confidence !== undefined && confidence < 0.75 ? [field] : [];
+  return mappedEvidenceFields(mapping).flatMap(({ field, id }) => {
+    const confidence = id ? evidence.get(id)?.confidence : null;
+    return confidence !== null && confidence !== undefined && confidence < 0.75 ? [normalizationField(field)] : [];
   });
+}
+
+function normalizationField(field: string) {
+  return (
+    {
+      subtotal: "observedSubtotal",
+      tax: "observedTax",
+      total: "observedTotal",
+    }[field] ?? field
+  );
 }
 
 function requiredMoney(value: string, field?: string) {
