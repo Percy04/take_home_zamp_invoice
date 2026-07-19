@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
@@ -18,21 +18,6 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { files: 1, fileSize: maxPdfBytes },
 });
-
-// List the fixture names that can be used instead of uploading a real PDF.
-const fixtureIds = new Set([
-  "happy",
-  "duplicate",
-  "missing_po",
-  "missing_po_bundle",
-  "receipt_capacity",
-  "multiple_issues",
-  "happy_layout_b",
-  "happy_layout_c_scanned",
-  "bundle_known",
-  "bundle_unknown",
-  "tax_inclusive",
-]);
 
 const reviewActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("confirm_po"), poNumber: z.string().trim().min(1) }).strict(),
@@ -103,9 +88,11 @@ export function createApi({ storage, extractInvoice }: { storage?: Storage; extr
     return response.json(storage.listRuns());
   });
 
-  // Accept a PDF upload or a known fixture, validate it, save it, and create a run record.
+  // Accept one PDF upload, validate it, save it, and create a run record.
   api.post("/runs", writeLimit, upload.single("invoice"), async (request, response, next) => {
     try {
+      if (!request.file) return response.status(400).json(error("INVALID_UPLOAD", "Attach one invoice PDF."));
+
       // Return an existing run when the caller repeats a request with the same idempotency key.
       const idempotencyKey = request.get("Idempotency-Key")?.trim();
       if (idempotencyKey && idempotencyKey.length > 200)
@@ -119,20 +106,10 @@ export function createApi({ storage, extractInvoice }: { storage?: Storage; extr
         }
       }
 
-      const fixtureId = typeof request.body.fixtureId === "string" ? request.body.fixtureId : undefined;
-      if (Boolean(request.file) === Boolean(fixtureId)) {
-        return response.status(400).json(error("INVALID_UPLOAD", "Choose one PDF or fixture."));
-      }
-      if (fixtureId && !fixtureIds.has(fixtureId)) {
-        return response.status(400).json(error("INVALID_FIXTURE", "Unknown fixture."));
-      }
-
-      // Read uploaded bytes from memory or load the selected fixture from disk.
-      const bytes = request.file ? request.file.buffer : await readFile(path.resolve(`data/fixtures/${fixtureId}.pdf`));
-      const filename = request.file?.originalname ?? `${fixtureId}.pdf`;
+      const { buffer: bytes, originalname: filename } = request.file;
 
       // Check the declared MIME type before doing deeper PDF validation.
-      if (request.file && request.file.mimetype !== "application/pdf") {
+      if (request.file.mimetype !== "application/pdf") {
         return response.status(400).json(error("INVALID_PDF", "The upload must be a PDF."));
       }
 

@@ -32,7 +32,7 @@ export function InvoiceUploadDialog({ open, onOpenChange }: { open: boolean; onO
     setBusy(true);
     setError(null);
     try {
-      const run = await api.createRun({ file });
+      const run = await api.createRun(file);
       onOpenChange(false);
       await navigate({ to: "/runs/$runId", params: { runId: run.runId } });
     } catch (cause) {

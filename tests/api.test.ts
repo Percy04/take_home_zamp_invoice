@@ -27,6 +27,10 @@ async function waitForRun(app: Express, runId: string) {
   throw new Error(`Run ${runId} did not finish processing.`);
 }
 
+function postFixture(app: Express, fixture: string) {
+  return request(app).post("/api/runs").attach("invoice", path.resolve(`data/fixtures/${fixture}.pdf`));
+}
+
 function setup(prefix = "zamp-api-") {
   const runtime = mkdtempSync(path.join(tmpdir(), prefix));
   temporaryDirectories.push(runtime);
@@ -47,7 +51,7 @@ describe("GET /api/health", () => {
 describe("run creation", () => {
   it("creates a processing run immediately, then completes it in the background", async () => {
     const { app, storage } = setup();
-    const created = await request(app).post("/api/runs").field("fixtureId", "happy").expect(201);
+    const created = await postFixture(app, "happy").expect(201);
 
     expect(created.headers.location).toBe(`/api/runs/${created.body.runId}`);
     expect(created.body).toMatchObject({ state: "PROCESSING", filename: "happy.pdf" });
@@ -57,8 +61,8 @@ describe("run creation", () => {
 
   it("reuses an idempotent processing run without duplicate ledger work", async () => {
     const { app, runtime, storage } = setup("zamp-idempotency-");
-    const first = await request(app).post("/api/runs").set("Idempotency-Key", "same-upload").field("fixtureId", "happy").expect(201);
-    const retried = await request(app).post("/api/runs").set("Idempotency-Key", "same-upload").field("fixtureId", "duplicate").expect(200);
+    const first = await postFixture(app, "happy").set("Idempotency-Key", "same-upload").expect(201);
+    const retried = await postFixture(app, "duplicate").set("Idempotency-Key", "same-upload").expect(200);
     const finished = await waitForRun(app, first.body.runId);
 
     expect(retried.body.runId).toBe(first.body.runId);
@@ -74,8 +78,8 @@ describe("run creation", () => {
 describe("GET /api/runs", () => {
   it("returns every run newest first in the small items envelope", async () => {
     const { app, storage } = setup();
-    const first = await request(app).post("/api/runs").field("fixtureId", "happy").expect(201);
-    const second = await request(app).post("/api/runs").field("fixtureId", "duplicate").expect(201);
+    const first = await postFixture(app, "happy").expect(201);
+    const second = await postFixture(app, "duplicate").expect(201);
     await Promise.all([waitForRun(app, first.body.runId), waitForRun(app, second.body.runId)]);
 
     const listed = await request(app).get("/api/runs").expect(200);
@@ -92,7 +96,7 @@ describe("POST /api/runs/:runId/review", () => {
   it("supports all four review actions and at-most-once posting", async () => {
     const { app, storage } = setup();
     const rejected = setup("zamp-review-reject-");
-    const missingPo = await request(app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
+    const missingPo = await postFixture(app, "missing_po").expect(201);
     const awaitingPo = await waitForRun(app, missingPo.body.runId);
     const confirmedPo = await request(app)
       .post(`/api/runs/${missingPo.body.runId}/review`)
@@ -106,13 +110,13 @@ describe("POST /api/runs/:runId/review", () => {
     expect(confirmedPo.body).toMatchObject({ state: "POSTED", execution: "POSTED" });
     expect(retriedPo.body.ledgerId).toBe(confirmedPo.body.ledgerId);
 
-    const declinedPo = await request(rejected.app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
+    const declinedPo = await postFixture(rejected.app, "missing_po").expect(201);
     await waitForRun(rejected.app, declinedPo.body.runId);
     expect(
       (await request(rejected.app).post(`/api/runs/${declinedPo.body.runId}/review`).send({ action: "reject_po" }).expect(200)).body,
     ).toMatchObject({ state: "NEEDS_REVIEW", reasonCode: "MISSING_PO" });
 
-    const bundle = await request(app).post("/api/runs").field("fixtureId", "bundle_unknown").expect(201);
+    const bundle = await postFixture(app, "bundle_unknown").expect(201);
     const awaitingBundle = await waitForRun(app, bundle.body.runId);
     expect(
       (
@@ -123,7 +127,7 @@ describe("POST /api/runs/:runId/review", () => {
       ).body,
     ).toMatchObject({ state: "POSTED" });
 
-    const rejectedBundle = await request(rejected.app).post("/api/runs").field("fixtureId", "bundle_unknown").expect(201);
+    const rejectedBundle = await postFixture(rejected.app, "bundle_unknown").expect(201);
     await waitForRun(rejected.app, rejectedBundle.body.runId);
     expect(
       (await request(rejected.app).post(`/api/runs/${rejectedBundle.body.runId}/review`).send({ action: "reject_bundle" }).expect(200)).body,
@@ -134,7 +138,7 @@ describe("POST /api/runs/:runId/review", () => {
 
   it("strictly validates payloads, candidates, and run state", async () => {
     const { app, storage } = setup();
-    const missingPo = await request(app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
+    const missingPo = await postFixture(app, "missing_po").expect(201);
     await waitForRun(app, missingPo.body.runId);
 
     await request(app).post(`/api/runs/${missingPo.body.runId}/review`).send({ action: "reject_po", extra: true }).expect(400);
@@ -160,6 +164,15 @@ describe("removed routes", () => {
   });
 });
 
+describe("upload-only intake", () => {
+  it("rejects requests without an invoice PDF, including former fixture payloads", async () => {
+    const { app, storage } = setup();
+    await request(app).post("/api/runs").expect(400);
+    await request(app).post("/api/runs").field("fixtureId", "happy").expect(400);
+    storage.close();
+  });
+});
+
 describe("background failures", () => {
   it("persists unexpected processing failures without an unhandled rejection", async () => {
     class BrokenPdfStorage extends Storage {
@@ -172,7 +185,7 @@ describe("background failures", () => {
     temporaryDirectories.push(runtime);
     const storage = new BrokenPdfStorage(runtime);
     const app = createApp({ storage });
-    const created = await request(app).post("/api/runs").field("fixtureId", "happy").expect(201);
+    const created = await postFixture(app, "happy").expect(201);
 
     expect((await waitForRun(app, created.body.runId)).body).toMatchObject({
       state: "NEEDS_REVIEW",
@@ -184,7 +197,7 @@ describe("background failures", () => {
 
   it("blocks reset while a background run is active", async () => {
     const { app, storage } = setup("zamp-active-reset-");
-    await request(app).post("/api/runs").field("fixtureId", "happy").expect(201);
+    await postFixture(app, "happy").expect(201);
     await request(app).post("/api/reset").expect(409);
     storage.close();
   });

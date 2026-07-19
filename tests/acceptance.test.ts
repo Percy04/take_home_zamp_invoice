@@ -29,6 +29,10 @@ async function waitForRun(app: Express, runId: string) {
   throw new Error(`Run ${runId} did not finish processing.`);
 }
 
+function postFixture(app: Express, fixture: string) {
+  return request(app).post("/api/runs").attach("invoice", path.resolve(`data/fixtures/${fixture}.pdf`));
+}
+
 describe("happy-path vertical slice", () => {
   it("lists review runs even when preview currency is only a printed symbol", () => {
     const runtime = mkdtempSync(path.join(tmpdir(), "zamp-list-preview-"));
@@ -199,7 +203,7 @@ describe("happy-path vertical slice", () => {
     const storage = new Storage(runtime);
     const app = createApp({ storage });
 
-    const missingPo = await request(app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
+    const missingPo = await postFixture(app, "missing_po").expect(201);
     const awaitingPo = await waitForRun(app, missingPo.body.runId);
     insertDuplicate(storage, missingPo.body.runId, "LEDGER-CONFIRM-PO");
     const poResult = await request(app)
@@ -207,7 +211,7 @@ describe("happy-path vertical slice", () => {
       .send({ action: "confirm_po", poNumber: awaitingPo.body.candidatePo })
       .expect(200);
 
-    const bundle = await request(app).post("/api/runs").field("fixtureId", "bundle_unknown").expect(201);
+    const bundle = await postFixture(app, "bundle_unknown").expect(201);
     await waitForRun(app, bundle.body.runId);
     insertDuplicate(storage, bundle.body.runId, "LEDGER-CONFIRM-BUNDLE");
     const bundleResult = await request(app)
@@ -343,7 +347,7 @@ describe("happy-path vertical slice", () => {
     const storage = new Storage(runtime);
     const app = createApp({ storage });
 
-    const created = await request(app).post("/api/runs").field("fixtureId", "missing_po_bundle").expect(201);
+    const created = await postFixture(app, "missing_po_bundle").expect(201);
     const awaitingPo = await waitForRun(app, created.body.runId);
     const awaitingBundle = await request(app).post(`/api/runs/${created.body.runId}/review`).send({ action: "confirm_po", poNumber: "PO-1004" }).expect(200);
     const posted = await request(app)
@@ -374,7 +378,7 @@ describe("happy-path vertical slice", () => {
     const storage = new Storage(runtime);
     const app = createApp({ storage });
 
-    const first = await request(app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
+    const first = await postFixture(app, "missing_po").expect(201);
     const awaiting = await waitForRun(app, first.body.runId);
     await request(app).post(`/api/runs/${first.body.runId}/review`).send({ action: "confirm_po", poNumber: awaiting.body.candidatePo }).expect(200);
     const postedInvoice = storage.getRun(first.body.runId)!.invoice!;
@@ -385,7 +389,7 @@ describe("happy-path vertical slice", () => {
       ),
     ).toEqual([]);
 
-    const second = await request(app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
+    const second = await postFixture(app, "missing_po").expect(201);
     const repeated = await waitForRun(app, second.body.runId);
 
     expect(repeated.body).toMatchObject({
@@ -402,7 +406,7 @@ describe("happy-path vertical slice", () => {
     temporaryDirectories.push(runtime);
     const storage = new Storage(runtime);
     const app = createApp({ storage });
-    const created = await request(app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
+    const created = await postFixture(app, "missing_po").expect(201);
     await waitForRun(app, created.body.runId);
 
     const declined = await request(app).post(`/api/runs/${created.body.runId}/review`).send({ action: "reject_po" }).expect(200);
@@ -428,7 +432,7 @@ describe("happy-path vertical slice", () => {
       .run();
     database.close();
     const app = createApp({ storage });
-    const created = await request(app).post("/api/runs").field("fixtureId", "happy").expect(201);
+    const created = await postFixture(app, "happy").expect(201);
 
     const processed = await waitForRun(app, created.body.runId);
     const failedCodes = processed.body.checks
@@ -553,7 +557,7 @@ describe("happy-path vertical slice", () => {
     temporaryDirectories.push(runtime);
     const storage = new Storage(runtime);
     const app = createApp({ storage });
-    const created = await request(app).post("/api/runs").field("fixtureId", "bundle_unknown").expect(201);
+    const created = await postFixture(app, "bundle_unknown").expect(201);
     await waitForRun(app, created.body.runId);
 
     const rejected = await request(app).post(`/api/runs/${created.body.runId}/review`).send({ action: "reject_bundle" }).expect(200);
@@ -572,7 +576,7 @@ describe("happy-path vertical slice", () => {
     temporaryDirectories.push(runtime);
     const storage = new Storage(runtime);
     const app = createApp({ storage });
-    const created = await request(app).post("/api/runs").field("fixtureId", "receipt_capacity").expect(201);
+    const created = await postFixture(app, "receipt_capacity").expect(201);
 
     const result = await waitForRun(app, created.body.runId);
 
@@ -613,7 +617,7 @@ describe("happy-path vertical slice", () => {
     const storage = new Storage(runtime);
     const app = createApp({ storage });
 
-    const created = await request(app).post("/api/runs").field("fixtureId", fixtureId).expect(201);
+    const created = await postFixture(app, fixtureId).expect(201);
     let result = await waitForRun(app, created.body.runId);
 
     if (result.body.state === "AWAITING_PO_CONFIRMATION") {
