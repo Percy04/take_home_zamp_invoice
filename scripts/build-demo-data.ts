@@ -36,7 +36,7 @@ const cases = JSON.parse(await readFile(path.join(root, "data/cases.json"), "utf
 
 await mkdir(path.join(output, "fixtures"), { recursive: true });
 await cp(path.join(root, "data/seed.sqlite"), path.join(output, "seed.sqlite"));
-await cp(path.join(root, "data/recordings"), path.join(output, "recordings"), {
+await cp(path.join(root, "tests/fixtures/recordings"), path.join(output, "recordings"), {
   recursive: true,
 });
 

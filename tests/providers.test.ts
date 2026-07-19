@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
 import { recheckMissingFieldsWithFullDocument, recheckLowConfidenceFields } from "../server/src/ai-rechecks.js";
 import {
   invoiceMappingSchemaForEvidence,
@@ -12,6 +14,14 @@ import { buildSourceCatalogue } from "../server/src/providers.js";
 import type { SourceRef } from "../shared/contracts.js";
 
 describe("Azure evidence catalogue", () => {
+  it("keeps recorded extraction out of shipped server code", async () => {
+    const sourceDirectory = path.resolve("server/src");
+    const files = (await readdir(sourceDirectory)).filter((file) => file.endsWith(".ts"));
+    const source = (await Promise.all(files.map((file) => readFile(path.join(sourceDirectory, file), "utf8")))).join("\n");
+
+    expect(source).not.toMatch(/provider_mode|recorded|RECORDED_PROVIDER/i);
+  });
+
   it("preserves fields, tax details, tables, OCR confidence, and key-value evidence", () => {
     const evidence = buildSourceCatalogue({
       status: "succeeded",

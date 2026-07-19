@@ -7,8 +7,6 @@ services:
     envVars:
       - key: RUNTIME_DIR
         value: /var/data/zamp
-      - key: PROVIDER_MODE
-        value: live
       - key: MAPPING_PROVIDER
         value: openai
       - key: AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT
