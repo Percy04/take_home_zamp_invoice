@@ -4,10 +4,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterEach, describe, expect, it } from "vitest";
-import { createApp } from "../server/src/app.js";
+import { createApp as createLiveApp } from "../server/src/app.js";
 import { Storage } from "../server/src/storage.js";
+import { recordedInvoiceExtractor } from "./support/recorded-invoice-extractor.js";
 
 const temporaryDirectories: string[] = [];
+
+function createApp(options: Parameters<typeof createLiveApp>[0] = {}) {
+  return createLiveApp({ ...options, extractInvoice: recordedInvoiceExtractor });
+}
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true });

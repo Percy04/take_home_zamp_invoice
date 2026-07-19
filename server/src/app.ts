@@ -6,9 +6,11 @@ import helmet from "helmet";
 import multer from "multer";
 import { env } from "./env.js";
 import { createApi, error, IntakeError } from "./routes.js";
+import type { InvoiceExtractor } from "./providers.js";
 import type { Storage } from "./storage.js";
 
-export function createApp(options: { clientDirectory?: string; storage?: Storage } = {}) {
+export function createApp(options: { clientDirectory?: string; storage?: Storage; extractInvoice?: InvoiceExtractor } = {}) {
+  if (env.NODE_ENV === "test" && options.storage && !options.extractInvoice) throw new Error("TEST_EXTRACTOR_REQUIRED");
   const app = express();
 
   // Hide Express's X-Powered-By header so responses do not advertise the server framework.
@@ -47,7 +49,7 @@ export function createApp(options: { clientDirectory?: string; storage?: Storage
   app.use(express.json({ limit: "100kb" }));
 
   // Calls the required APIs'
-  app.use("/api", createApi(options.storage));
+  app.use("/api", createApi({ storage: options.storage, extractInvoice: options.extractInvoice }));
 
   // Send static files for the page
   if (options.clientDirectory) {

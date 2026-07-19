@@ -10,11 +10,11 @@ import {
 import { buildInvoicePreview, NormalizationError, normalizeInvoice } from "./invoice-normalization.js";
 import { readFile } from "node:fs/promises";
 import { mappedEvidenceFields, restoreRecheckedMapping, type InvoiceMapping } from "./invoice-mapping.js";
-import { extractAndMap, logProviderError, providerFailureReason } from "./providers.js";
+import { extractAndMap, logProviderError, providerFailureReason, type InvoiceExtractor } from "./providers.js";
 import type { Storage } from "./storage.js";
 import type { AiRecheck, Allocation, CheckResult, NormalizedInvoice, PoCandidate } from "../../shared/contracts.js";
 
-export async function processInvoice(runId: string, storage: Storage) {
+export async function processInvoice(runId: string, storage: Storage, extractInvoice: InvoiceExtractor = extractAndMap) {
   // Resume only runs that are still in the normal processing state.
   const current = storage.getRun(runId);
   if (!current) throw new Error("RUN_NOT_FOUND");
@@ -28,7 +28,7 @@ export async function processInvoice(runId: string, storage: Storage) {
   
   let providerResult;
   try {
-    providerResult = await extractAndMap(await readFile(pdfPath));
+    providerResult = await extractInvoice(await readFile(pdfPath));
   } catch (caught) {
     logProviderError(caught);
     const reason = providerFailureReason(caught);

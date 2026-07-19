@@ -42,16 +42,20 @@ type AzureResult = {
   };
 };
 
-export async function extractAndMap(bytes: Buffer): Promise<{
+export type InvoiceExtractorResult = {
   evidence: SourceRef[];
   mapping: InvoiceMapping;
   originalMapping: InvoiceMapping;
   aiRechecks: AiRecheck[];
-}> {
+};
+
+export type InvoiceExtractor = (bytes: Buffer) => Promise<InvoiceExtractorResult>;
+
+export async function extractAndMap(bytes: Buffer): Promise<InvoiceExtractorResult> {
   return env.PROVIDER_MODE === "live" ? extractAndMapLive(bytes) : extractAndMapRecorded(bytes);
 }
 
-export async function extractAndMapLive(bytes: Buffer) {
+export async function extractAndMapLive(bytes: Buffer): Promise<InvoiceExtractorResult> {
   const missing = [
     env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT ? null : "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT",
     env.AZURE_DOCUMENT_INTELLIGENCE_KEY ? null : "AZURE_DOCUMENT_INTELLIGENCE_KEY",

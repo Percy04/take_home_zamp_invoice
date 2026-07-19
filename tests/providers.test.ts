@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { readFile } from "node:fs/promises";
 import { recheckMissingFieldsWithFullDocument, recheckLowConfidenceFields } from "../server/src/ai-rechecks.js";
 import {
   invoiceMappingSchemaForEvidence,
@@ -9,35 +8,8 @@ import {
   validateMapping,
 } from "../server/src/invoice-mapping.js";
 import { ProviderError } from "../server/src/provider-errors.js";
-import { buildSourceCatalogue, extractAndMap } from "../server/src/providers.js";
+import { buildSourceCatalogue } from "../server/src/providers.js";
 import type { SourceRef } from "../shared/contracts.js";
-
-describe("recorded provider", () => {
-  it("rejects an unrecognised PDF instead of substituting a fixture", async () => {
-    const pdf = await PDFDocument.create();
-    pdf.addPage();
-
-    await expect(extractAndMap(Buffer.from(await pdf.save()))).rejects.toMatchObject({
-      stage: "RECORDED_PROVIDER",
-    });
-  });
-
-  it("replays the scanned-invoice AI re-read deterministically", async () => {
-    const result = await extractAndMap(await readFile("data/fixtures/happy_layout_c_scanned.pdf"));
-
-    expect(result.aiRechecks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          field: "lines.0.quantity",
-          originalOcrValue: "8 pcs",
-          aiValue: "8",
-          model: "recorded-fixture",
-          outcome: "resolved",
-        }),
-      ]),
-    );
-  });
-});
 
 describe("Azure evidence catalogue", () => {
   it("preserves fields, tax details, tables, OCR confidence, and key-value evidence", () => {

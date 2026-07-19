@@ -8,6 +8,7 @@ import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
 import { env } from "./env.js";
 import { confirmBundle, confirmPo, processInvoice, rejectBundle, rejectPo } from "./pipeline.js";
+import type { InvoiceExtractor } from "./providers.js";
 import type { Storage } from "./storage.js";
 
 const maxPdfBytes = 10 * 1024 * 1024;
@@ -41,7 +42,7 @@ const reviewActionSchema = z.discriminatedUnion("action", [
 ]);
 
 // Build the API router and attach all run-management endpoints to it.
-export function createApi(storage?: Storage) {
+export function createApi({ storage, extractInvoice }: { storage?: Storage; extractInvoice?: InvoiceExtractor } = {}) {
   const api = Router();
 
   // Track runs currently being processed so the same run cannot be processed twice at once.
@@ -52,7 +53,7 @@ export function createApi(storage?: Storage) {
     processingRuns.add(runId);
     void (async () => {
       try {
-        await processInvoice(runId, storage!);
+        await processInvoice(runId, storage!, extractInvoice);
       } catch {
         try {
           if (storage!.getRun(runId)?.state === "PROCESSING") {
