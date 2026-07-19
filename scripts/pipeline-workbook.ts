@@ -19,7 +19,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { ControlError, evaluateInvoice } from "../server/src/controls.js";
 import { normalizeInvoice } from "../server/src/invoice-normalization.js";
-import { extractAndMap } from "../server/src/providers.js";
+import { extractAndMapLive } from "../server/src/providers.js";
 import { confirmBundle, confirmPo, processInvoice } from "../server/src/pipeline.js";
 import { Storage } from "../server/src/storage.js";
 
@@ -35,7 +35,7 @@ if (!new Set(["extract", "normalize", "controls", "run", "all"]).has(step)) {
 }
 
 const pdf = await readFile(fixturePath);
-const extracted = step === "run" ? null : await extractAndMap(pdf);
+const extracted = step === "run" ? null : await extractAndMapLive(pdf);
 
 if (extracted && (step === "extract" || step === "all")) print("1. extraction + mapping", extracted);
 
@@ -72,7 +72,7 @@ if (step === "run" || step === "all") {
     pdfPath: fixturePath,
   });
   try {
-    let result = await processInvoice(runId, storage);
+    let result = await processInvoice(runId, storage, extractAndMapLive);
     print("4. stateful pipeline", result);
     if (confirmation && result.state === "AWAITING_PO_CONFIRMATION") {
       result = confirmPo(runId, storage, confirmation);

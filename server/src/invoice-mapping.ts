@@ -201,18 +201,16 @@ export function preferReliableEvidence(mapping: InvoiceMapping, evidence: Source
 }
 
 function evidencePriority(source: SourceRef) {
-  return (
-    {
+  const priorities: Partial<Record<NonNullable<SourceRef["sourceKind"]>, number>> = {
       FIELD: 0,
       ITEM: 0,
       TAX: 0,
       KEY_VALUE: 1,
       TABLE: 2,
       OCR_LINE: 3,
-      RECORDED: 4,
       AI_RECHECK: 0,
-    }[source.sourceKind ?? "RECORDED"] ?? 4
-  );
+    };
+  return source.sourceKind ? (priorities[source.sourceKind] ?? 4) : 4;
 }
 
 export function needsFullDocumentFallback(mapping: InvoiceMapping) {

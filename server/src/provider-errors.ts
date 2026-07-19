@@ -7,8 +7,7 @@ export type ProviderStage =
   | "OPENAI_MAPPING"
   | "GEMINI_MAPPING"
   | "AI_RECHECK"
-  | "MAPPING_VALIDATION"
-  | "RECORDED_PROVIDER";
+  | "MAPPING_VALIDATION";
 
 export type ProviderDiagnostic = string | number | boolean | null | undefined;
 
