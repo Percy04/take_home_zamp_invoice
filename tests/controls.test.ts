@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildInvoicePreview, NormalizationError, normalizeInvoice } from "../server/src/invoice-normalization.js";
 import { evaluateDuplicate, type ControlContext } from "../server/src/controls.js";
-import { ProviderError, withOneMappingRetry, type InvoiceMapping } from "../server/src/providers.js";
+import type { InvoiceMapping } from "../server/src/invoice-mapping.js";
+import { ProviderError, withOneMappingRetry } from "../server/src/provider-errors.js";
 import type { SourceRef } from "../shared/contracts.js";
 
 const mapping: InvoiceMapping = {

@@ -1,8 +1,8 @@
 import { ControlError, evaluateConfirmedBundle, evaluateDuplicate, evaluateInvoice } from "./controls.js";
 import { buildInvoicePreview, NormalizationError, normalizeInvoice } from "./invoice-normalization.js";
 import { readFile } from "node:fs/promises";
-import { extractAndMap, logProviderError, providerFailureReason, restoreRecheckedMapping } from "./providers.js";
-import type { InvoiceMapping } from "./providers.js";
+import { restoreRecheckedMapping, type InvoiceMapping } from "./invoice-mapping.js";
+import { extractAndMap, logProviderError, providerFailureReason } from "./providers.js";
 import type { Storage } from "./storage.js";
 import type { Allocation, CheckResult } from "../../shared/contracts.js";
 

@@ -1,17 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import { readFile } from "node:fs/promises";
+import { recheckMissingFieldsWithFullDocument, recheckLowConfidenceFields } from "../server/src/ai-rechecks.js";
 import {
-  buildSourceCatalogue,
-  extractAndMap,
-  recheckMissingFieldsWithFullDocument,
-  recheckLowConfidenceFields,
-  restoreRecheckedMapping,
   invoiceMappingSchemaForEvidence,
   preferReliableEvidence,
-  ProviderError,
+  restoreRecheckedMapping,
   validateMapping,
-} from "../server/src/providers.js";
+} from "../server/src/invoice-mapping.js";
+import { ProviderError } from "../server/src/provider-errors.js";
+import { buildSourceCatalogue, extractAndMap } from "../server/src/providers.js";
 import type { SourceRef } from "../shared/contracts.js";
 
 describe("recorded provider", () => {
