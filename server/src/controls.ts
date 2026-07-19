@@ -1,5 +1,5 @@
 import { Decimal } from "decimal.js";
-import { type Allocation, type BundleCandidate, type CheckResult, type NormalizedInvoice } from "../../shared/contracts.js";
+import { poCandidateSchema, type Allocation, type BundleCandidate, type CheckResult, type NormalizedInvoice, type PoCandidate } from "../../shared/contracts.js";
 
 export type VendorRow = {
   id: string;
@@ -294,6 +294,118 @@ export function evaluateConfirmedBundle(invoice: NormalizedInvoice, candidate: B
   checkPoValueCapacity(po, poLines, priorAllocations, allocations, checks);
   throwForFailedControls(checks);
   return { checks, allocations };
+}
+
+export function buildPoCandidates(invoice: NormalizedInvoice, context: ControlContext, includeUnresolved = false): PoCandidate[] {
+  const vendor = context.vendors.find((row) => normalize(row.canonical_name) === normalize(invoice.vendor));
+  if (!vendor) return [];
+  const purchaseOrders = context.purchaseOrders.filter(
+    (row) => row.vendor_id === vendor.id && row.status === "OPEN" && row.currency === invoice.currency,
+  );
+  const { poLines, priorAllocations } = context;
+  const capacityFor = (poLineId: string) => {
+    const poLine = poLines.find((line) => line.id === poLineId);
+    if (!poLine) return {};
+    const previouslyInvoicedQuantity = priorAllocations
+      .filter((allocation) => allocation.po_line_id === poLineId)
+      .reduce((total, allocation) => total.plus(allocation.component_quantity), new Decimal(0));
+    return {
+      orderedQuantity: poLine.ordered_quantity,
+      receivedQuantity: poLine.received_quantity,
+      previouslyInvoicedQuantity: previouslyInvoicedQuantity.toString(),
+    };
+  };
+  return poCandidateSchema.array().parse(
+    purchaseOrders
+      .map((po) => {
+        const candidateInvoice = { ...invoice, poNumber: po.po_number };
+        let matchedLineCount: number;
+        let allLinesResolvable: boolean;
+        let lines: PoCandidate["lines"];
+        try {
+          const evaluation = evaluateInvoice(candidateInvoice, context);
+          matchedLineCount = invoice.lines.length;
+          allLinesResolvable = true;
+          lines = evaluation.allocations.map((allocation) => {
+            const invoiceLine = invoice.lines[allocation.invoiceLineIndex]!;
+            return {
+              invoiceLineIndex: allocation.invoiceLineIndex,
+              invoiceSku: invoiceLine.sku,
+              invoiceDescription: invoiceLine.description,
+              requestedQuantity: allocation.quantity,
+              uom: invoiceLine.uom,
+              poLineId: allocation.poLineId,
+              poSku: allocation.sku,
+              poDescription: allocation.poDescription ?? allocation.sku,
+              poUnitPrice: allocation.poUnitPrice ?? "0.00",
+              availableOrderedQuantity: allocation.availableOrderedQuantity ?? allocation.quantity,
+              availableReceivedQuantity: allocation.availableReceivedQuantity ?? allocation.quantity,
+              ...capacityFor(allocation.poLineId),
+            };
+          });
+        } catch {
+          const bundleResolvable = buildUnknownBundleCandidates(candidateInvoice, context.poLines, context.priorAllocations).length > 0;
+          allLinesResolvable = bundleResolvable;
+          lines = invoice.lines.flatMap((line, invoiceLineIndex) => {
+            const poLine = poLines.find(
+              (candidate) =>
+                candidate.po_number === po.po_number &&
+                candidate.uom === line.uom &&
+                (line.sku
+                  ? candidate.normalized_sku === normalize(line.sku)
+                  : candidate.normalized_description === normalize(line.description)),
+            );
+            if (!poLine) return [];
+            const consumed = priorAllocations
+              .filter((allocation) => allocation.po_line_id === poLine.id)
+              .reduce((total, allocation) => total.plus(allocation.component_quantity), new Decimal(0));
+            return [
+              {
+                invoiceLineIndex,
+                invoiceSku: line.sku,
+                invoiceDescription: line.description,
+                requestedQuantity: line.quantity,
+                uom: line.uom,
+                poLineId: poLine.id,
+                poSku: poLine.sku ?? "",
+                poDescription: poLine.description,
+                poUnitPrice: poLine.unit_price,
+                availableOrderedQuantity: new Decimal(poLine.ordered_quantity).minus(consumed).toString(),
+                availableReceivedQuantity: new Decimal(poLine.received_quantity).minus(consumed).toString(),
+                ...capacityFor(poLine.id),
+              },
+            ];
+          });
+          matchedLineCount = bundleResolvable ? invoice.lines.length : lines.length;
+        }
+        const purchaseOrderLines = poLines.filter((line) => line.po_number === po.po_number);
+        const totalBasis = purchaseOrderLines.reduce(
+          (sum, line) => sum.plus(new Decimal(line.ordered_quantity).mul(line.unit_price)),
+          new Decimal(0),
+        );
+        const poLineIds = new Set(purchaseOrderLines.map((line) => line.id));
+        const remaining = priorAllocations
+          .filter((allocation) => poLineIds.has(allocation.po_line_id))
+          .reduce((value, row) => value.minus(row.po_basis_amount), totalBasis);
+        return {
+          poNumber: po.po_number,
+          allLinesResolvable,
+          matchedLineCount,
+          remainingPoBasisValue: remaining.toFixed(2),
+          subtotalDifference: remaining.minus(invoice.subtotal).abs().toFixed(2),
+          lines,
+        };
+      })
+      .filter((candidate) => (includeUnresolved ? candidate.matchedLineCount > 0 : candidate.allLinesResolvable))
+      .sort(
+        (left, right) =>
+          Number(right.allLinesResolvable) - Number(left.allLinesResolvable) ||
+          right.matchedLineCount - left.matchedLineCount ||
+          new Decimal(left.subtotalDifference).comparedTo(right.subtotalDifference) ||
+          normalize(left.poNumber).localeCompare(normalize(right.poNumber)),
+      )
+      .slice(0, 3),
+  );
 }
 
 export function buildUnknownBundleCandidates(

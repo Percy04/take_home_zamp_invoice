@@ -6,6 +6,7 @@ import path from "node:path";
 import request from "supertest";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../server/src/app.js";
+import { buildPoCandidates } from "../server/src/controls.js";
 import { Storage } from "../server/src/storage.js";
 
 const temporaryDirectories: string[] = [];
@@ -371,13 +372,12 @@ describe("happy-path vertical slice", () => {
     const first = await request(app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
     const awaiting = await waitForRun(app, first.body.runId);
     await request(app).post(`/api/runs/${first.body.runId}/review`).send({ action: "confirm_po", poNumber: awaiting.body.candidatePo }).expect(200);
-    const postedInvoice = storage.getEvaluation(first.body.runId)!.invoice!;
+    const postedInvoice = storage.getRun(first.body.runId)!.invoice!;
     expect(
-      storage.findPoCandidates({
-        ...postedInvoice,
-        invoiceNumber: "ACME-2026-NOT-A-DUPLICATE",
-        poNumber: "",
-      }),
+      buildPoCandidates(
+        { ...postedInvoice, invoiceNumber: "ACME-2026-NOT-A-DUPLICATE", poNumber: "" },
+        storage.getControlContext(),
+      ),
     ).toEqual([]);
 
     const second = await request(app).post("/api/runs").field("fixtureId", "missing_po").expect(201);
@@ -633,7 +633,7 @@ describe("happy-path vertical slice", () => {
 });
 
 function insertDuplicate(storage: Storage, runId: string, ledgerId: string) {
-  const invoice = storage.getEvaluation(runId)?.invoice;
+  const invoice = storage.getRun(runId)?.invoice;
   if (!invoice) throw new Error("RUN_EVALUATION_NOT_FOUND");
   const database = new Database(path.join(storage.runtimeDirectory, "runtime.sqlite"));
   database
