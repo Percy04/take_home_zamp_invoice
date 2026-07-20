@@ -1,51 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
+import { recheckMissingFieldsWithFullDocument, recheckLowConfidenceFields } from "../server/src/ai-rechecks.js";
 import {
-  buildSourceCatalogue,
-  extractAndMap,
-  recheckMissingFieldsWithFullDocument,
-  recheckLowConfidenceFields,
-  restoreRecheckedMapping,
   invoiceMappingSchemaForEvidence,
   preferReliableEvidence,
-  ProviderError,
+  restoreRecheckedMapping,
   validateMapping,
-} from "../server/src/providers.js";
+} from "../server/src/invoice-mapping.js";
+import { ProviderError } from "../server/src/provider-errors.js";
+import { buildSourceCatalogue } from "../server/src/providers.js";
 import type { SourceRef } from "../shared/contracts.js";
 
-describe("recorded provider", () => {
-  it("rejects an unrecognised PDF instead of substituting a fixture", async () => {
-    const pdf = await PDFDocument.create();
-    pdf.addPage();
-
-    await expect(
-      extractAndMap(Buffer.from(await pdf.save())),
-    ).rejects.toMatchObject({
-      stage: "RECORDED_PROVIDER",
-    });
-  });
-
-  it("replays the scanned-invoice AI re-read deterministically", async () => {
-    const result = await extractAndMap(
-      await readFile("data/fixtures/happy_layout_c_scanned.pdf"),
-    );
-
-    expect(result.aiRechecks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          field: "lines.0.quantity",
-          originalOcrValue: "8 pcs",
-          aiValue: "8",
-          model: "recorded-fixture",
-          outcome: "resolved",
-        }),
-      ]),
-    );
-  });
-});
-
 describe("Azure evidence catalogue", () => {
+  it("keeps recorded extraction out of shipped server code", async () => {
+    const sourceDirectory = path.resolve("server/src");
+    const files = (await readdir(sourceDirectory)).filter((file) => file.endsWith(".ts"));
+    const source = (await Promise.all(files.map((file) => readFile(path.join(sourceDirectory, file), "utf8")))).join("\n");
+
+    expect(source).not.toMatch(/provider_mode|recorded|RECORDED_PROVIDER/i);
+  });
+
   it("preserves fields, tax details, tables, OCR confidence, and key-value evidence", () => {
     const evidence = buildSourceCatalogue({
       status: "succeeded",
@@ -77,9 +53,7 @@ describe("Azure evidence catalogue", () => {
         pages: [
           {
             pageNumber: 1,
-            lines: [
-              { content: "Total $590.00", spans: [{ offset: 10, length: 13 }] },
-            ],
+            lines: [{ content: "Total $590.00", spans: [{ offset: 10, length: 13 }] }],
             words: [
               { confidence: 0.96, span: { offset: 10, length: 5 } },
               { confidence: 0.88, span: { offset: 16, length: 7 } },
@@ -346,13 +320,10 @@ describe("mapping evidence validation", () => {
     const evidence: SourceRef[] = ids.map((id) => ({
       id,
       content: values[id] ?? id,
-      confidence:
-        id === "field.OrderNumber" || id === "item.0.ProductCode" ? 0.5 : 1,
+      confidence: id === "field.OrderNumber" || id === "item.0.ProductCode" ? 0.5 : 1,
       page: 1,
       label: id,
-      sourceKind: id.startsWith("item")
-        ? ("ITEM" as const)
-        : ("FIELD" as const),
+      sourceKind: id.startsWith("item") ? ("ITEM" as const) : ("FIELD" as const),
     }));
     evidence.push(
       {
@@ -429,21 +400,12 @@ describe("AI extraction re-checks", () => {
   }
 
   it("uses one structured page re-read and replaces only the selected low-confidence evidence", async () => {
-    const reread = await recheckLowConfidenceFields(
-      await onePagePdf(),
-      evidence,
-      mapping,
-      async (_page, fields) => {
-        expect(fields.map((field) => field.field)).toEqual([
-          "lines.0.quantity",
-        ]);
-        return { "lines.0.quantity": "9" };
-      },
-    );
+    const reread = await recheckLowConfidenceFields(await onePagePdf(), evidence, mapping, async (_page, fields) => {
+      expect(fields.map((field) => field.field)).toEqual(["lines.0.quantity"]);
+      return { "lines.0.quantity": "9" };
+    });
 
-    expect(reread.mapping.lines[0]?.quantity).toBe(
-      "ai_recheck.lines.0.quantity",
-    );
+    expect(reread.mapping.lines[0]?.quantity).toBe("ai_recheck.lines.0.quantity");
     expect(reread.evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -463,30 +425,19 @@ describe("AI extraction re-checks", () => {
         outcome: "resolved",
       }),
     ]);
-    expect(
-      restoreRecheckedMapping(reread.mapping, reread.originalMapping, [
-        "lines.0.quantity",
-      ]).lines[0]?.quantity,
-    ).toBe("item.0.Quantity");
+    expect(restoreRecheckedMapping(reread.mapping, reread.originalMapping, ["lines.0.quantity"]).lines[0]?.quantity).toBe(
+      "item.0.Quantity",
+    );
   });
 
   it("groups fields on the same page and leaves malformed AI answers reviewable without retrying", async () => {
-    const lowEvidence = evidence.map((source) =>
-      source.id === "field.VendorName"
-        ? { ...source, confidence: 0.5 }
-        : source,
-    );
+    const lowEvidence = evidence.map((source) => (source.id === "field.VendorName" ? { ...source, confidence: 0.5 } : source));
     let calls = 0;
-    const reread = await recheckLowConfidenceFields(
-      await onePagePdf(),
-      lowEvidence,
-      mapping,
-      async (_page, fields) => {
-        calls += 1;
-        expect(fields).toHaveLength(2);
-        return {};
-      },
-    );
+    const reread = await recheckLowConfidenceFields(await onePagePdf(), lowEvidence, mapping, async (_page, fields) => {
+      calls += 1;
+      expect(fields).toHaveLength(2);
+      return {};
+    });
 
     expect(calls).toBe(1);
     expect(reread.mapping).toMatchObject(mapping);
@@ -502,17 +453,10 @@ describe("AI extraction re-checks", () => {
   });
 
   it("does not guess or call the AI when a low-confidence source has no page", async () => {
-    const pageLess = evidence.map((source) =>
-      source.id === "item.0.Quantity" ? { ...source, page: null } : source,
-    );
-    const reread = await recheckLowConfidenceFields(
-      await onePagePdf(),
-      pageLess,
-      mapping,
-      async () => {
-        throw new Error("must not run");
-      },
-    );
+    const pageLess = evidence.map((source) => (source.id === "item.0.Quantity" ? { ...source, page: null } : source));
+    const reread = await recheckLowConfidenceFields(await onePagePdf(), pageLess, mapping, async () => {
+      throw new Error("must not run");
+    });
 
     expect(reread.mapping).toMatchObject(mapping);
     expect(reread.aiRechecks).toEqual([
@@ -525,16 +469,9 @@ describe("AI extraction re-checks", () => {
   });
 
   it("turns an explicit AI no-result into empty extraction evidence", async () => {
-    const reread = await recheckLowConfidenceFields(
-      await onePagePdf(),
-      evidence,
-      mapping,
-      async () => ({ "lines.0.quantity": null }),
-    );
+    const reread = await recheckLowConfidenceFields(await onePagePdf(), evidence, mapping, async () => ({ "lines.0.quantity": null }));
 
-    expect(reread.mapping.lines[0]?.quantity).toBe(
-      "ai_recheck.lines.0.quantity",
-    );
+    expect(reread.mapping.lines[0]?.quantity).toBe("ai_recheck.lines.0.quantity");
     expect(reread.evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -648,32 +585,27 @@ describe("AI extraction re-checks", () => {
 
   it("uses the full document when the printed PO is the only missing mapping", async () => {
     const poMissing = { ...mapping, poNumber: null };
-    const reread = await recheckMissingFieldsWithFullDocument(
-      await onePagePdf(),
-      evidence,
-      poMissing,
-      async () => ({
-        vendor: "Acme Industrial Supplies LLC",
-        invoiceNumber: "ACME-2026-001",
-        invoiceDate: "2026-07-01",
-        poNumber: "PO-1001",
-        currency: "USD",
-        subtotal: null,
-        tax: null,
-        total: "990.00",
-        taxNote: null,
-        lines: [
-          {
-            sku: "WID-100",
-            description: "Industrial Widget",
-            quantity: "8",
-            uom: "EA",
-            unitPrice: "100.00",
-            amount: "800.00",
-          },
-        ],
-      }),
-    );
+    const reread = await recheckMissingFieldsWithFullDocument(await onePagePdf(), evidence, poMissing, async () => ({
+      vendor: "Acme Industrial Supplies LLC",
+      invoiceNumber: "ACME-2026-001",
+      invoiceDate: "2026-07-01",
+      poNumber: "PO-1001",
+      currency: "USD",
+      subtotal: null,
+      tax: null,
+      total: "990.00",
+      taxNote: null,
+      lines: [
+        {
+          sku: "WID-100",
+          description: "Industrial Widget",
+          quantity: "8",
+          uom: "EA",
+          unitPrice: "100.00",
+          amount: "800.00",
+        },
+      ],
+    }));
 
     expect(reread.mapping.poNumber).toBe("ai_full_document.poNumber");
     expect(reread.aiRechecks).toEqual([
@@ -687,35 +619,30 @@ describe("AI extraction re-checks", () => {
 
   it("does not report optional invoice fields that are absent from the document", async () => {
     const poMissing = { ...mapping, poNumber: null };
-    const reread = await recheckMissingFieldsWithFullDocument(
-      await onePagePdf(),
-      evidence,
-      poMissing,
-      async () => ({
-        vendor: "Acme Industrial Supplies LLC",
-        invoiceNumber: "ACME-2026-001",
-        invoiceDate: "2026-07-01",
-        poNumber: null,
-        currency: "USD",
-        subtotal: null,
-        tax: null,
-        total: "990.00",
-        taxNote: null,
-        lines: [
-          {
-            sku: "WID-100",
-            description: "Industrial Widget",
-            quantity: "8",
-            uom: "EA",
-            unitPrice: "100.00",
-            amount: "800.00",
-            taxInclusion: null,
-            taxRate: null,
-            taxAmount: null,
-          },
-        ],
-      }),
-    );
+    const reread = await recheckMissingFieldsWithFullDocument(await onePagePdf(), evidence, poMissing, async () => ({
+      vendor: "Acme Industrial Supplies LLC",
+      invoiceNumber: "ACME-2026-001",
+      invoiceDate: "2026-07-01",
+      poNumber: null,
+      currency: "USD",
+      subtotal: null,
+      tax: null,
+      total: "990.00",
+      taxNote: null,
+      lines: [
+        {
+          sku: "WID-100",
+          description: "Industrial Widget",
+          quantity: "8",
+          uom: "EA",
+          unitPrice: "100.00",
+          amount: "800.00",
+          taxInclusion: null,
+          taxRate: null,
+          taxAmount: null,
+        },
+      ],
+    }));
 
     expect(reread.mapping.poNumber).toBeNull();
     expect(reread.aiRechecks).toEqual([]);
@@ -723,28 +650,21 @@ describe("AI extraction re-checks", () => {
 
   it("does not apply a partial full-document response", async () => {
     const incomplete = { ...mapping, vendor: null, lines: [] };
-    const reread = await recheckMissingFieldsWithFullDocument(
-      await onePagePdf(),
-      evidence,
-      incomplete,
-      async () => ({
-        vendor: "Acme Industrial Supplies LLC",
-        invoiceNumber: "ACME-2026-001",
-        invoiceDate: "2026-07-01",
-        poNumber: "PO-1001",
-        currency: "USD",
-        subtotal: null,
-        tax: null,
-        total: "990.00",
-        taxNote: null,
-        lines: [],
-      }),
-    );
+    const reread = await recheckMissingFieldsWithFullDocument(await onePagePdf(), evidence, incomplete, async () => ({
+      vendor: "Acme Industrial Supplies LLC",
+      invoiceNumber: "ACME-2026-001",
+      invoiceDate: "2026-07-01",
+      poNumber: "PO-1001",
+      currency: "USD",
+      subtotal: null,
+      tax: null,
+      total: "990.00",
+      taxNote: null,
+      lines: [],
+    }));
 
     expect(reread.mapping).toMatchObject(incomplete);
-    expect(
-      reread.evidence.some((source) => source.id === "ai_full_document.vendor"),
-    ).toBe(false);
+    expect(reread.evidence.some((source) => source.id === "ai_full_document.vendor")).toBe(false);
     expect(reread.aiRechecks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

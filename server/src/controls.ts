@@ -1,21 +1,12 @@
 import { Decimal } from "decimal.js";
-import {
-  normalizedInvoiceSchema,
-  type Allocation,
-  type BundleCandidate,
-  type CheckResult,
-  type InvoicePreview,
-  type NormalizedInvoice,
-  type SourceRef,
-} from "../../shared/contracts.js";
-import type { InvoiceMapping } from "./providers.js";
+import { poCandidateSchema, type Allocation, type BundleCandidate, type CheckResult, type NormalizedInvoice, type PoCandidate } from "../../shared/contracts.js";
 
-type VendorRow = {
+export type VendorRow = {
   id: string;
   canonical_name: string;
   aliases_json: string;
 };
-type PoRow = {
+export type PoRow = {
   po_number: string;
   normalized_po_number: string;
   vendor_id: string;
@@ -23,7 +14,7 @@ type PoRow = {
   price_basis: string;
   status: string;
 };
-type PoLineRow = {
+export type PoLineRow = {
   id: string;
   po_number: string;
   normalized_sku: string | null;
@@ -35,16 +26,16 @@ type PoLineRow = {
   unit_price: string;
   sku: string | null;
 };
-type PriorAllocationRow = {
+export type PriorAllocationRow = {
   po_line_id: string;
   component_quantity: string;
   po_basis_amount: string;
 };
-type PostedInvoiceRow = {
+export type PostedInvoiceRow = {
   vendor_id: string;
   normalized_invoice_number: string;
 };
-type BundleDefinitionRow = {
+export type BundleDefinitionRow = {
   id: string;
   vendor_id: string;
   normalized_bundle_sku: string | null;
@@ -60,480 +51,54 @@ type BundleComponent = {
 };
 
 export type ControlContext = {
-  vendors: unknown[];
-  purchaseOrders: unknown[];
-  poLines: unknown[];
-  priorAllocations: unknown[];
-  postedInvoices: unknown[];
-  bundleDefinitions: unknown[];
+  vendors: VendorRow[];
+  purchaseOrders: PoRow[];
+  poLines: PoLineRow[];
+  priorAllocations: PriorAllocationRow[];
+  postedInvoices: PostedInvoiceRow[];
+  bundleDefinitions: BundleDefinitionRow[];
 };
 
-const unsupportedCharge =
-  /FREIGHT|SHIPPING|DISCOUNT|CREDIT|RETAINAGE|SPECIAL\s*CHARGE/i;
-const unsupportedTax =
-  /COMPOUND|EXEMPT|WITHHOLDING|REVERSE[\s-]?CHARGE|RECOVERAB/i;
-
-export function buildInvoicePreview(
-  evidence: SourceRef[],
-  mapping: InvoiceMapping,
-  missingField: string | null = null,
-): InvoicePreview {
-  const byId = new Map(
-    evidence.map((source) => [source.id, source.content.trim()]),
+export function evaluateDuplicate(invoice: NormalizedInvoice, context: Pick<ControlContext, "vendors" | "postedInvoices">) {
+  const vendorMatches = resolveVendorMatches(invoice.vendor, context.vendors);
+  const vendor = vendorMatches.length === 1 ? vendorMatches[0]! : null;
+  const duplicate = Boolean(
+    vendor &&
+    context.postedInvoices.some((row) => row.vendor_id === vendor.id && row.normalized_invoice_number === normalize(invoice.invoiceNumber)),
   );
-  const read = (id: string | null | undefined) =>
-    id ? (byId.get(id) ?? null) : null;
   return {
-    vendor: read(mapping.vendor),
-    invoiceNumber: read(mapping.invoiceNumber),
-    invoiceDate: read(mapping.invoiceDate),
-    poNumber: read(mapping.poNumber),
-    currency:
-      read(mapping.currency) ??
-      (evidence.some((source) => /\$/.test(source.content)) ? "USD" : null),
-    subtotal: read(mapping.subtotal),
-    tax: read(mapping.tax),
-    total: read(mapping.total),
-    missingField,
-    lines: mapping.lines.map((line) => ({
-      sku: read(line.sku),
-      description: read(line.description),
-      quantity: read(line.quantity),
-      uom: read(line.uom),
-      unitPrice: read(line.unitPrice),
-      amount: read(line.amount),
-    })),
-  };
-}
-
-export function normalizeInvoice(
-  evidence: SourceRef[],
-  mapping: InvoiceMapping,
-): NormalizedInvoice {
-  const byId = new Map(evidence.map((source) => [source.id, source]));
-  const lowConfidenceFields = mappedLowConfidenceFields(byId, mapping);
-  if (lowConfidenceFields.length > 1) {
-    throw new NormalizationError(
-      "MULTIPLE_ISSUES",
-      undefined,
-      lowConfidenceFields,
-    );
-  }
-  const selected: SourceRef[] = [];
-  const fieldSources: Record<string, string> = {};
-  const select = (
-    id: string | null | undefined,
-    required = false,
-    field?: string,
-    sources = fieldSources,
-  ) => {
-    if (!id) {
-      if (required) failNormalization("MISSING_REQUIRED_FIELD", field);
-      return "";
-    }
-    const source = byId.get(id);
-    if (!source) failNormalization("MAPPING_FAILED");
-    selected.push(source);
-    if (field) sources[field] = id;
-    if (source.confidence !== null && source.confidence < 0.75)
-      failNormalization("LOW_CONFIDENCE", field);
-    const value = source.content.normalize("NFKC").trim();
-    if (required && !value) failNormalization("MISSING_REQUIRED_FIELD", field);
-    return value;
-  };
-
-  for (const source of evidence) {
-    if (!unsupportedCharge.test(source.label)) continue;
-    const value = parseMoney(source.content, true);
-    if (value && !value.isZero()) failNormalization("UNSUPPORTED_STRUCTURE");
-  }
-  if (
-    evidence.some((source) =>
-      /CREDIT\s*(?:NOTE|MEMO)|REVERSE[\s-]?CHARGE|COMPOUND\s+TAX/i.test(
-        `${source.label} ${source.content}`,
-      ),
-    )
-  )
-    failNormalization("UNSUPPORTED_STRUCTURE");
-
-  const vendor = select(mapping.vendor, true, "vendor");
-  const invoiceNumber = select(mapping.invoiceNumber, true, "invoiceNumber");
-  const invoiceDate = parseDate(
-    select(mapping.invoiceDate, true, "invoiceDate"),
-    "invoiceDate",
-    evidence,
-  );
-  const poNumber = select(mapping.poNumber, false, "poNumber");
-  if (
-    poNumber &&
-    poNumber.split(/[,;/\n]|\s+AND\s+/i).filter(Boolean).length > 1
-  )
-    failNormalization("UNSUPPORTED_STRUCTURE");
-  if (!mapping.lines.length)
-    failNormalization("MISSING_REQUIRED_FIELD", "lines");
-
-  const observedLines = mapping.lines.map((line, index) => {
-    const sourceIds: Record<string, string> = {};
-    const rawSku = select(line.sku, false, "sku", sourceIds);
-    const rawDescription = select(
-      line.description,
-      false,
-      "description",
-      sourceIds,
-    );
-    const compact = compactLine(rawSku, rawDescription);
-    const sku = compact?.sku ?? rawSku;
-    const description = compact?.description ?? rawDescription;
-    if (!sku && !description)
-      failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.identity`);
-    const mappedQuantity = select(line.quantity, false, "quantity", sourceIds);
-    const quantityReading = compact?.quantity ?? mappedQuantity;
-    const embeddedUom =
-      quantityReading.match(/^[\d.,]+\s*([a-zA-Z]+)$/)?.[1] ?? "";
-    let quantity = quantityReading
-      ? parseQuantity(
-          quantityReading.replace(/\s*[a-zA-Z]+$/, ""),
-          `lines.${index}.quantity`,
-        )
-      : null;
-    const mappedUom = select(line.uom, false, "uom", sourceIds);
-    const uom = parseUom(compact?.uom || mappedUom || embeddedUom || "");
-    const mappedUnitPrice = select(
-      line.unitPrice,
-      false,
-      "observedUnitPrice",
-      sourceIds,
-    );
-    let observedUnitPrice = optionalMoney(
-      compact?.unitPrice ?? mappedUnitPrice,
-      `lines.${index}.observedUnitPrice`,
-    );
-    const mappedAmount = select(
-      line.amount,
-      false,
-      "observedAmount",
-      sourceIds,
-    );
-    let observedAmount = optionalMoney(
-      compact?.amount ?? mappedAmount,
-      `lines.${index}.observedAmount`,
-    );
-    const derivations: NormalizedInvoice["lines"][number]["derivations"] = [];
-    if (!quantity && observedUnitPrice && observedAmount) {
-      if (observedUnitPrice.isZero())
-        failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.quantity`);
-      quantity = observedAmount.div(observedUnitPrice);
-      derivations.push({
-        field: "quantity",
-        formula: `${money(observedAmount)} / ${money(observedUnitPrice)}`,
-        sourceIds: [
-          sourceIds.observedAmount,
-          sourceIds.observedUnitPrice,
-        ].filter((id): id is string => Boolean(id)),
-      });
-    }
-    if (!observedUnitPrice && quantity && observedAmount) {
-      observedUnitPrice = observedAmount.div(quantity);
-      derivations.push({
-        field: "unitPrice",
-        formula: `${money(observedAmount)} / ${quantity.toString()}`,
-        sourceIds: [sourceIds.observedAmount, sourceIds.quantity].filter(
-          (id): id is string => Boolean(id),
-        ),
-      });
-    }
-    if (!observedAmount && quantity && observedUnitPrice) {
-      observedAmount = quantity.mul(observedUnitPrice);
-      derivations.push({
-        field: "amount",
-        formula: `${quantity.toString()} * ${money(observedUnitPrice)}`,
-        sourceIds: [sourceIds.quantity, sourceIds.observedUnitPrice].filter(
-          (id): id is string => Boolean(id),
-        ),
-      });
-    }
-    if (!quantity)
-      failNormalization("MISSING_REQUIRED_FIELD", `lines.${index}.quantity`);
-    if (!observedUnitPrice)
-      failNormalization(
-        "MISSING_REQUIRED_FIELD",
-        `lines.${index}.observedUnitPrice`,
-      );
-    if (!observedAmount)
-      failNormalization(
-        "MISSING_REQUIRED_FIELD",
-        `lines.${index}.observedAmount`,
-      );
-    const taxInclusion = select(
-      line.taxInclusion,
-      false,
-      "taxInclusion",
-      sourceIds,
-    );
-    const taxRate = select(line.taxRate, false, "taxRate", sourceIds);
-    const observedTaxAmount = optionalMoney(
-      select(line.taxAmount, false, "observedTaxAmount", sourceIds),
-      `lines.${index}.observedTaxAmount`,
-    );
-    if (quantity.mul(observedUnitPrice).minus(observedAmount).abs().gt("0.01"))
-      failNormalization("TOTAL_MISMATCH");
-    return {
-      sku,
-      description,
-      quantity,
-      uom,
-      observedUnitPrice,
-      observedAmount,
-      taxInclusion,
-      taxRate,
-      observedTaxAmount,
-      sourceIds,
-      derivations,
-    };
-  });
-
-  const observedSubtotal = optionalMoney(
-    select(mapping.subtotal, false, "observedSubtotal"),
-    "observedSubtotal",
-  );
-  const observedTax = optionalMoney(
-    select(mapping.tax, false, "observedTax"),
-    "observedTax",
-  );
-  const observedTotal = requiredMoney(
-    select(mapping.total, true, "observedTotal"),
-    "observedTotal",
-  );
-  const taxNote = select(mapping.taxNote, false, "taxNote");
-  if (unsupportedTax.test(taxNote)) failNormalization("UNSUPPORTED_STRUCTURE");
-
-  const explicitCurrency = select(mapping.currency, false, "currency");
-  const moneyText = selected
-    .filter((source) => /AMOUNT|PRICE|TOTAL|TAX|SUBTOTAL/i.test(source.label))
-    .map((source) => source.content)
-    .join(" ");
-  const currency = explicitCurrency
-    ? parseCurrency(explicitCurrency)
-    : /\$|\b(?:USD|US\s+DOLLARS?)\b/i.test(moneyText) &&
-        !/[€£¥]|\b(?:EUR|GBP|JPY|CAD|AUD)\b/i.test(moneyText)
-      ? "USD"
-      : "";
-  if (!currency && /[€£¥]|\b(?:EUR|GBP|JPY|CAD|AUD)\b/i.test(moneyText))
-    failNormalization("UNSUPPORTED_STRUCTURE");
-  if (!currency) failNormalization("MISSING_REQUIRED_FIELD", "currency");
-
-  const documentInclusionClaim = claimsTaxInclusion(taxNote);
-  const documentRate = parseTaxRate(taxNote);
-  if (documentInclusionClaim && !documentRate)
-    failNormalization("TAX_TREATMENT_UNRESOLVED");
-
-  const lines = observedLines.map((line) => {
-    const lineTaxText = `${line.taxInclusion} ${line.taxRate}`.trim();
-    const hasLineTaxEvidence = Boolean(line.taxInclusion || line.taxRate);
-    const inclusionClaim = hasLineTaxEvidence
-      ? claimsTaxInclusion(lineTaxText)
-      : documentInclusionClaim;
-    const rate = hasLineTaxEvidence ? parseTaxRate(lineTaxText) : documentRate;
-    if (inclusionClaim && !rate) failNormalization("TAX_TREATMENT_UNRESOLVED");
-    const amount = inclusionClaim
-      ? money(line.observedAmount.div(new Decimal(1).plus(rate!)))
-      : money(line.observedAmount);
-    const unitPrice = inclusionClaim
-      ? money(new Decimal(amount).div(line.quantity))
-      : money(line.observedUnitPrice);
-    const taxAmount = inclusionClaim
-      ? money(line.observedAmount.minus(amount))
-      : money(line.observedTaxAmount ?? 0);
-    return {
-      sku: line.sku,
-      description: line.description,
-      quantity: line.quantity.toString(),
-      uom: line.uom,
-      observedUnitPrice: money(line.observedUnitPrice),
-      observedAmount: money(line.observedAmount),
-      observedTaxAmount: line.observedTaxAmount
-        ? money(line.observedTaxAmount)
-        : null,
-      unitPrice,
-      amount,
-      taxAmount,
-      taxTreatment: inclusionClaim
-        ? ("INCLUSIVE" as const)
-        : line.observedTaxAmount?.isZero() === false
-          ? ("EXCLUSIVE" as const)
-          : ("ZERO" as const),
-      taxRate: rate?.toString() ?? null,
-      sourceIds: line.sourceIds,
-      derivations: [
-        ...line.derivations,
-        ...(inclusionClaim
-          ? [
-              {
-                field: "amount",
-                formula: `${money(line.observedAmount)} / (1 + ${rate!.toString()})`,
-                sourceIds: [
-                  line.sourceIds.observedAmount,
-                  fieldSources.taxNote,
-                ].filter((id): id is string => Boolean(id)),
-              },
-            ]
-          : []),
-      ],
-    };
-  });
-  const goodsSubtotal = lines.reduce(
-    (sum, line) => sum.plus(line.amount),
-    new Decimal(0),
-  );
-  if (
-    observedSubtotal &&
-    observedSubtotal.minus(goodsSubtotal).abs().gt("0.01")
-  )
-    failNormalization("TOTAL_MISMATCH");
-
-  let taxTreatment: NormalizedInvoice["taxTreatment"];
-  let normalizedTax: Decimal;
-  const inclusiveLines = lines.filter(
-    (line) => line.taxTreatment === "INCLUSIVE",
-  );
-  const hasInclusiveLines = inclusiveLines.length > 0;
-  const hasNonInclusiveLines = inclusiveLines.length < lines.length;
-  if (hasInclusiveLines && hasNonInclusiveLines) {
-    if (
-      lines.some(
-        (line) =>
-          line.taxTreatment !== "INCLUSIVE" &&
-          !line.sourceIds.observedTaxAmount,
-      )
-    )
-      failNormalization("TAX_TREATMENT_UNRESOLVED");
-    taxTreatment = "MIXED";
-    normalizedTax = lines.reduce(
-      (sum, line) => sum.plus(line.taxAmount),
-      new Decimal(0),
-    );
-  } else if (hasInclusiveLines) {
-    taxTreatment = "INCLUSIVE";
-    normalizedTax = lines.reduce(
-      (sum, line) => sum.plus(line.taxAmount),
-      new Decimal(0),
-    );
-    if (observedTax && observedTax.minus(normalizedTax).abs().gt("0.01"))
-      failNormalization("TOTAL_MISMATCH");
-  } else if (observedTax) {
-    taxTreatment = observedTax.isZero() ? "ZERO" : "EXCLUSIVE";
-    normalizedTax = observedTax;
-  } else if (goodsSubtotal.minus(observedTotal).abs().lte("0.01")) {
-    taxTreatment = "ZERO";
-    normalizedTax = new Decimal(0);
-  } else {
-    failNormalization("TOTAL_MISMATCH");
-  }
-
-  if (goodsSubtotal.plus(normalizedTax).minus(observedTotal).abs().gt("0.01"))
-    failNormalization("TOTAL_MISMATCH");
-
-  return normalizedInvoiceSchema.parse({
     vendor,
-    invoiceNumber,
-    invoiceDate,
-    poNumber,
-    currency: "USD",
-    observedSubtotal: observedSubtotal ? money(observedSubtotal) : null,
-    observedTax: observedTax ? money(observedTax) : null,
-    observedTotal: money(observedTotal),
-    taxTreatment,
-    taxRate:
-      taxTreatment === "INCLUSIVE" &&
-      new Set(lines.map((line) => line.taxRate)).size === 1
-        ? lines[0]!.taxRate
-        : null,
-    subtotal: money(goodsSubtotal),
-    tax: money(normalizedTax),
-    total: money(observedTotal),
-    lines,
-    fieldSources,
-    derivations: hasInclusiveLines
-      ? [
-          {
-            field: "subtotal",
-            formula: "Sum of normalized net line amounts",
-            sourceIds: lines.flatMap((line) => [line.sourceIds.observedAmount]),
-          },
-          {
-            field: "tax",
-            formula: `${money(observedTotal)} - ${money(goodsSubtotal)}`,
-            sourceIds: [
-              fieldSources.observedTotal,
-              fieldSources.taxNote,
-            ].filter((id): id is string => Boolean(id)),
-          },
-        ]
-      : [],
-  });
-}
-
-export function evaluateInvoice(
-  invoice: NormalizedInvoice,
-  context: ControlContext,
-): { checks: CheckResult[]; allocations: Allocation[] } {
-  const vendors = context.vendors as VendorRow[];
-  const purchaseOrders = context.purchaseOrders as PoRow[];
-  const poLines = context.poLines as PoLineRow[];
-  const postedInvoices = context.postedInvoices as PostedInvoiceRow[];
-  const bundleDefinitions = context.bundleDefinitions as BundleDefinitionRow[];
-  const priorAllocations = context.priorAllocations as PriorAllocationRow[];
-  const checks: CheckResult[] = [];
-  const record = (
-    code: string,
-    passed: boolean,
-    detail: string,
-    metadata: Partial<CheckResult> = {},
-  ) => {
-    checks.push({ ...metadata, code, passed, detail });
-  };
-  const gate = (
-    code: string,
-    passed: boolean,
-    detail: string,
-    metadata: Partial<CheckResult> = {},
-  ) => {
-    record(code, passed, detail, metadata);
-    if (!passed) throw new ControlError(code, detail, [...checks]);
-  };
-
-  const vendorMatches = vendors.filter((row) => {
-    const names = [
-      row.canonical_name,
-      ...(JSON.parse(row.aliases_json) as string[]),
-    ];
-    return names.some((name) => normalize(name) === normalize(invoice.vendor));
-  });
-  gate(
-    "VENDOR_MATCH",
-    vendorMatches.length === 1,
-    "Vendor resolves to one active master record.",
-  );
-  const vendor = vendorMatches[0]!;
-  gate(
-    "DUPLICATE",
-    !postedInvoices.some(
-      (row) =>
-        row.vendor_id === vendor.id &&
-        row.normalized_invoice_number === normalize(invoice.invoiceNumber),
-    ),
-    "Invoice number has not already been posted for this vendor.",
-    {
-      category: "DUPLICATE",
+    check: {
+      code: "DUPLICATE",
+      passed: !duplicate,
+      detail: "Invoice number has not already been posted for this vendor.",
+      category: "DUPLICATE" as const,
       expected: "A new invoice number for this vendor",
       actual: invoice.invoiceNumber,
       sourceIds: [invoice.fieldSources.invoiceNumber].filter(Boolean),
     },
-  );
+  };
+}
 
-  const poMatches = purchaseOrders.filter(
-    (row) => row.normalized_po_number === normalize(invoice.poNumber),
-  );
+export function evaluateInvoice(invoice: NormalizedInvoice, context: ControlContext): { checks: CheckResult[]; allocations: Allocation[] } {
+  const { vendors, purchaseOrders, poLines, bundleDefinitions, priorAllocations } = context;
+  const checks: CheckResult[] = [];
+  const record = (code: string, passed: boolean, detail: string, metadata: Partial<CheckResult> = {}) => {
+    checks.push({ ...metadata, code, passed, detail });
+  };
+  const gate = (code: string, passed: boolean, detail: string, metadata: Partial<CheckResult> = {}) => {
+    record(code, passed, detail, metadata);
+    if (!passed) throw new ControlError(code, detail, [...checks]);
+  };
+
+  const vendorMatches = resolveVendorMatches(invoice.vendor, vendors);
+  gate("VENDOR_MATCH", vendorMatches.length === 1, "Vendor resolves to one active master record.");
+  const vendor = vendorMatches[0]!;
+  const duplicate = evaluateDuplicate(invoice, context);
+  gate("DUPLICATE", duplicate.check.passed, duplicate.check.detail, duplicate.check);
+  gate("MISSING_PO", Boolean(invoice.poNumber), "Invoice includes a PO reference.");
+
+  const poMatches = purchaseOrders.filter((row) => row.normalized_po_number === normalize(invoice.poNumber));
   gate(
     "PO_ELIGIBLE",
     poMatches.length === 1 &&
@@ -543,11 +108,7 @@ export function evaluateInvoice(
     "PO is open, USD, and belongs to the vendor.",
   );
   const po = poMatches[0]!;
-  gate(
-    "TAX_BASIS",
-    po.price_basis === "TAX_EXCLUSIVE",
-    "PO uses the supported tax-exclusive price basis.",
-  );
+  gate("TAX_BASIS", po.price_basis === "TAX_EXCLUSIVE", "PO uses the supported tax-exclusive price basis.");
 
   const used = usedQuantities(priorAllocations);
   const reserved = new Map<string, Decimal>();
@@ -559,9 +120,7 @@ export function evaluateInvoice(
       (row) =>
         row.po_number === po.po_number &&
         row.uom === line.uom &&
-        (line.sku
-          ? row.normalized_sku === normalize(line.sku)
-          : row.normalized_description === normalize(line.description)),
+        (line.sku ? row.normalized_sku === normalize(line.sku) : row.normalized_description === normalize(line.description)),
     );
     if (matchingPoLines.length === 1) {
       const poLine = matchingPoLines[0]!;
@@ -597,9 +156,7 @@ export function evaluateInvoice(
                   invoiceUnitPrice: money(invoicePrice),
                   poUnitPrice: money(poPrice),
                   varianceAmount: money(variance.mul(quantity)),
-                  variancePercent: poPrice.isZero()
-                    ? "N/A"
-                    : money(ratio.mul(100)),
+                  variancePercent: poPrice.isZero() ? "N/A" : money(ratio.mul(100)),
                   tolerancePercent: "1.00",
                 },
               }),
@@ -627,9 +184,7 @@ export function evaluateInvoice(
         row.active === 1 &&
         row.vendor_id === vendor.id &&
         row.bundle_uom === line.uom &&
-        (line.sku
-          ? row.normalized_bundle_sku === normalize(line.sku)
-          : row.normalized_description === normalize(line.description)),
+        (line.sku ? row.normalized_bundle_sku === normalize(line.sku) : row.normalized_description === normalize(line.description)),
     );
     gate(
       "LINE_MATCH",
@@ -637,29 +192,14 @@ export function evaluateInvoice(
       `${line.sku || line.description} resolves uniquely to a direct line or trusted bundle.`,
     );
     const bundle = bundleMatches[0]!;
-    const componentAllocations = (
-      JSON.parse(bundle.components_json) as BundleComponent[]
-    ).map((component) => {
+    const componentAllocations = (JSON.parse(bundle.components_json) as BundleComponent[]).map((component) => {
       if (component.uom !== "EA")
-        throw new ControlError(
-          "UNSUPPORTED_STRUCTURE",
-          "Bundle component UOM conversion is unsupported.",
-          [...checks],
-        );
+        throw new ControlError("UNSUPPORTED_STRUCTURE", "Bundle component UOM conversion is unsupported.", [...checks]);
       const componentLines = poLines.filter(
-        (row) =>
-          row.po_number === po.po_number &&
-          row.normalized_sku === normalize(component.sku) &&
-          row.uom === "EA",
+        (row) => row.po_number === po.po_number && row.normalized_sku === normalize(component.sku) && row.uom === "EA",
       );
-      gate(
-        "LINE_MATCH",
-        componentLines.length === 1,
-        `${component.sku} resolves to one PO component.`,
-      );
-      const quantity = new Decimal(line.quantity).mul(
-        component.quantity_per_bundle,
-      );
+      gate("LINE_MATCH", componentLines.length === 1, `${component.sku} resolves to one PO component.`);
+      const quantity = new Decimal(line.quantity).mul(component.quantity_per_bundle);
       const allocation = allocationFor({
         invoiceLineIndex,
         line,
@@ -673,10 +213,7 @@ export function evaluateInvoice(
       reserve(reserved, allocation.poLineId, quantity);
       return allocation;
     });
-    const bundleBasis = componentAllocations.reduce(
-      (total, row) => total.plus(row.poBasisAmount),
-      new Decimal(0),
-    );
+    const bundleBasis = componentAllocations.reduce((total, row) => total.plus(row.poBasisAmount), new Decimal(0));
     record(
       "PRICE_MATCH",
       bundleBasis.minus(line.amount).abs().lte("0.01"),
@@ -687,66 +224,30 @@ export function evaluateInvoice(
 
   record(
     "PRICE_MATCH",
-    directVariances
-      .reduce((sum, value) => sum.plus(value), new Decimal(0))
-      .lte(5),
+    directVariances.reduce((sum, value) => sum.plus(value), new Decimal(0)).lte(5),
     "Aggregate direct-line price variance is at most $5.00.",
   );
   checkCapacities(allocations, checks);
   checkPoValueCapacity(po, poLines, priorAllocations, allocations, checks);
 
-  const lineTotal = invoice.lines.reduce(
-    (total, line) => total.plus(line.amount),
-    new Decimal(0),
-  );
-  record(
-    "SUBTOTAL_MATCH",
-    lineTotal.minus(invoice.subtotal).abs().lte("0.01"),
-    "Normalized line amounts equal the subtotal.",
-  );
+  const lineTotal = invoice.lines.reduce((total, line) => total.plus(line.amount), new Decimal(0));
+  record("SUBTOTAL_MATCH", lineTotal.minus(invoice.subtotal).abs().lte("0.01"), "Normalized line amounts equal the subtotal.");
   record(
     "TOTAL_MATCH",
-    new Decimal(invoice.subtotal)
-      .plus(invoice.tax)
-      .minus(invoice.total)
-      .abs()
-      .lte("0.01"),
+    new Decimal(invoice.subtotal).plus(invoice.tax).minus(invoice.total).abs().lte("0.01"),
     "Subtotal plus tax equals total.",
   );
   throwForFailedControls(checks);
   return { checks, allocations };
 }
 
-export function evaluateConfirmedBundle(
-  invoice: NormalizedInvoice,
-  candidate: BundleCandidate,
-  context: ControlContext,
-) {
-  const poLines = context.poLines as PoLineRow[];
-  const priorAllocations = context.priorAllocations as PriorAllocationRow[];
-  const postedInvoices = context.postedInvoices as PostedInvoiceRow[];
-  const vendors = context.vendors as VendorRow[];
-  const purchaseOrders = context.purchaseOrders as PoRow[];
+export function evaluateConfirmedBundle(invoice: NormalizedInvoice, candidate: BundleCandidate, context: ControlContext) {
+  const { poLines, priorAllocations, vendors, purchaseOrders } = context;
   const checks: CheckResult[] = [];
-  const vendor = vendors.find((row) =>
-    [row.canonical_name, ...(JSON.parse(row.aliases_json) as string[])].some(
-      (name) => normalize(name) === normalize(invoice.vendor),
-    ),
-  );
-  if (!vendor)
-    throw new ControlError(
-      "VENDOR_MATCH",
-      "Vendor no longer resolves.",
-      checks,
-    );
-  if (
-    postedInvoices.some(
-      (row) =>
-        row.vendor_id === vendor.id &&
-        row.normalized_invoice_number === normalize(invoice.invoiceNumber),
-    )
-  )
-    throw new ControlError("DUPLICATE", "Invoice is now a duplicate.", checks);
+  const vendor = resolveVendorMatches(invoice.vendor, vendors)[0];
+  if (!vendor) throw new ControlError("VENDOR_MATCH", "Vendor no longer resolves.", checks);
+  const duplicate = evaluateDuplicate(invoice, context);
+  if (!duplicate.check.passed) throw new ControlError("DUPLICATE", duplicate.check.detail, [duplicate.check]);
   const po = purchaseOrders.find(
     (row) =>
       row.normalized_po_number === normalize(invoice.poNumber) &&
@@ -755,28 +256,15 @@ export function evaluateConfirmedBundle(
       row.currency === "USD" &&
       row.price_basis === "TAX_EXCLUSIVE",
   );
-  if (!po)
-    throw new ControlError("PO_ELIGIBLE", "PO is no longer eligible.", checks);
+  if (!po) throw new ControlError("PO_ELIGIBLE", "PO is no longer eligible.", checks);
 
   const used = usedQuantities(priorAllocations);
   const reserved = new Map<string, Decimal>();
   const line = invoice.lines[candidate.invoiceLineIndex];
-  if (!line)
-    throw new ControlError(
-      "LINE_MATCH",
-      "Candidate line no longer exists.",
-      checks,
-    );
+  if (!line) throw new ControlError("LINE_MATCH", "Candidate line no longer exists.", checks);
   const allocations = candidate.components.map((component) => {
-    const poLine = poLines.find(
-      (row) => row.id === component.poLineId && row.po_number === po.po_number,
-    );
-    if (!poLine)
-      throw new ControlError(
-        "LINE_MATCH",
-        "Candidate component no longer exists.",
-        checks,
-      );
+    const poLine = poLines.find((row) => row.id === component.poLineId && row.po_number === po.po_number);
+    if (!poLine) throw new ControlError("LINE_MATCH", "Candidate component no longer exists.", checks);
     const quantity = new Decimal(component.quantity);
     const allocation = allocationFor({
       invoiceLineIndex: candidate.invoiceLineIndex,
@@ -791,10 +279,7 @@ export function evaluateConfirmedBundle(
     reserve(reserved, poLine.id, quantity);
     return allocation;
   });
-  const basis = allocations.reduce(
-    (sum, allocation) => sum.plus(allocation.poBasisAmount),
-    new Decimal(0),
-  );
+  const basis = allocations.reduce((sum, allocation) => sum.plus(allocation.poBasisAmount), new Decimal(0));
   checks.push({
     code: "PRICE_MATCH",
     passed: basis.minus(line.amount).abs().lte("0.01"),
@@ -811,22 +296,127 @@ export function evaluateConfirmedBundle(
   return { checks, allocations };
 }
 
+export function buildPoCandidates(invoice: NormalizedInvoice, context: ControlContext, includeUnresolved = false): PoCandidate[] {
+  const vendor = context.vendors.find((row) => normalize(row.canonical_name) === normalize(invoice.vendor));
+  if (!vendor) return [];
+  const purchaseOrders = context.purchaseOrders.filter(
+    (row) => row.vendor_id === vendor.id && row.status === "OPEN" && row.currency === invoice.currency,
+  );
+  const { poLines, priorAllocations } = context;
+  const capacityFor = (poLineId: string) => {
+    const poLine = poLines.find((line) => line.id === poLineId);
+    if (!poLine) return {};
+    const previouslyInvoicedQuantity = priorAllocations
+      .filter((allocation) => allocation.po_line_id === poLineId)
+      .reduce((total, allocation) => total.plus(allocation.component_quantity), new Decimal(0));
+    return {
+      orderedQuantity: poLine.ordered_quantity,
+      receivedQuantity: poLine.received_quantity,
+      previouslyInvoicedQuantity: previouslyInvoicedQuantity.toString(),
+    };
+  };
+  return poCandidateSchema.array().parse(
+    purchaseOrders
+      .map((po) => {
+        const candidateInvoice = { ...invoice, poNumber: po.po_number };
+        let matchedLineCount: number;
+        let allLinesResolvable: boolean;
+        let lines: PoCandidate["lines"];
+        try {
+          const evaluation = evaluateInvoice(candidateInvoice, context);
+          matchedLineCount = invoice.lines.length;
+          allLinesResolvable = true;
+          lines = evaluation.allocations.map((allocation) => {
+            const invoiceLine = invoice.lines[allocation.invoiceLineIndex]!;
+            return {
+              invoiceLineIndex: allocation.invoiceLineIndex,
+              invoiceSku: invoiceLine.sku,
+              invoiceDescription: invoiceLine.description,
+              requestedQuantity: allocation.quantity,
+              uom: invoiceLine.uom,
+              poLineId: allocation.poLineId,
+              poSku: allocation.sku,
+              poDescription: allocation.poDescription ?? allocation.sku,
+              poUnitPrice: allocation.poUnitPrice ?? "0.00",
+              availableOrderedQuantity: allocation.availableOrderedQuantity ?? allocation.quantity,
+              availableReceivedQuantity: allocation.availableReceivedQuantity ?? allocation.quantity,
+              ...capacityFor(allocation.poLineId),
+            };
+          });
+        } catch {
+          const bundleResolvable = buildUnknownBundleCandidates(candidateInvoice, context.poLines, context.priorAllocations).length > 0;
+          allLinesResolvable = bundleResolvable;
+          lines = invoice.lines.flatMap((line, invoiceLineIndex) => {
+            const poLine = poLines.find(
+              (candidate) =>
+                candidate.po_number === po.po_number &&
+                candidate.uom === line.uom &&
+                (line.sku
+                  ? candidate.normalized_sku === normalize(line.sku)
+                  : candidate.normalized_description === normalize(line.description)),
+            );
+            if (!poLine) return [];
+            const consumed = priorAllocations
+              .filter((allocation) => allocation.po_line_id === poLine.id)
+              .reduce((total, allocation) => total.plus(allocation.component_quantity), new Decimal(0));
+            return [
+              {
+                invoiceLineIndex,
+                invoiceSku: line.sku,
+                invoiceDescription: line.description,
+                requestedQuantity: line.quantity,
+                uom: line.uom,
+                poLineId: poLine.id,
+                poSku: poLine.sku ?? "",
+                poDescription: poLine.description,
+                poUnitPrice: poLine.unit_price,
+                availableOrderedQuantity: new Decimal(poLine.ordered_quantity).minus(consumed).toString(),
+                availableReceivedQuantity: new Decimal(poLine.received_quantity).minus(consumed).toString(),
+                ...capacityFor(poLine.id),
+              },
+            ];
+          });
+          matchedLineCount = bundleResolvable ? invoice.lines.length : lines.length;
+        }
+        const purchaseOrderLines = poLines.filter((line) => line.po_number === po.po_number);
+        const totalBasis = purchaseOrderLines.reduce(
+          (sum, line) => sum.plus(new Decimal(line.ordered_quantity).mul(line.unit_price)),
+          new Decimal(0),
+        );
+        const poLineIds = new Set(purchaseOrderLines.map((line) => line.id));
+        const remaining = priorAllocations
+          .filter((allocation) => poLineIds.has(allocation.po_line_id))
+          .reduce((value, row) => value.minus(row.po_basis_amount), totalBasis);
+        return {
+          poNumber: po.po_number,
+          allLinesResolvable,
+          matchedLineCount,
+          remainingPoBasisValue: remaining.toFixed(2),
+          subtotalDifference: remaining.minus(invoice.subtotal).abs().toFixed(2),
+          lines,
+        };
+      })
+      .filter((candidate) => (includeUnresolved ? candidate.matchedLineCount > 0 : candidate.allLinesResolvable))
+      .sort(
+        (left, right) =>
+          Number(right.allLinesResolvable) - Number(left.allLinesResolvable) ||
+          right.matchedLineCount - left.matchedLineCount ||
+          new Decimal(left.subtotalDifference).comparedTo(right.subtotalDifference) ||
+          normalize(left.poNumber).localeCompare(normalize(right.poNumber)),
+      )
+      .slice(0, 3),
+  );
+}
+
 export function buildUnknownBundleCandidates(
   invoice: NormalizedInvoice,
-  poLinesInput: unknown[],
-  priorAllocationsInput: unknown[],
+  poLinesInput: PoLineRow[],
+  priorAllocationsInput: PriorAllocationRow[],
 ): BundleCandidate[] {
   if (invoice.lines.length !== 1) return [];
-  const poLines = (poLinesInput as PoLineRow[]).filter(
-    (line) => line.po_number === invoice.poNumber && line.uom === "EA",
-  );
-  if (poLines.length > 10)
-    throw new ControlError(
-      "UNSUPPORTED_STRUCTURE",
-      "Bundle search exceeds ten eligible PO lines.",
-      [],
-    );
-  const used = usedQuantities(priorAllocationsInput as PriorAllocationRow[]);
+  const poLines = poLinesInput.filter((line) => line.po_number === invoice.poNumber && line.uom === "EA");
+  if (poLines.length > 10) throw new ControlError("UNSUPPORTED_STRUCTURE", "Bundle search exceeds ten eligible PO lines.", []);
+  const used = usedQuantities(priorAllocationsInput);
   const target = new Decimal(invoice.lines[0]!.amount);
   const choices = poLines
     .map((line) => {
@@ -835,18 +425,12 @@ export function buildUnknownBundleCandidates(
         new Decimal(line.received_quantity).minus(used.get(line.id) ?? 0),
       );
       const price = new Decimal(line.unit_price);
-      const max = price.isZero()
-        ? 0
-        : Decimal.min(available.floor(), target.div(price).floor()).toNumber();
+      const max = price.isZero() ? 0 : Decimal.min(available.floor(), target.div(price).floor()).toNumber();
       return { line, price, max };
     })
     .filter((choice) => choice.max >= 1);
   const found: BundleCandidate["components"][] = [];
-  const visit = (
-    start: number,
-    components: BundleCandidate["components"],
-    total: Decimal,
-  ) => {
+  const visit = (start: number, components: BundleCandidate["components"], total: Decimal) => {
     if (components.length >= 2 && total.minus(target).abs().lte("0.01")) {
       found.push(components);
       return;
@@ -869,16 +453,8 @@ export function buildUnknownBundleCandidates(
               poBasisAmount: money(amount),
               description: choice.line.description,
               unitPrice: choice.line.unit_price,
-              availableOrderedQuantity: new Decimal(
-                choice.line.ordered_quantity,
-              )
-                .minus(used.get(choice.line.id) ?? 0)
-                .toString(),
-              availableReceivedQuantity: new Decimal(
-                choice.line.received_quantity,
-              )
-                .minus(used.get(choice.line.id) ?? 0)
-                .toString(),
+              availableOrderedQuantity: new Decimal(choice.line.ordered_quantity).minus(used.get(choice.line.id) ?? 0).toString(),
+              availableReceivedQuantity: new Decimal(choice.line.received_quantity).minus(used.get(choice.line.id) ?? 0).toString(),
             },
           ],
           total.plus(amount),
@@ -888,27 +464,16 @@ export function buildUnknownBundleCandidates(
   };
   visit(0, [], new Decimal(0));
   return found
-    .sort(
-      (left, right) =>
-        left.length - right.length ||
-        candidateKey(left).localeCompare(candidateKey(right)),
-    )
+    .sort((left, right) => left.length - right.length || candidateKey(left).localeCompare(candidateKey(right)))
     .slice(0, 3)
     .map((components, index) => ({
       id: `BUNDLE-CANDIDATE-${index + 1}`,
       invoiceLineIndex: 0,
       bundleQuantity: invoice.lines[0]!.quantity,
-      totalPoBasisAmount: money(
-        components.reduce(
-          (sum, component) => sum.plus(component.poBasisAmount),
-          new Decimal(0),
-        ),
-      ),
+      totalPoBasisAmount: money(components.reduce((sum, component) => sum.plus(component.poBasisAmount), new Decimal(0))),
       components,
     }));
 }
-
-export const evaluateHappyPath = evaluateInvoice;
 
 export class ControlError extends Error {
   constructor(
@@ -919,56 +484,17 @@ export class ControlError extends Error {
     super(message);
   }
 }
-
-export class NormalizationError extends Error {
-  constructor(
-    readonly reasonCode: string,
-    readonly field?: string,
-    readonly fields: string[] = field ? [field] : [],
-  ) {
-    super(field ? `${reasonCode}: ${field}` : reasonCode);
-  }
-}
-
-function mappedLowConfidenceFields(
-  evidence: Map<string, SourceRef>,
-  mapping: InvoiceMapping,
-) {
-  const fields: Array<[string, string | null | undefined]> = [
-    ["vendor", mapping.vendor],
-    ["invoiceNumber", mapping.invoiceNumber],
-    ["invoiceDate", mapping.invoiceDate],
-    ["poNumber", mapping.poNumber],
-    ["currency", mapping.currency],
-    ["observedSubtotal", mapping.subtotal],
-    ["observedTax", mapping.tax],
-    ["observedTotal", mapping.total],
-    ["taxNote", mapping.taxNote],
-    ...(mapping.lines.flatMap((line, index) => [
-      [`lines.${index}.sku`, line.sku],
-      [`lines.${index}.description`, line.description],
-      [`lines.${index}.quantity`, line.quantity],
-      [`lines.${index}.uom`, line.uom],
-      [`lines.${index}.unitPrice`, line.unitPrice],
-      [`lines.${index}.amount`, line.amount],
-      [`lines.${index}.taxInclusion`, line.taxInclusion],
-      [`lines.${index}.taxRate`, line.taxRate],
-      [`lines.${index}.taxAmount`, line.taxAmount],
-    ]) as Array<[string, string | null | undefined]>),
-  ];
-  return fields.flatMap(([field, sourceId]) => {
-    const confidence = sourceId ? evidence.get(sourceId)?.confidence : null;
-    return confidence !== null && confidence !== undefined && confidence < 0.75
-      ? [field]
-      : [];
-  });
-}
-
 export function normalize(value: string) {
   return value
     .normalize("NFKC")
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
+}
+
+function resolveVendorMatches(vendor: string, vendors: VendorRow[]) {
+  return vendors.filter((row) =>
+    [row.canonical_name, ...(JSON.parse(row.aliases_json) as string[])].some((name) => normalize(name) === normalize(vendor)),
+  );
 }
 
 function throwForFailedControls(checks: CheckResult[]) {
@@ -977,11 +503,7 @@ function throwForFailedControls(checks: CheckResult[]) {
   const independentCodes = [...new Set(failed.map((check) => check.code))];
   const first = failed[0]!;
   if (independentCodes.length > 1)
-    throw new ControlError(
-      "MULTIPLE_ISSUES",
-      `${independentCodes.length} independent controls failed.`,
-      checks,
-    );
+    throw new ControlError("MULTIPLE_ISSUES", `${independentCodes.length} independent controls failed.`, checks);
   throw new ControlError(first.code, first.detail, checks);
 }
 
@@ -996,23 +518,12 @@ function allocationFor(input: {
   bundleDefinitionId: string | null;
 }): Allocation {
   const basis = input.quantity.mul(input.poLine.unit_price);
-  const consumed = (input.used.get(input.poLine.id) ?? new Decimal(0)).plus(
-    input.reserved.get(input.poLine.id) ?? 0,
-  );
-  const orderedRemaining = new Decimal(input.poLine.ordered_quantity)
-    .minus(consumed)
-    .minus(input.quantity);
-  const receivedRemaining = new Decimal(input.poLine.received_quantity)
-    .minus(consumed)
-    .minus(input.quantity);
-  const availableOrderedQuantity = new Decimal(input.poLine.ordered_quantity)
-    .minus(consumed)
-    .toString();
-  const availableReceivedQuantity = new Decimal(input.poLine.received_quantity)
-    .minus(consumed)
-    .toString();
-  const actualNetAmount =
-    input.matchType === "DIRECT" ? input.line.amount : money(basis);
+  const consumed = (input.used.get(input.poLine.id) ?? new Decimal(0)).plus(input.reserved.get(input.poLine.id) ?? 0);
+  const orderedRemaining = new Decimal(input.poLine.ordered_quantity).minus(consumed).minus(input.quantity);
+  const receivedRemaining = new Decimal(input.poLine.received_quantity).minus(consumed).minus(input.quantity);
+  const availableOrderedQuantity = new Decimal(input.poLine.ordered_quantity).minus(consumed).toString();
+  const availableReceivedQuantity = new Decimal(input.poLine.received_quantity).minus(consumed).toString();
+  const actualNetAmount = input.matchType === "DIRECT" ? input.line.amount : money(basis);
   return {
     invoiceLineIndex: input.invoiceLineIndex,
     poLineId: input.poLine.id,
@@ -1030,9 +541,7 @@ function allocationFor(input: {
     poUnitPrice: input.poLine.unit_price,
     orderedQuantity: input.poLine.ordered_quantity,
     receivedQuantity: input.poLine.received_quantity,
-    previouslyInvoicedQuantity: (
-      input.used.get(input.poLine.id) ?? new Decimal(0)
-    ).toString(),
+    previouslyInvoicedQuantity: (input.used.get(input.poLine.id) ?? new Decimal(0)).toString(),
     availableOrderedQuantity,
     availableReceivedQuantity,
     matchReason:
@@ -1047,22 +556,12 @@ function allocationFor(input: {
 }
 
 function checkCapacities(allocations: Allocation[], checks: CheckResult[]) {
-  const receiptFailure = allocations.find((row) =>
-    new Decimal(row.remainingReceivedQuantity).lt(0),
-  );
+  const receiptFailure = allocations.find((row) => new Decimal(row.remainingReceivedQuantity).lt(0));
   const receiptPasses = !receiptFailure;
-  const requested = receiptFailure
-    ? new Decimal(receiptFailure.quantity)
-    : null;
-  const receivedAvailability = receiptFailure
-    ? new Decimal(receiptFailure.availableReceivedQuantity ?? 0)
-    : null;
-  const orderedAvailability = receiptFailure
-    ? new Decimal(receiptFailure.availableOrderedQuantity ?? 0)
-    : null;
-  const shortfall = requested
-    ? Decimal.max(requested.minus(receivedAvailability!), 0)
-    : null;
+  const requested = receiptFailure ? new Decimal(receiptFailure.quantity) : null;
+  const receivedAvailability = receiptFailure ? new Decimal(receiptFailure.availableReceivedQuantity ?? 0) : null;
+  const orderedAvailability = receiptFailure ? new Decimal(receiptFailure.availableOrderedQuantity ?? 0) : null;
+  const shortfall = requested ? Decimal.max(requested.minus(receivedAvailability!), 0) : null;
   checks.push({
     code: "RECEIPT_CAPACITY",
     passed: receiptPasses,
@@ -1073,9 +572,7 @@ function checkCapacities(allocations: Allocation[], checks: CheckResult[]) {
     expected: receiptFailure
       ? `${receivedAvailability} ${receiptFailure.uom ?? "units"} received available for ${receiptFailure.sku}`
       : null,
-    actual: receiptFailure
-      ? `${requested} ${receiptFailure.uom ?? "units"} requested for ${receiptFailure.sku}`
-      : null,
+    actual: receiptFailure ? `${requested} ${receiptFailure.uom ?? "units"} requested for ${receiptFailure.sku}` : null,
     sourceIds: receiptFailure?.sourceIds ?? [],
     ...(receiptFailure
       ? {
@@ -1091,9 +588,7 @@ function checkCapacities(allocations: Allocation[], checks: CheckResult[]) {
         }
       : {}),
   });
-  const orderFailure = allocations.find((row) =>
-    new Decimal(row.remainingOrderedQuantity).lt(0),
-  );
+  const orderFailure = allocations.find((row) => new Decimal(row.remainingOrderedQuantity).lt(0));
   const orderPasses = !orderFailure;
   checks.push({
     code: "ORDERED_CAPACITY",
@@ -1103,39 +598,18 @@ function checkCapacities(allocations: Allocation[], checks: CheckResult[]) {
     expected: orderFailure
       ? `${new Decimal(orderFailure.remainingOrderedQuantity).plus(orderFailure.quantity).toString()} ordered units available for ${orderFailure.sku}`
       : null,
-    actual: orderFailure
-      ? `${orderFailure.quantity} invoice units requested for ${orderFailure.sku}`
-      : null,
+    actual: orderFailure ? `${orderFailure.quantity} invoice units requested for ${orderFailure.sku}` : null,
     sourceIds: orderFailure?.sourceIds ?? [],
   });
 }
 
-function checkPoValueCapacity(
-  po: PoRow,
-  poLines: PoLineRow[],
-  prior: PriorAllocationRow[],
-  current: Allocation[],
-  checks: CheckResult[],
-) {
+function checkPoValueCapacity(po: PoRow, poLines: PoLineRow[], prior: PriorAllocationRow[], current: Allocation[], checks: CheckResult[]) {
   const total = poLines
     .filter((line) => line.po_number === po.po_number)
-    .reduce(
-      (sum, line) =>
-        sum.plus(new Decimal(line.ordered_quantity).mul(line.unit_price)),
-      new Decimal(0),
-    );
-  const lineIds = new Set(
-    poLines
-      .filter((line) => line.po_number === po.po_number)
-      .map((line) => line.id),
-  );
-  const priorBasis = prior
-    .filter((row) => lineIds.has(row.po_line_id))
-    .reduce((sum, row) => sum.plus(row.po_basis_amount), new Decimal(0));
-  const currentBasis = current.reduce(
-    (sum, row) => sum.plus(row.poBasisAmount),
-    new Decimal(0),
-  );
+    .reduce((sum, line) => sum.plus(new Decimal(line.ordered_quantity).mul(line.unit_price)), new Decimal(0));
+  const lineIds = new Set(poLines.filter((line) => line.po_number === po.po_number).map((line) => line.id));
+  const priorBasis = prior.filter((row) => lineIds.has(row.po_line_id)).reduce((sum, row) => sum.plus(row.po_basis_amount), new Decimal(0));
+  const currentBasis = current.reduce((sum, row) => sum.plus(row.poBasisAmount), new Decimal(0));
   const passed = priorBasis.plus(currentBasis).lte(total);
   checks.push({
     code: "PO_VALUE_CAPACITY",
@@ -1150,11 +624,7 @@ function checkPoValueCapacity(
 
 function usedQuantities(rows: PriorAllocationRow[]) {
   const used = new Map<string, Decimal>();
-  for (const row of rows)
-    used.set(
-      row.po_line_id,
-      (used.get(row.po_line_id) ?? new Decimal(0)).plus(row.component_quantity),
-    );
+  for (const row of rows) used.set(row.po_line_id, (used.get(row.po_line_id) ?? new Decimal(0)).plus(row.component_quantity));
   return used;
 }
 
@@ -1162,234 +632,10 @@ function reserve(map: Map<string, Decimal>, id: string, quantity: Decimal) {
   map.set(id, (map.get(id) ?? new Decimal(0)).plus(quantity));
 }
 
-function requiredMoney(value: string, field?: string) {
-  const parsed = parseMoney(value, false, field);
-  if (!parsed) failNormalization("MISSING_REQUIRED_FIELD", field);
-  if (parsed.isNegative()) failNormalization("UNSUPPORTED_STRUCTURE");
-  return parsed;
-}
-
-function optionalMoney(value: string, field?: string) {
-  const parsed = value ? parseMoney(value, false, field) : null;
-  if (parsed?.isNegative()) failNormalization("UNSUPPORTED_STRUCTURE");
-  return parsed;
-}
-
-function parseMoney(value: string, allowUnparseable: boolean, field?: string) {
-  let normalized = value.normalize("NFKC").replace(/\s/g, "").trim();
-  if (!normalized) return null;
-  const negative =
-    /^\(.*\)$/.test(normalized) ||
-    /^-/.test(normalized) ||
-    /-$/.test(normalized);
-  normalized = normalized
-    .replace(/^\((.*)\)$/, "$1")
-    .replace(/^-|-$|^(?:USD|US\$|\$)/i, "")
-    .replace(/(?:USD|US\$|\$)$/i, "");
-  if (/[€£¥]|\b(?:EUR|GBP|JPY|CAD|AUD)\b/i.test(normalized)) {
-    if (allowUnparseable) return null;
-    failNormalization("UNSUPPORTED_STRUCTURE");
-  }
-  const stripped = canonicalNumber(normalized);
-  if (!stripped) {
-    if (allowUnparseable) return null;
-    failNormalization("MISSING_REQUIRED_FIELD", field);
-  }
-  const parsed = new Decimal(stripped);
-  return negative ? parsed.negated() : parsed;
-}
-
-function parseQuantity(value: string, field?: string) {
-  let normalized = value.normalize("NFKC").replace(/\s/g, "").trim();
-  const negative = /^-/.test(normalized) || /-$/.test(normalized);
-  normalized = normalized.replace(/^-|-$|^\((.*)\)$/, "$1");
-  const stripped = canonicalNumber(normalized);
-  if (!stripped) failNormalization("MISSING_REQUIRED_FIELD", field);
-  const quantity = new Decimal(stripped);
-  if (negative || quantity.lte(0)) failNormalization("UNSUPPORTED_STRUCTURE");
-  return quantity;
-}
-
-function parseUom(value: string) {
-  const normalized = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (["EA", "EACH", "PC", "PCS"].includes(normalized)) return "EA";
-  if (normalized === "KIT") return "KIT";
-  if (!normalized) return "";
-  return normalized;
-}
-
-function compactLine(...values: string[]) {
-  const value = values.find((candidate) => candidate.includes("|"));
-  if (!value) return null;
-  const parts = value
-    .replace(/^\s*Line\s+\d+\s*:\s*/i, "")
-    .split("|")
-    .map((part) => part.trim());
-  if (parts.length < 2) return null;
-  const uom = parts
-    .slice(2)
-    .join(" ")
-    .match(/\b(EA|EACH|PC|PCS|KIT|HRS?|HOURS?)\b/i)?.[1];
-  const arithmetic = parts
-    .slice(2)
-    .join(" ")
-    .match(
-      /(-?\d+(?:[.,]\d+)?)\s*(?:EA|EACH|PC|PCS|KIT|HRS?|HOURS?)?\s*[x×]\s*\$?([\d,.]+)\s*=\s*\$?([\d,.]+)/i,
-    );
-  return {
-    sku: parts[0]!,
-    description: parts[1]!,
-    uom: uom ?? "",
-    quantity: arithmetic?.[1],
-    unitPrice: arithmetic?.[2],
-    amount: arithmetic?.[3],
-  };
-}
-
-function parseDate(value: string, field?: string, evidence: SourceRef[] = []) {
-  const normalized = value.normalize("NFKC").trim().replace(/\s+/g, " ");
-  let year: number;
-  let month: number;
-  let day: number;
-  let match = normalized.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
-  if (match) [, year, month, day] = match.map(Number);
-  else if (
-    (match = normalized.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/))
-  ) {
-    const [, first, second, parsedYear] = match.map(Number);
-    year = parsedYear!;
-    if (first! > 12 && second! <= 12) [day, month] = [first!, second!];
-    else if (second! > 12 && first! <= 12) [month, day] = [first!, second!];
-    else if (first === second) [month, day] = [first!, second!];
-    else {
-      const order = numericDateOrder(evidence);
-      if (order === "MONTH_FIRST") [month, day] = [first!, second!];
-      else if (order === "DAY_FIRST") [day, month] = [first!, second!];
-      else failNormalization("AMBIGUOUS_DATE", field);
-    }
-  } else {
-    const dayFirst = normalized.match(
-      /^(\d{1,2})(?:st|nd|rd|th)?[\s.-]+([A-Za-z]{3,9})[\s,.-]+(\d{4})$/i,
-    );
-    const monthFirst = normalized.match(
-      /^([A-Za-z]{3,9})[\s.-]+(\d{1,2})(?:st|nd|rd|th)?[,]?[\s.-]+(\d{4})$/i,
-    );
-    if (dayFirst) {
-      day = Number(dayFirst[1]);
-      month = monthNumber(dayFirst[2]!);
-      year = Number(dayFirst[3]);
-    } else if (monthFirst) {
-      month = monthNumber(monthFirst[1]!);
-      day = Number(monthFirst[2]);
-      year = Number(monthFirst[3]);
-    } else failNormalization("MISSING_REQUIRED_FIELD", field);
-  }
-  const date = new Date(Date.UTC(year!, month! - 1, day!));
-  if (
-    date.getUTCFullYear() !== year! ||
-    date.getUTCMonth() + 1 !== month! ||
-    date.getUTCDate() !== day!
-  )
-    failNormalization("MISSING_REQUIRED_FIELD", field);
-  return `${String(year!).padStart(4, "0")}-${String(month!).padStart(2, "0")}-${String(day!).padStart(2, "0")}`;
-}
-
-function numericDateOrder(evidence: SourceRef[]) {
-  const orders = new Set<"MONTH_FIRST" | "DAY_FIRST">();
-  for (const source of evidence) {
-    if (!/DUE[\s_-]*DATE/i.test(source.label)) continue;
-    const match = source.content
-      .trim()
-      .match(/^(\d{1,2})[./-](\d{1,2})[./-]\d{4}$/);
-    if (!match) continue;
-    const first = Number(match[1]);
-    const second = Number(match[2]);
-    if (second > 12 && first <= 12) orders.add("MONTH_FIRST");
-    if (first > 12 && second <= 12) orders.add("DAY_FIRST");
-  }
-  return orders.size === 1 ? [...orders][0] : null;
-}
-
-function canonicalNumber(value: string) {
-  if (!/^[\d.,]+$/.test(value)) return null;
-  const commas = [...value.matchAll(/,/g)].map((match) => match.index!);
-  const dots = [...value.matchAll(/\./g)].map((match) => match.index!);
-  if (commas.length && dots.length) {
-    const decimal = commas.at(-1)! > dots.at(-1)! ? "," : ".";
-    const thousands = decimal === "," ? /\./g : /,/g;
-    return value.replace(thousands, "").replace(decimal, ".");
-  }
-  const separator = commas.length ? "," : dots.length ? "." : null;
-  if (!separator) return value;
-  const parts = value.split(separator);
-  if (parts.length === 2) {
-    const fraction = parts[1]!;
-    return fraction.length === 3 ? parts.join("") : parts.join(".");
-  }
-  const fraction = parts.at(-1)!;
-  return fraction.length === 3
-    ? parts.join("")
-    : `${parts.slice(0, -1).join("")}.${fraction}`;
-}
-
-function parseCurrency(value: string) {
-  const normalized = value.toUpperCase().replace(/[^A-Z$]/g, "");
-  if (["USD", "US$", "$", "USDOLLAR", "USDOLLARS"].includes(normalized))
-    return "USD";
-  failNormalization("UNSUPPORTED_STRUCTURE");
-}
-
-function monthNumber(value: string) {
-  const names = [
-    "JANUARY",
-    "FEBRUARY",
-    "MARCH",
-    "APRIL",
-    "MAY",
-    "JUNE",
-    "JULY",
-    "AUGUST",
-    "SEPTEMBER",
-    "OCTOBER",
-    "NOVEMBER",
-    "DECEMBER",
-  ];
-  const normalized = value.toUpperCase();
-  const month = names.findIndex(
-    (name) => name === normalized || name.slice(0, 3) === normalized,
-  );
-  if (month < 0) failNormalization("MISSING_REQUIRED_FIELD", "invoiceDate");
-  return month + 1;
-}
-
-function parseTaxRate(value: string) {
-  const matches = [...value.matchAll(/(\d+(?:\.\d+)?)\s*%/g)];
-  if (!matches.length) return null;
-  const rates = new Set(matches.map((match) => match[1]));
-  if (rates.size > 1) failNormalization("TAX_TREATMENT_UNRESOLVED");
-  const rate = new Decimal(matches[0]![1]!).div(100);
-  if (rate.lte(0) || rate.gte(1)) failNormalization("TAX_TREATMENT_UNRESOLVED");
-  return rate;
-}
-
-function claimsTaxInclusion(value: string) {
-  return /(?:INCLUD(?:E|ES|ED|ING)|INCL\.?).*?(?:TAX|VAT|GST)|(?:TAX|VAT|GST).*?(?:INCLUD|INCL\.?)/i.test(
-    value,
-  );
-}
-
 function money(value: Decimal.Value) {
-  return new Decimal(value)
-    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
-    .toFixed(2);
+  return new Decimal(value).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
 }
 
 function candidateKey(components: BundleCandidate["components"]) {
-  return components
-    .map((component) => `${component.poLineId}:${component.quantity}`)
-    .join("|");
-}
-
-function failNormalization(reasonCode: string, field?: string): never {
-  throw new NormalizationError(reasonCode, field);
+  return components.map((component) => `${component.poLineId}:${component.quantity}`).join("|");
 }

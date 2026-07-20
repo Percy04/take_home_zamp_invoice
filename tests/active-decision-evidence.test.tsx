@@ -41,8 +41,7 @@ const run = {
       name: "Receipt capacity",
       category: "CAPACITY",
       pass: false,
-      explanation:
-        "Requested 3 EA; received availability 2 EA; shortfall 1 EA.",
+      explanation: "Requested 3 EA; received availability 2 EA; shortfall 1 EA.",
     },
     {
       code: "PRICE_MATCH",
@@ -102,24 +101,18 @@ describe("active decision evidence", () => {
     render(<DecisionEvidence run={run} />);
 
     expect(screen.getAllByText("Price differs from PO")).toHaveLength(1);
-    expect(
-      screen.getByRole("heading", { name: "2 issues require review" }),
-    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "2 issues require review" })).toBeVisible();
     expect(screen.getByText("Quantity exceeds received goods")).toBeVisible();
     expect(screen.getByText(/\$15\.00 total variance/)).toBeVisible();
     const issueCards = document.querySelectorAll("[data-review-issue]");
     expect(issueCards).toHaveLength(2);
-    expect(new Set([...issueCards].map((card) => card.className))).toHaveLength(
-      1,
-    );
+    expect(new Set([...issueCards].map((card) => card.className))).toHaveLength(1);
     expect(issueCards[0]).toHaveClass("border-border", "bg-surface");
     expect(issueCards[0]?.className).not.toMatch(/destructive/);
     expect(issueCards[0]?.parentElement).toHaveClass("space-y-2");
     expect(screen.queryByRole("columnheader")).not.toBeInTheDocument();
     expect(screen.queryByText("Capacity check")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("Why this invoice is blocked"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Why this invoice is blocked")).not.toBeInTheDocument();
     expect(screen.queryByText("Receipt capacity")).not.toBeInTheDocument();
     expect(screen.queryByText("Still needed")).not.toBeInTheDocument();
     expect(screen.queryByText("PO ordered")).not.toBeInTheDocument();

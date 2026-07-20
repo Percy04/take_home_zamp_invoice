@@ -5,10 +5,7 @@ import "react-pdf/dist/Page/TextLayer.css";
 import type { Run } from "@/lib/types";
 import { documentUrl } from "@/lib/api";
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url,
-).toString();
+pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
 export function DocumentPreview({ run, compact = false }: { run: Run; compact?: boolean }) {
   const viewport = useRef<HTMLDivElement>(null);
@@ -63,19 +60,11 @@ export function DocumentPreview({ run, compact = false }: { run: Run; compact?: 
             ›
           </button>
           <div className="mx-2 h-4 w-px bg-border" />
-          <button
-            aria-label="Zoom out"
-            onClick={() => setZoom(Math.max(50, zoom - 25))}
-            className="rounded border border-border px-2 py-1"
-          >
+          <button aria-label="Zoom out" onClick={() => setZoom(Math.max(50, zoom - 25))} className="rounded border border-border px-2 py-1">
             −
           </button>
           <span className="tabular text-muted-foreground">{zoom}%</span>
-          <button
-            aria-label="Zoom in"
-            onClick={() => setZoom(Math.min(200, zoom + 25))}
-            className="rounded border border-border px-2 py-1"
-          >
+          <button aria-label="Zoom in" onClick={() => setZoom(Math.min(200, zoom + 25))} className="rounded border border-border px-2 py-1">
             +
           </button>
         </div>
@@ -90,10 +79,7 @@ export function DocumentPreview({ run, compact = false }: { run: Run; compact?: 
             .
           </div>
         ) : (
-          <div
-            data-testid="document-viewport"
-            className="max-h-[560px] overflow-auto rounded border border-border bg-surface shadow-sm"
-          >
+          <div data-testid="document-viewport" className="max-h-[560px] overflow-auto rounded border border-border bg-surface shadow-sm">
             <Document
               key={run.runId}
               file={documentUrl(run.runId)}

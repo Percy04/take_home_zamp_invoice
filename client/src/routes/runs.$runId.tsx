@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import * as api from "@/lib/api";
 import { useStore } from "@/lib/store";
 import type { Run } from "@/lib/types";
@@ -22,7 +22,6 @@ function RunPage() {
   const navigate = useNavigate();
   const run = useStore((s) => s.runs.find((r) => r.runId === runId));
   const [statusError, setStatusError] = useState(false);
-  const processStarted = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,16 +38,6 @@ function RunPage() {
   }, [runId]);
 
   useEffect(() => {
-    processStarted.current = false;
-  }, [runId]);
-
-  useEffect(() => {
-    if (run?.state !== "PROCESSING" || processStarted.current) return;
-    processStarted.current = true;
-    void api.processRun(runId).catch(() => setStatusError(true));
-  }, [run?.state, runId]);
-
-  useEffect(() => {
     if (run?.state !== "PROCESSING") return;
     const poll = () => void api.getRun(runId).then((result) => !result && setStatusError(true));
     const timer = window.setInterval(poll, 500);
@@ -62,9 +51,7 @@ function RunPage() {
           <>
             <p className="eyebrow">Status unavailable</p>
             <h1 className="mt-1 text-lg font-semibold">Processing status is unavailable</h1>
-            <p className="mt-1 text-[13px] text-muted-foreground">
-              The server may still be processing this invoice.
-            </p>
+            <p className="mt-1 text-[13px] text-muted-foreground">The server may still be processing this invoice.</p>
             <div className="mt-4 flex justify-center gap-2">
               <button
                 onClick={() => setStatusError(false)}

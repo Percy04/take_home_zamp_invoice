@@ -1,7 +1,6 @@
 import type { ControlResult, Run } from "./types";
 
-export type ReviewIssueCategory =
-  "INVOICE_DATA" | "PO_RESOLUTION" | "MATCHING" | "RECEIPT" | "DUPLICATE" | "BUNDLE";
+export type ReviewIssueCategory = "INVOICE_DATA" | "PO_RESOLUTION" | "MATCHING" | "RECEIPT" | "DUPLICATE" | "BUNDLE";
 
 export type ReviewIssue = {
   category: ReviewIssueCategory;
@@ -21,13 +20,7 @@ export function reviewRoute(run: Run) {
 export function isExtractionIssue(run: Run) {
   return (
     run.aiRechecks?.some((recheck) => recheck.outcome === "needs_review") ||
-    [
-      "LOW_CONFIDENCE",
-      "EXTRACTION_FAILED",
-      "MAPPING_FAILED",
-      "MISSING_FIELD",
-      "AMBIGUOUS_DATE",
-    ].includes(run.reasonCode ?? "")
+    ["LOW_CONFIDENCE", "EXTRACTION_FAILED", "MAPPING_FAILED", "MISSING_FIELD", "AMBIGUOUS_DATE"].includes(run.reasonCode ?? "")
   );
 }
 
@@ -52,22 +45,17 @@ const fieldLabel = (field: string) => {
 };
 
 const add = (issues: ReviewIssue[], issue: ReviewIssue) => {
-  if (!issues.some((item) => item.category === issue.category && item.title === issue.title))
-    issues.push(issue);
+  if (!issues.some((item) => item.category === issue.category && item.title === issue.title)) issues.push(issue);
 };
 
 function issueForCheck(run: Run, check: ControlResult): ReviewIssue {
-  const evidence =
-    run.evidence?.find((item) => check.sourceRefs?.includes(item.id)) ??
-    lowConfidenceEvidence(run, check.explanation);
-  if (check.code === "MISSING_PO")
-    return { category: "PO_RESOLUTION", title: "Select the purchase order" };
+  const evidence = run.evidence?.find((item) => check.sourceRefs?.includes(item.id)) ?? lowConfidenceEvidence(run, check.explanation);
+  if (check.code === "MISSING_PO") return { category: "PO_RESOLUTION", title: "Select the purchase order" };
   if (check.calculation?.kind === "RECEIPT_CAPACITY" || check.category === "CAPACITY")
     return { category: "RECEIPT", title: "Quantity exceeds received goods" };
   if (check.calculation?.kind === "PRICE_VARIANCE" || check.category === "PRICE")
     return { category: "MATCHING", title: "Price differs from PO" };
-  if (check.category === "DUPLICATE")
-    return { category: "DUPLICATE", title: "Possible duplicate invoice" };
+  if (check.category === "DUPLICATE") return { category: "DUPLICATE", title: "Possible duplicate invoice" };
   if (check.code === "TOTAL_MISMATCH")
     return {
       category: "INVOICE_DATA",
@@ -75,8 +63,7 @@ function issueForCheck(run: Run, check: ControlResult): ReviewIssue {
       action: check.explanation,
     };
   if (check.code === "LOW_CONFIDENCE") {
-    const field =
-      check.explanation.replace(/ could not be read reliably\.$/, "") || "Invoice fields";
+    const field = check.explanation.replace(/ could not be read reliably\.$/, "") || "Invoice fields";
     return {
       category: "INVOICE_DATA",
       title: "Document extraction issue",
@@ -85,9 +72,7 @@ function issueForCheck(run: Run, check: ControlResult): ReviewIssue {
       value: evidence?.content ?? check.explanation,
       action: "Review the extracted values.",
       confidence: evidence?.confidence,
-      source: evidence
-        ? `${evidence.label}${evidence.page ? ` · page ${evidence.page}` : ""}`
-        : undefined,
+      source: evidence ? `${evidence.label}${evidence.page ? ` · page ${evidence.page}` : ""}` : undefined,
     };
   }
   if (check.category === "IDENTITY")
@@ -104,10 +89,7 @@ function issueForCheck(run: Run, check: ControlResult): ReviewIssue {
 
 function lowConfidenceEvidence(run: Run, explanation: string) {
   if (!/quantity/i.test(explanation)) return undefined;
-  const values = run.invoice?.lines.flatMap((line) => [
-    String(line.quantity),
-    `${line.quantity} ${line.uom}`.trim(),
-  ]);
+  const values = run.invoice?.lines.flatMap((line) => [String(line.quantity), `${line.quantity} ${line.uom}`.trim()]);
   return run.evidence?.find((item) => values?.includes(item.content.trim()));
 }
 
@@ -115,10 +97,8 @@ export function reviewIssues(run: Run): ReviewIssue[] {
   const issues: ReviewIssue[] = [];
   const invoice = run.invoice;
 
-  if (run.reasonCode === "MISSING_PO")
-    return [{ category: "PO_RESOLUTION", title: "Select the purchase order" }];
-  if (run.reasonCode === "UNKNOWN_BUNDLE")
-    return [{ category: "BUNDLE", title: "Invoice item needs a component mapping" }];
+  if (run.reasonCode === "MISSING_PO") return [{ category: "PO_RESOLUTION", title: "Select the purchase order" }];
+  if (run.reasonCode === "UNKNOWN_BUNDLE") return [{ category: "BUNDLE", title: "Invoice item needs a component mapping" }];
 
   if (run.reasonCode === "AMBIGUOUS_DATE")
     add(issues, {
@@ -131,18 +111,9 @@ export function reviewIssues(run: Run): ReviewIssue[] {
     });
 
   if (run.reasonCode === "MISSING_FIELD") {
-    const missingFields = invoice?.missingFields?.length
-      ? invoice.missingFields
-      : !invoice?.invoiceDate
-        ? ["invoiceDate"]
-        : [];
+    const missingFields = invoice?.missingFields?.length ? invoice.missingFields : !invoice?.invoiceDate ? ["invoiceDate"] : [];
     for (const field of missingFields) {
-      const hasValue =
-        field === "invoiceDate"
-          ? Boolean(invoice?.invoiceDate)
-          : field === "poNumber"
-            ? Boolean(invoice?.poNumber)
-            : false;
+      const hasValue = field === "invoiceDate" ? Boolean(invoice?.invoiceDate) : field === "poNumber" ? Boolean(invoice?.poNumber) : false;
       if (!hasValue)
         add(issues, {
           category: "INVOICE_DATA",
@@ -178,9 +149,7 @@ export function reviewIssues(run: Run): ReviewIssue[] {
 
 export function reviewChecks(run: Run) {
   const failures = run.checks.filter((check) => !check.pass && !check.skipped);
-  const hasDetailedPriceFailure = failures.some(
-    (check) => check.code === "PRICE_MATCH" && check.calculation?.kind === "PRICE_VARIANCE",
-  );
+  const hasDetailedPriceFailure = failures.some((check) => check.code === "PRICE_MATCH" && check.calculation?.kind === "PRICE_VARIANCE");
   return failures.filter(
     (check) =>
       !(
@@ -196,28 +165,19 @@ export function reviewSummary(run: Run) {
   const categories = [...new Set(issues.map((issue) => issue.category))];
   if (!issues.length) return null;
   const reasonWhy: Partial<Record<NonNullable<Run["reasonCode"]>, string>> = {
-    MISSING_PO:
-      "The invoice does not identify a purchase order, so a reviewer must choose the matching PO.",
-    UNKNOWN_BUNDLE:
-      "The invoice item is not a direct PO line; its quantity and value align with the listed PO components.",
-    DUPLICATE_INVOICE:
-      "This invoice matches a previously posted ledger entry and cannot be posted again.",
-    PRICE_VARIANCE_EXCEEDED:
-      "The invoice price differs from the purchase order beyond the allowed tolerance.",
-    RECEIPT_CAPACITY_EXCEEDED:
-      "The invoice quantity is greater than the goods received and available to invoice.",
+    MISSING_PO: "The invoice does not identify a purchase order, so a reviewer must choose the matching PO.",
+    UNKNOWN_BUNDLE: "The invoice item is not a direct PO line; its quantity and value align with the listed PO components.",
+    DUPLICATE_INVOICE: "This invoice matches a previously posted ledger entry and cannot be posted again.",
+    PRICE_VARIANCE_EXCEEDED: "The invoice price differs from the purchase order beyond the allowed tolerance.",
+    RECEIPT_CAPACITY_EXCEEDED: "The invoice quantity is greater than the goods received and available to invoice.",
     MULTIPLE_ISSUES: "More than one independent control requires a reviewer decision.",
-    TOTAL_MISMATCH:
-      "The extracted current-invoice lines do not reconcile to the printed invoice total.",
+    TOTAL_MISMATCH: "The extracted current-invoice lines do not reconcile to the printed invoice total.",
   };
   const explanation = run.reasonCode ? reasonWhy[run.reasonCode] : undefined;
   if (categories.length === 1) {
     return {
       issues,
-      title:
-        issues.length === 1
-          ? issues[0].title
-          : `${categoryLabel[categories[0]]} · ${issues.length}`,
+      title: issues.length === 1 ? issues[0].title : `${categoryLabel[categories[0]]} · ${issues.length}`,
       explanation:
         explanation ??
         issues
@@ -233,9 +193,7 @@ export function reviewSummary(run: Run) {
   return {
     issues,
     title: `${issues.length} issues require review`,
-    explanation:
-      explanation ??
-      `${categories.map((category) => categoryLabel[category].toLowerCase()).join(" and ")} need attention.`,
+    explanation: explanation ?? `${categories.map((category) => categoryLabel[category].toLowerCase()).join(" and ")} need attention.`,
   };
 }
 

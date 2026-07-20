@@ -3,12 +3,9 @@ import { z } from "zod";
 
 const envSchema = z
   .object({
-    NODE_ENV: z
-      .enum(["development", "test", "production"])
-      .default("development"),
+    NODE_ENV: z.enum(["development", "test", "staging", "production"]).default("development"),
     PORT: z.coerce.number().int().positive().max(65535).default(3000),
     RUNTIME_DIR: z.string().min(1).default("data/runtime"),
-    PROVIDER_MODE: z.enum(["recorded", "live"]).default("recorded"),
     MAPPING_PROVIDER: z.enum(["openai", "gemini"]).default("openai"),
     AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: z.url().optional(),
     AZURE_DOCUMENT_INTELLIGENCE_KEY: z.string().min(1).optional(),
@@ -23,37 +20,20 @@ const envSchema = z
       .optional(),
   })
   .superRefine((value, context) => {
-    if (value.NODE_ENV === "production" && value.PROVIDER_MODE !== "live") {
-      context.addIssue({
-        code: "custom",
-        path: ["PROVIDER_MODE"],
-        message: "Production requires PROVIDER_MODE=live.",
-      });
-    }
-    if (value.PROVIDER_MODE !== "live") return;
+    if (value.NODE_ENV === "test") return;
     for (const [name, configured] of [
+      ["AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT", value.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT],
+      ["AZURE_DOCUMENT_INTELLIGENCE_KEY", value.AZURE_DOCUMENT_INTELLIGENCE_KEY],
       [
-        "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT",
-        value.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT,
-      ],
-      [
-        "AZURE_DOCUMENT_INTELLIGENCE_KEY",
-        value.AZURE_DOCUMENT_INTELLIGENCE_KEY,
-      ],
-      [
-        value.MAPPING_PROVIDER === "openai"
-          ? "OPENAI_API_KEY"
-          : "GEMINI_API_KEY",
-        value.MAPPING_PROVIDER === "openai"
-          ? value.OPENAI_API_KEY
-          : value.GEMINI_API_KEY,
+        value.MAPPING_PROVIDER === "openai" ? "OPENAI_API_KEY" : "GEMINI_API_KEY",
+        value.MAPPING_PROVIDER === "openai" ? value.OPENAI_API_KEY : value.GEMINI_API_KEY,
       ],
     ] as const) {
       if (!configured)
         context.addIssue({
           code: "custom",
           path: [name],
-          message: `${name} is required in live provider mode.`,
+          message: `${name} is required outside automated tests.`,
         });
     }
   });
@@ -62,12 +42,7 @@ export function parseEnv(source: NodeJS.ProcessEnv) {
   return envSchema.parse(source);
 }
 
-const source =
-  process.env.NODE_ENV === "test"
-    ? { ...process.env, PROVIDER_MODE: "recorded" }
-    : process.env;
-
-const parsed = parseEnv(source);
+const parsed = parseEnv(process.env);
 
 export const env = {
   ...parsed,

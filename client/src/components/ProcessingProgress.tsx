@@ -18,25 +18,13 @@ export function ProcessingProgress({ run }: { run: Run }) {
                       : "bg-muted text-muted-foreground"
               }`}
             >
-              {s.status === "DONE"
-                ? "✓"
-                : s.status === "FAILED"
-                  ? "!"
-                  : s.status === "IN_PROGRESS"
-                    ? "•"
-                    : "◦"}
+              {s.status === "DONE" ? "✓" : s.status === "FAILED" ? "!" : s.status === "IN_PROGRESS" ? "•" : "◦"}
             </span>
             <div className="flex-1">
               <div className="flex items-baseline justify-between">
                 <div className="text-[13px] font-medium">{s.label}</div>
                 <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                  {s.status === "IN_PROGRESS"
-                    ? "In progress"
-                    : s.status === "DONE"
-                      ? "Done"
-                      : s.status === "FAILED"
-                        ? "Failed"
-                        : "Pending"}
+                  {s.status === "IN_PROGRESS" ? "In progress" : s.status === "DONE" ? "Done" : s.status === "FAILED" ? "Failed" : "Pending"}
                 </div>
               </div>
               {s.detail && <div className="text-[12.5px] text-muted-foreground">{s.detail}</div>}

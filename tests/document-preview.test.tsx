@@ -7,13 +7,7 @@ import type { Run } from "../client/src/lib/types";
 
 vi.mock("react-pdf", () => ({
   pdfjs: { GlobalWorkerOptions: {} },
-  Document: ({
-    children,
-    onLoadSuccess,
-  }: {
-    children: React.ReactNode;
-    onLoadSuccess: (document: { numPages: number }) => void;
-  }) => (
+  Document: ({ children, onLoadSuccess }: { children: React.ReactNode; onLoadSuccess: (document: { numPages: number }) => void }) => (
     <div>
       <button onClick={() => onLoadSuccess({ numPages: 2 })}>Load PDF</button>
       {children}
@@ -46,13 +40,8 @@ describe("DocumentPreview", () => {
   it("uses real page counts and fit-width zoom controls", () => {
     render(<DocumentPreview run={run} compact />);
 
-    expect(screen.getByTestId("document-viewport")).toHaveClass(
-      "max-h-[560px]",
-      "overflow-auto",
-    );
-    expect(
-      screen.getByTestId("document-viewport").closest("section"),
-    ).not.toHaveClass("xl:h-full");
+    expect(screen.getByTestId("document-viewport")).toHaveClass("max-h-[560px]", "overflow-auto");
+    expect(screen.getByTestId("document-viewport").closest("section")).not.toHaveClass("xl:h-full");
     expect(screen.getByText("Page 1 of —")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Load PDF" }));
     expect(screen.getByText("Page 1 of 2")).toBeVisible();

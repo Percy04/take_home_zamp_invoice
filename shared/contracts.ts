@@ -1,12 +1,6 @@
 import { z } from "zod";
 
-export const runStateSchema = z.enum([
-  "PROCESSING",
-  "POSTED",
-  "AWAITING_PO_CONFIRMATION",
-  "AWAITING_BUNDLE_CONFIRMATION",
-  "NEEDS_REVIEW",
-]);
+export const runStateSchema = z.enum(["PROCESSING", "POSTED", "AWAITING_PO_CONFIRMATION", "AWAITING_BUNDLE_CONFIRMATION", "NEEDS_REVIEW"]);
 
 export const sourceRefSchema = z.object({
   id: z.string().min(1),
@@ -14,18 +8,7 @@ export const sourceRefSchema = z.object({
   confidence: z.number().min(0).max(1).nullable(),
   page: z.number().int().positive().nullable(),
   label: z.string().min(1),
-  sourceKind: z
-    .enum([
-      "FIELD",
-      "ITEM",
-      "TAX",
-      "TABLE",
-      "OCR_LINE",
-      "KEY_VALUE",
-      "RECORDED",
-      "AI_RECHECK",
-    ])
-    .optional(),
+  sourceKind: z.enum(["FIELD", "ITEM", "TAX", "TABLE", "OCR_LINE", "KEY_VALUE", "RECORDED", "AI_RECHECK"]).optional(),
   tableIndex: z.number().int().nonnegative().nullable().optional(),
   row: z.number().int().nonnegative().nullable().optional(),
   column: z.number().int().nonnegative().nullable().optional(),
@@ -99,16 +82,7 @@ export const checkResultSchema = z.object({
   code: z.string().min(1),
   passed: z.boolean(),
   detail: z.string().min(1),
-  category: z
-    .enum([
-      "IDENTITY",
-      "DUPLICATE",
-      "PURCHASE_ORDER",
-      "MATCHING",
-      "AMOUNTS",
-      "CAPACITY",
-    ])
-    .optional(),
+  category: z.enum(["IDENTITY", "DUPLICATE", "PURCHASE_ORDER", "MATCHING", "AMOUNTS", "CAPACITY"]).optional(),
   expected: z.string().nullable().optional(),
   actual: z.string().nullable().optional(),
   sourceIds: z.array(z.string().min(1)).optional(),
@@ -276,9 +250,7 @@ export const runDetailSchema = z
     filename: z.string(),
     state: runStateSchema,
     decision: z.enum(["AUTO_CLEARED", "NEEDS_REVIEW"]).nullable(),
-    execution: z
-      .enum(["POSTED", "BLOCKED", "AWAITING_CONFIRMATION"])
-      .nullable(),
+    execution: z.enum(["POSTED", "BLOCKED", "AWAITING_CONFIRMATION"]).nullable(),
     reasonCode: reasonCodeSchema.nullable(),
     nextAction: z.string().nullable(),
     ledgerId: z.string().nullable(),
@@ -302,24 +274,15 @@ export const runDetailSchema = z
         code: "custom",
         message: "Posted runs require a posted execution and ledger ID.",
       });
-    if (
-      run.state === "AWAITING_PO_CONFIRMATION" &&
-      (!run.candidatePo || run.execution !== "AWAITING_CONFIRMATION")
-    )
+    if (run.state === "AWAITING_PO_CONFIRMATION" && (!run.candidatePo || run.execution !== "AWAITING_CONFIRMATION"))
       context.addIssue({
         code: "custom",
-        message:
-          "Awaiting-PO runs require a candidate and confirmation execution.",
+        message: "Awaiting-PO runs require a candidate and confirmation execution.",
       });
-    if (
-      run.state === "AWAITING_BUNDLE_CONFIRMATION" &&
-      (!run.bundleCandidates.length ||
-        run.execution !== "AWAITING_CONFIRMATION")
-    )
+    if (run.state === "AWAITING_BUNDLE_CONFIRMATION" && (!run.bundleCandidates.length || run.execution !== "AWAITING_CONFIRMATION"))
       context.addIssue({
         code: "custom",
-        message:
-          "Awaiting-bundle runs require candidates and confirmation execution.",
+        message: "Awaiting-bundle runs require candidates and confirmation execution.",
       });
   });
 
@@ -342,13 +305,6 @@ export const runSummarySchema = z.object({
 
 export const runListSchema = z.object({
   items: z.array(runSummarySchema),
-  nextCursor: z.string().nullable(),
-  metrics: z.object({
-    totalRuns: z.number().int().nonnegative(),
-    postedCount: z.number().int().nonnegative(),
-    reviewCount: z.number().int().nonnegative(),
-    autoClearRate: z.string(),
-  }),
 });
 
 export const apiErrorSchema = z.object({

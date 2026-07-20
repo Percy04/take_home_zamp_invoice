@@ -16,11 +16,7 @@ export function RunDetailTabs({ run }: { run: Run }) {
 
   return (
     <section className="panel overflow-hidden [overflow-anchor:none]" aria-label="Invoice details">
-      <div
-        role="tablist"
-        aria-label="Run detail views"
-        className="flex overflow-x-auto border-b border-border"
-      >
+      <div role="tablist" aria-label="Run detail views" className="flex overflow-x-auto border-b border-border">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -28,9 +24,7 @@ export function RunDetailTabs({ run }: { run: Run }) {
             aria-selected={active === tab.id}
             onClick={() => setActive(tab.id)}
             className={`shrink-0 border-b-2 px-4 py-3 text-[12.5px] font-medium transition-colors ${
-              active === tab.id
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
+              active === tab.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             {tab.label}
@@ -38,11 +32,7 @@ export function RunDetailTabs({ run }: { run: Run }) {
         ))}
       </div>
       <div className="p-3 md:p-4">
-        <div
-          role="tabpanel"
-          aria-label={tabs.find((tab) => tab.id === active)?.label}
-          className="min-w-0"
-        >
+        <div role="tabpanel" aria-label={tabs.find((tab) => tab.id === active)?.label} className="min-w-0">
           {active === "invoice" && <InvoiceTab run={run} />}
           {active === "purchase-order" && <PurchaseOrderTab run={run} />}
           {active === "matching" && <MatchingTab run={run} />}
@@ -55,19 +45,14 @@ export function RunDetailTabs({ run }: { run: Run }) {
 
 function InvoiceTab({ run }: { run: Run }) {
   const invoice = run.invoice;
-  if (!invoice)
-    return <Empty text="Invoice fields will appear once document reading is complete." />;
+  if (!invoice) return <Empty text="Invoice fields will appear once document reading is complete." />;
 
   const details: Array<[string, React.ReactNode]> = [
     ["Vendor", invoice.vendor],
     ["Invoice number", invoice.invoiceNumber],
     [
       "Invoice date",
-      invoice.invoiceDate ? (
-        dateLong(invoice.invoiceDate)
-      ) : (
-        <span className="font-sans text-destructive">! could not be read</span>
-      ),
+      invoice.invoiceDate ? dateLong(invoice.invoiceDate) : <span className="font-sans text-destructive">! could not be read</span>,
     ],
     ["PO number", invoice.poNumber ?? "Not found"],
     ["Currency", invoice.currency],
@@ -136,10 +121,7 @@ function PurchaseOrderTab({ run }: { run: Run }) {
   const components = run.bundleCandidates?.flatMap((item) => item.components) ?? [];
   const candidateProposal = !allocation.length && candidate.length > 0;
   const poNumber =
-    allocation[0]?.poNumber ??
-    run.poCandidates?.[0]?.poNumber ??
-    run.bundleCandidates?.[0]?.poNumber ??
-    run.invoice?.poNumber;
+    allocation[0]?.poNumber ?? run.poCandidates?.[0]?.poNumber ?? run.bundleCandidates?.[0]?.poNumber ?? run.invoice?.poNumber;
 
   if (!poNumber) return <Empty text="No purchase order is available for this invoice." />;
 
@@ -147,8 +129,7 @@ function PurchaseOrderTab({ run }: { run: Run }) {
     <section>
       <p className="font-mono text-[15px] font-semibold text-foreground">{poNumber}</p>
       <p className="mt-0.5 text-[11.5px] text-muted-foreground">
-        {run.invoice?.vendor ?? "Vendor not resolved"} · open · {run.invoice?.currency ?? "—"} · net
-        price basis
+        {run.invoice?.vendor ?? "Vendor not resolved"} · open · {run.invoice?.currency ?? "—"} · net price basis
       </p>
       <div className="mt-3 overflow-x-auto rounded border border-border">
         <table className="w-full table-fixed text-[11px]">
@@ -233,10 +214,7 @@ function PurchaseOrderTab({ run }: { run: Run }) {
                     {line.requestedQuantity}
                   </Td>
                   <Td right mono>
-                    {money(
-                      line.requestedQuantity * line.poUnitPrice,
-                      run.invoice?.currency,
-                    )}
+                    {money(line.requestedQuantity * line.poUnitPrice, run.invoice?.currency)}
                   </Td>
                 </tr>
               ))}
@@ -280,9 +258,7 @@ function PurchaseOrderTab({ run }: { run: Run }) {
 function MatchingTab({ run }: { run: Run }) {
   const allocation = run.allocation?.lines ?? [];
   const candidates =
-    run.poCandidates?.flatMap((candidate) =>
-      candidate.lines.map((line) => ({ ...line, poNumber: candidate.poNumber })),
-    ) ?? [];
+    run.poCandidates?.flatMap((candidate) => candidate.lines.map((line) => ({ ...line, poNumber: candidate.poNumber }))) ?? [];
   const bundles =
     run.bundleCandidates?.flatMap((bundle) =>
       bundle.components.map((line) => ({
@@ -307,9 +283,8 @@ function MatchingTab({ run }: { run: Run }) {
         <section className="rounded border border-success/25 bg-success-soft/30 px-3 py-2.5">
           <p className="eyebrow text-success">Trusted bundle definition applied</p>
           <p className="mt-1 text-[12.5px] text-foreground">
-            <span className="font-mono">{trustedDefinition.bundleDefinitionId}</span> expanded the
-            invoice bundle into {allocation.length} PO component{allocation.length === 1 ? "" : "s"}
-            .
+            <span className="font-mono">{trustedDefinition.bundleDefinitionId}</span> expanded the invoice bundle into {allocation.length}{" "}
+            PO component{allocation.length === 1 ? "" : "s"}.
           </p>
           <p className="mt-1 text-[11.5px] text-muted-foreground">
             Those components were used for matching, pricing, and receipt-capacity checks.
@@ -360,7 +335,7 @@ function MatchingTab({ run }: { run: Run }) {
                   available={line.receivedAvailable}
                   invoicePrice={line.invoiceUnitPrice}
                   poPrice={line.poUnitPrice}
-                capacity={`${qty(line.receivedAvailable - line.requestedQuantity)} available`}
+                  capacity={`${qty(line.receivedAvailable - line.requestedQuantity)} available`}
                   currency={run.invoice?.currency}
                 />
               ))}
@@ -378,7 +353,7 @@ function MatchingTab({ run }: { run: Run }) {
                   available={line.receivedAvailable}
                   invoicePrice={line.unitPrice}
                   poPrice={line.unitPrice}
-                capacity={`${qty(line.receivedAvailable - line.quantity)} available`}
+                  capacity={`${qty(line.receivedAvailable - line.quantity)} available`}
                   currency={run.invoice?.currency}
                 />
               ))}
@@ -476,11 +451,7 @@ function DuplicateMatch({ run }: { run: Run }) {
 
 function ExceptionSummary({ run }: { run: Run }) {
   const details =
-    run.reasonCode === "EXTRACTION_FAILED"
-      ? run.extractionError
-      : run.reasonCode === "MAPPING_FAILED"
-        ? run.mappingError
-        : run.nextAction;
+    run.reasonCode === "EXTRACTION_FAILED" ? run.extractionError : run.reasonCode === "MAPPING_FAILED" ? run.mappingError : run.nextAction;
   return (
     <div className="rounded border border-border bg-surface-muted px-3 py-4 text-[13px] text-muted-foreground">
       <p className="font-medium text-foreground">No line-level match is available yet.</p>
@@ -513,15 +484,11 @@ function ControlsHistoryTab({ run }: { run: Run }) {
                     </p>
                   )}
                 </div>
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {check.category}
-                </span>
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{check.category}</span>
               </li>
             ))
           ) : (
-            <li className="px-3 py-4 text-[13px] text-muted-foreground">
-              No controls have run yet.
-            </li>
+            <li className="px-3 py-4 text-[13px] text-muted-foreground">No controls have run yet.</li>
           )}
         </ul>
         {(run.aiRechecks?.length ?? 0) > 0 && (
@@ -552,9 +519,7 @@ function ControlsHistoryTab({ run }: { run: Run }) {
               />
               <div>
                 <p className="text-[12.5px] font-medium text-foreground">{stage.label}</p>
-                {stage.detail && (
-                  <p className="text-[11px] text-muted-foreground">{stage.detail}</p>
-                )}
+                {stage.detail && <p className="text-[11px] text-muted-foreground">{stage.detail}</p>}
               </div>
             </li>
           ))}
@@ -587,23 +552,11 @@ function Empty({ text }: { text: string }) {
   return <p className="py-5 text-[13px] text-muted-foreground">{text}</p>;
 }
 function Th({ children, right = false }: { children: React.ReactNode; right?: boolean }) {
-  return (
-    <th className={`px-2 py-2 font-medium ${right ? "text-right" : "text-left"}`}>{children}</th>
-  );
+  return <th className={`px-2 py-2 font-medium ${right ? "text-right" : "text-left"}`}>{children}</th>;
 }
-function Td({
-  children,
-  right = false,
-  mono = false,
-}: {
-  children: React.ReactNode;
-  right?: boolean;
-  mono?: boolean;
-}) {
+function Td({ children, right = false, mono = false }: { children: React.ReactNode; right?: boolean; mono?: boolean }) {
   return (
-    <td
-      className={`px-2 py-2 align-top break-words ${right ? "text-right" : "text-left"} ${mono ? "font-mono tabular" : ""}`}
-    >
+    <td className={`px-2 py-2 align-top break-words ${right ? "text-right" : "text-left"} ${mono ? "font-mono tabular" : ""}`}>
       {children}
     </td>
   );

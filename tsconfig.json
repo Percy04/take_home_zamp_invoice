@@ -13,12 +13,5 @@
     "skipLibCheck": true,
     "types": ["node", "vite/client", "vitest/globals"]
   },
-  "include": [
-    "client",
-    "server",
-    "shared",
-    "scripts",
-    "tests",
-    "*.ts"
-  ]
+  "include": ["client", "server", "shared", "scripts", "tests", "*.ts"]
 }

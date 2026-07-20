@@ -233,8 +233,6 @@ describe("Lovable API adapter", () => {
       lines: [{ quantity: 8, uom: "pcs" }],
     });
     expect(run.invoice?.missingFields).toBeUndefined();
-    expect(run.evidence).toEqual([
-      expect.objectContaining({ id: "line.1.l0", content: "8 pcs", confidence: 0.62 }),
-    ]);
+    expect(run.evidence).toEqual([expect.objectContaining({ id: "line.1.l0", content: "8 pcs", confidence: 0.62 })]);
   });
 });

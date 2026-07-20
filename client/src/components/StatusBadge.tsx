@@ -18,9 +18,7 @@ export function StatusBadge({ state, size = "md" }: { state: RunState; size?: "s
   };
   const sz = size === "sm" ? "px-1.5 py-0.5 text-[10.5px]" : "px-2 py-0.5 text-[11.5px]";
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded border font-medium ${sz} ${styles[state]}`}
-    >
+    <span className={`inline-flex items-center gap-1.5 rounded border font-medium ${sz} ${styles[state]}`}>
       <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-current" />
       {LABEL[state]}
     </span>

@@ -34,9 +34,7 @@ export function replaceRuns(runs: Run[]) {
 export function upsertRun(run: Run) {
   const existing = state.runs.some((item) => item.runId === run.runId);
   setState({
-    runs: existing
-      ? state.runs.map((item) => (item.runId === run.runId ? run : item))
-      : [run, ...state.runs],
+    runs: existing ? state.runs.map((item) => (item.runId === run.runId ? run : item)) : [run, ...state.runs],
   });
 }
 

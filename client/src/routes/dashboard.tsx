@@ -56,17 +56,11 @@ function Dashboard() {
     const total = runs.length;
     const posted = runs.filter((r) => r.state === "POSTED").length;
     const review = runs.filter(
-      (r) =>
-        r.state === "NEEDS_REVIEW" ||
-        r.state === "AWAITING_PO_CONFIRMATION" ||
-        r.state === "AWAITING_BUNDLE_CONFIRMATION",
+      (r) => r.state === "NEEDS_REVIEW" || r.state === "AWAITING_PO_CONFIRMATION" || r.state === "AWAITING_BUNDLE_CONFIRMATION",
     ).length;
     const postedValue = runs
       .filter((r) => r.state === "POSTED")
-      .reduce(
-        (total, r) => total + (r.invoice?.normalizedTotal ?? r.invoice?.observedTotal ?? 0),
-        0,
-      );
+      .reduce((total, r) => total + (r.invoice?.normalizedTotal ?? r.invoice?.observedTotal ?? 0), 0);
     return { total, posted, review, postedValue };
   }, [runs]);
 
@@ -75,9 +69,7 @@ function Dashboard() {
       <header className="flex flex-wrap items-start justify-between gap-6 pb-7 pt-2">
         <div>
           <p className="eyebrow">Invoices</p>
-          <h1 className="mt-1 font-serif text-[31px] leading-none tracking-tight text-foreground">
-            Recent invoice runs
-          </h1>
+          <h1 className="mt-1 font-serif text-[31px] leading-none tracking-tight text-foreground">Recent invoice runs</h1>
         </div>
         <div className="flex flex-wrap items-start gap-6">
           <dl className="grid grid-cols-3 gap-x-7 pt-2 text-left sm:text-right">
@@ -106,13 +98,10 @@ function Dashboard() {
               setPage(1);
             }}
             className={`shrink-0 border-b-2 px-2.5 py-2.5 text-[12px] font-medium transition-colors ${
-              filter === f.key
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
+              filter === f.key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            {f.label}{" "}
-            <span className="ml-0.5 font-mono text-[10.5px]">{filterCount(runs, f.key)}</span>
+            {f.label} <span className="ml-0.5 font-mono text-[10.5px]">{filterCount(runs, f.key)}</span>
           </button>
         ))}
       </nav>
@@ -135,10 +124,7 @@ function Dashboard() {
                 <tr>
                   <td colSpan={6} className="px-4 py-12">
                     <div className="mx-auto max-w-sm text-center">
-                      <div
-                        className="mx-auto mb-3 h-10 w-10 rounded-full bg-surface-muted"
-                        aria-hidden
-                      />
+                      <div className="mx-auto mb-3 h-10 w-10 rounded-full bg-surface-muted" aria-hidden />
                       <div className="text-[13.5px] font-medium">Workspace is empty</div>
                       <div className="mt-1 text-[12.5px] text-muted-foreground">
                         Add an invoice to start matching and reviewing AP activity.
@@ -156,14 +142,9 @@ function Dashboard() {
                 <tr>
                   <td colSpan={6} className="px-4 py-12">
                     <div className="mx-auto max-w-sm text-center">
-                      <div
-                        className="mx-auto mb-3 h-10 w-10 rounded-full bg-surface-muted"
-                        aria-hidden
-                      />
+                      <div className="mx-auto mb-3 h-10 w-10 rounded-full bg-surface-muted" aria-hidden />
                       <div className="text-[13.5px] font-medium">No invoices match this view</div>
-                      <div className="mt-1 text-[12.5px] text-muted-foreground">
-                        Try a different status.
-                      </div>
+                      <div className="mt-1 text-[12.5px] text-muted-foreground">Try a different status.</div>
                     </div>
                   </td>
                 </tr>
@@ -211,15 +192,7 @@ function Th({ children, className = "" }: { children: React.ReactNode; className
   );
 }
 
-function Metric({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: "warn" | "success";
-}) {
+function Metric({ label, value, tone }: { label: string; value: string; tone?: "warn" | "success" }) {
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
@@ -247,28 +220,17 @@ function RunRow({ run }: { run: Run }) {
         >
           {run.invoice?.vendor ?? "Unknown vendor"}
         </Link>
-        <div className="font-mono text-[11px] text-muted-foreground">
-          {run.invoice?.invoiceNumber ?? "—"}
-        </div>
+        <div className="font-mono text-[11px] text-muted-foreground">{run.invoice?.invoiceNumber ?? "—"}</div>
       </td>
       <td className="px-3 py-3 align-top font-mono text-[11px]">{run.invoice?.poNumber ?? "—"}</td>
       <td className="px-3 py-3 align-top text-right font-mono tabular">
-        {money(
-          run.invoice?.normalizedTotal ?? run.invoice?.observedTotal,
-          run.invoice?.currency ?? "USD",
-        )}
+        {money(run.invoice?.normalizedTotal ?? run.invoice?.observedTotal, run.invoice?.currency ?? "USD")}
       </td>
       <td className="px-3 py-3 align-top text-[12px] text-muted-foreground">
-        {run.reasonCode && (
-          <strong className="block text-[10px] uppercase tracking-wide text-muted-foreground">
-            {reviewRoute(run)}
-          </strong>
-        )}
+        {run.reasonCode && <strong className="block text-[10px] uppercase tracking-wide text-muted-foreground">{reviewRoute(run)}</strong>}
         {reason}
       </td>
-      <td className="px-3 py-3 align-top font-mono text-[11px] text-muted-foreground tabular">
-        {dateLong(run.updatedAt)}
-      </td>
+      <td className="px-3 py-3 align-top font-mono text-[11px] text-muted-foreground tabular">{dateLong(run.updatedAt)}</td>
     </tr>
   );
 }
@@ -289,9 +251,7 @@ function primaryReason(r: Run): string {
     case "AMBIGUOUS_DATE":
       return "Invoice date needs confirmation";
     case "MISSING_FIELD":
-      return r.invoice?.missingFields?.[0] === "invoiceDate"
-        ? "Invoice date missing"
-        : "Missing required field";
+      return r.invoice?.missingFields?.[0] === "invoiceDate" ? "Invoice date missing" : "Missing required field";
     case "MISSING_PO":
       return "Select the purchase order";
     case "RECEIPT_CAPACITY_EXCEEDED":

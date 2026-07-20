@@ -1,14 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildInvoicePreview,
-  NormalizationError,
-  normalizeInvoice,
-} from "../server/src/controls.js";
-import {
-  ProviderError,
-  withOneMappingRetry,
-  type InvoiceMapping,
-} from "../server/src/providers.js";
+import { buildInvoicePreview, NormalizationError, normalizeInvoice } from "../server/src/invoice-normalization.js";
+import { evaluateDuplicate, type ControlContext } from "../server/src/controls.js";
+import type { InvoiceMapping } from "../server/src/invoice-mapping.js";
 import type { SourceRef } from "../shared/contracts.js";
 
 const mapping: InvoiceMapping = {
@@ -33,12 +26,7 @@ const mapping: InvoiceMapping = {
   ],
 };
 
-function source(
-  id: string,
-  content: string,
-  label = id,
-  confidence: number | null = 1,
-): SourceRef {
+function source(id: string, content: string, label = id, confidence: number | null = 1): SourceRef {
   return { id, content, label, confidence, page: 1 };
 }
 
@@ -62,10 +50,8 @@ function inclusiveEvidence(): SourceRef[] {
 describe("deterministic normalization", () => {
   it("recovers a compact line item from exact arithmetic", () => {
     const evidence = inclusiveEvidence().map((item) => ({ ...item }));
-    evidence.find((item) => item.id === "sku")!.content =
-      "Line 1: VAL-500 | Control Valve | 3 EA x $55.00 = $165.00";
-    evidence.find((item) => item.id === "description")!.content =
-      "Line 1: VAL-500 | Control Valve | 3 EA x $55.00 = $165.00";
+    evidence.find((item) => item.id === "sku")!.content = "Line 1: VAL-500 | Control Valve | 3 EA x $55.00 = $165.00";
+    evidence.find((item) => item.id === "description")!.content = "Line 1: VAL-500 | Control Valve | 3 EA x $55.00 = $165.00";
     evidence.find((item) => item.id === "unitPrice")!.content = "$55.00";
     evidence.find((item) => item.id === "amount")!.content = "$165.00";
     evidence.find((item) => item.id === "total")!.content = "$165.00";
@@ -97,8 +83,7 @@ describe("deterministic normalization", () => {
   it("derives a service line rate when hours and extension are printed", () => {
     const evidence = inclusiveEvidence().map((item) => ({ ...item }));
     evidence.find((item) => item.id === "sku")!.content = "";
-    evidence.find((item) => item.id === "description")!.content =
-      "Prepare Payout Request Log";
+    evidence.find((item) => item.id === "description")!.content = "Prepare Payout Request Log";
     evidence.find((item) => item.id === "quantity")!.content = "3.00";
     evidence.find((item) => item.id === "amount")!.content = "$375.00";
     evidence.find((item) => item.id === "total")!.content = "$375.00";
@@ -204,11 +189,7 @@ describe("deterministic normalization", () => {
   });
 
   it("preserves mapped evidence when normalization stops on a missing field", () => {
-    const preview = buildInvoicePreview(
-      inclusiveEvidence(),
-      { ...mapping, invoiceDate: "missing-source" },
-      "invoiceDate",
-    );
+    const preview = buildInvoicePreview(inclusiveEvidence(), { ...mapping, invoiceDate: "missing-source" }, "invoiceDate");
 
     expect(preview).toMatchObject({
       vendor: "Acme Industrial Supplies LLC",
@@ -255,10 +236,7 @@ describe("deterministic normalization", () => {
         observedTotal: "total",
         taxNote: "taxNote",
       },
-      derivations: [
-        { field: "subtotal" },
-        { field: "tax", sourceIds: ["total", "taxNote"] },
-      ],
+      derivations: [{ field: "subtotal" }, { field: "tax", sourceIds: ["total", "taxNote"] }],
     });
   });
 
@@ -388,10 +366,7 @@ describe("deterministic normalization", () => {
   });
 
   it("blocks unsupported non-zero charges before accounting controls", () => {
-    const evidence = [
-      ...inclusiveEvidence(),
-      source("freight", "$1.00", "Freight"),
-    ];
+    const evidence = [...inclusiveEvidence(), source("freight", "$1.00", "Freight")];
     expect(() => normalizeInvoice(evidence, mapping)).toThrowError(
       expect.objectContaining<Partial<NormalizationError>>({
         reasonCode: "UNSUPPORTED_STRUCTURE",
@@ -400,32 +375,34 @@ describe("deterministic normalization", () => {
   });
 });
 
-describe("mapping retry", () => {
-  it("retries a transient or malformed mapping once", async () => {
-    let calls = 0;
-    await expect(
-      withOneMappingRetry(async () => {
-        calls += 1;
-        if (calls === 1)
-          throw new ProviderError("OPENAI_MAPPING", "malformed", {
-            malformed: true,
-          });
-        return "mapped";
-      }),
-    ).resolves.toBe("mapped");
-    expect(calls).toBe(2);
-  });
+describe("duplicate controls", () => {
+  it("treats a canonical vendor name and configured alias as the same duplicate", () => {
+    const invoice = normalizeInvoice(inclusiveEvidence(), mapping);
+    const context: ControlContext = {
+      vendors: [
+        {
+          id: "V-ACME",
+          canonical_name: "Acme Industrial Supplies LLC",
+          aliases_json: '["Acme Industrial"]',
+        },
+      ],
+      postedInvoices: [
+        {
+          vendor_id: "V-ACME",
+          normalized_invoice_number: "ACME2026005",
+        },
+      ],
+      purchaseOrders: [],
+      poLines: [],
+      priorAllocations: [],
+      bundleDefinitions: [],
+    };
 
-  it("does not retry permanent authentication failures", async () => {
-    let calls = 0;
-    await expect(
-      withOneMappingRetry(async () => {
-        calls += 1;
-        throw new ProviderError("GEMINI_MAPPING", "unauthorized", {
-          status: 401,
-        });
-      }),
-    ).rejects.toThrow("unauthorized");
-    expect(calls).toBe(1);
+    const canonical = evaluateDuplicate(invoice, context);
+    const alias = evaluateDuplicate({ ...invoice, vendor: "Acme Industrial" }, context);
+
+    expect(alias.vendor).toEqual(canonical.vendor);
+    expect(alias.check).toEqual(canonical.check);
+    expect(alias.check).toMatchObject({ code: "DUPLICATE", passed: false });
   });
 });

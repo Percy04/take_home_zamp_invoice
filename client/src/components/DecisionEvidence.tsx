@@ -3,21 +3,13 @@ import type { ReactNode } from "react";
 import type { AiRecheck, Run } from "@/lib/types";
 import { money, qty, dateLong } from "@/lib/format";
 import * as api from "@/lib/api";
-import {
-  isExtractionIssue,
-  reviewChecks,
-  reviewIssues,
-  reviewRoute,
-  reviewSummary,
-  type ReviewIssue,
-} from "@/lib/review-issues";
+import { isExtractionIssue, reviewChecks, reviewIssues, reviewRoute, reviewSummary, type ReviewIssue } from "@/lib/review-issues";
 
 export function DecisionEvidence({ run }: { run: Run }) {
   const inv = run.invoice;
   const summary = reviewSummary(run);
   const invoiceDataIssues = reviewIssues(run).filter((issue) => issue.category === "INVOICE_DATA");
-  const unresolvedRechecks =
-    run.aiRechecks?.filter((recheck) => recheck.outcome === "needs_review") ?? [];
+  const unresolvedRechecks = run.aiRechecks?.filter((recheck) => recheck.outcome === "needs_review") ?? [];
   const extractionIssue = isExtractionIssue(run);
 
   return (
@@ -27,38 +19,23 @@ export function DecisionEvidence({ run }: { run: Run }) {
         <h3 className="mt-0.5 text-[14px] font-semibold text-foreground">
           {extractionIssue ? "Document extraction issue" : (summary?.title ?? headerFor(run))}
         </h3>
-        {!extractionIssue && summary?.explanation && (
-          <p className="mt-1 text-[12px] text-muted-foreground">{summary.explanation}</p>
-        )}
+        {!extractionIssue && summary?.explanation && <p className="mt-1 text-[12px] text-muted-foreground">{summary.explanation}</p>}
       </header>
       <div className="p-4">
         {run.state === "PROCESSING" && (
-          <p className="text-[13px] text-muted-foreground">
-            Evidence will appear here as reading and matching complete.
-          </p>
+          <p className="text-[13px] text-muted-foreground">Evidence will appear here as reading and matching complete.</p>
         )}
 
         {unresolvedRechecks.length > 0 && <ExtractionEvidence rechecks={unresolvedRechecks} />}
-        {!unresolvedRechecks.length && invoiceDataIssues.length > 0 && (
-          <InvoiceDataEvidence issues={invoiceDataIssues} />
+        {!unresolvedRechecks.length && invoiceDataIssues.length > 0 && <InvoiceDataEvidence issues={invoiceDataIssues} />}
+        {run.reasonCode === "DUPLICATE_INVOICE" && inv && run.duplicateMatch && <DuplicateEvidenceBlock run={run} />}
+        {run.reasonCode === "MISSING_PO" && run.state === "AWAITING_PO_CONFIRMATION" && <PoCandidateBlock run={run} />}
+        {run.reasonCode === "UNKNOWN_BUNDLE" && run.state === "AWAITING_BUNDLE_CONFIRMATION" && <BundleCandidateBlock run={run} />}
+        {run.state === "NEEDS_REVIEW" && (run.reasonCode === "MISSING_PO" || run.reasonCode === "UNKNOWN_BUNDLE") && (
+          <ManualReviewNotice run={run} />
         )}
-        {run.reasonCode === "DUPLICATE_INVOICE" && inv && run.duplicateMatch && (
-          <DuplicateEvidenceBlock run={run} />
-        )}
-        {run.reasonCode === "MISSING_PO" && run.state === "AWAITING_PO_CONFIRMATION" && (
-          <PoCandidateBlock run={run} />
-        )}
-        {run.reasonCode === "UNKNOWN_BUNDLE" && run.state === "AWAITING_BUNDLE_CONFIRMATION" && (
-          <BundleCandidateBlock run={run} />
-        )}
-        {run.state === "NEEDS_REVIEW" &&
-          (run.reasonCode === "MISSING_PO" || run.reasonCode === "UNKNOWN_BUNDLE") && (
-            <ManualReviewNotice run={run} />
-          )}
         {run.state === "NEEDS_REVIEW" && <IndependentIssues run={run} />}
-        {(run.reasonCode === "APPROVED_DIRECT" ||
-          run.reasonCode === "APPROVED_BUNDLE" ||
-          run.reasonCode === "APPROVED_REVIEWER_BUNDLE") &&
+        {(run.reasonCode === "APPROVED_DIRECT" || run.reasonCode === "APPROVED_BUNDLE" || run.reasonCode === "APPROVED_REVIEWER_BUNDLE") &&
           run.allocation && <MatchEvidenceTable run={run} />}
         {run.reasonCode === "APPROVED_TAX_INCLUSIVE" && (
           <>
@@ -73,9 +50,7 @@ export function DecisionEvidence({ run }: { run: Run }) {
         {run.reasonCode === "EXTRACTION_FAILED" && (
           <div className="text-[13px] text-muted-foreground">
             <p>{run.extractionError}</p>
-            <p className="mt-2">
-              Try uploading a clearer copy. The original PDF is still available below.
-            </p>
+            <p className="mt-2">Try uploading a clearer copy. The original PDF is still available below.</p>
           </div>
         )}
         {run.reasonCode === "MAPPING_FAILED" && inv && (
@@ -85,11 +60,7 @@ export function DecisionEvidence({ run }: { run: Run }) {
               <Kv label="Extracted vendor text" value={inv.vendor} />
               <Kv label="Extracted invoice #" value={inv.invoiceNumber} />
               <Kv label="Extracted date" value={dateLong(inv.invoiceDate)} />
-              <Kv
-                label="Extracted total"
-                value={money(inv.observedTotal, inv.currency)}
-                className="tabular"
-              />
+              <Kv label="Extracted total" value={money(inv.observedTotal, inv.currency)} className="tabular" />
             </div>
           </div>
         )}
@@ -131,15 +102,7 @@ function headerFor(run: Run): string {
   }
 }
 
-function Kv({
-  label,
-  value,
-  className = "",
-}: {
-  label: string;
-  value: React.ReactNode;
-  className?: string;
-}) {
+function Kv({ label, value, className = "" }: { label: string; value: React.ReactNode; className?: string }) {
   return (
     <div>
       <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
@@ -168,9 +131,7 @@ function ExtractionEvidence({ rechecks }: { rechecks: AiRecheck[] }) {
               <td className="px-3 py-2 font-medium">{fieldLabel(recheck.field)}</td>
               <td className="px-3 py-2 font-mono">{recheck.originalOcrValue || "—"}</td>
               <td className="px-3 py-2 text-right font-mono tabular">
-                {recheck.ocrConfidence === null
-                  ? "—"
-                  : `${Math.round(recheck.ocrConfidence * 100)}%`}
+                {recheck.ocrConfidence === null ? "—" : `${Math.round(recheck.ocrConfidence * 100)}%`}
               </td>
               <td className="px-3 py-2">{recheck.aiValue ?? "No usable value"}</td>
               <td className="px-3 py-2 text-muted-foreground">
@@ -206,9 +167,7 @@ function InvoiceDataEvidence({ issues }: { issues: ReviewIssue[] }) {
               <td className="px-3 py-2 text-destructive">{issue.condition ?? issue.title}</td>
               <td className="px-3 py-2 font-mono">{issue.value ?? "—"}</td>
               <td className="px-3 py-2 text-right font-mono tabular">
-                {issue.confidence === null || issue.confidence === undefined
-                  ? "—"
-                  : `${Math.round(issue.confidence * 100)}%`}
+                {issue.confidence === null || issue.confidence === undefined ? "—" : `${Math.round(issue.confidence * 100)}%`}
               </td>
               <td className="px-3 py-2 text-muted-foreground">{issue.source ?? "—"}</td>
               <td className="px-3 py-2">{issue.action ?? "Review the extracted values."}</td>
@@ -260,9 +219,7 @@ function DuplicateEvidenceBlock({ run }: { run: Run }) {
                   <td className="px-3 py-2 font-mono text-foreground">{existing}</td>
                   <td className="px-3 py-2 text-right text-[11px]">
                     {comparable ? (
-                      <span className={matches ? "text-success" : "text-destructive"}>
-                        {matches ? "✓ identical" : "! differs"}
-                      </span>
+                      <span className={matches ? "text-success" : "text-destructive"}>{matches ? "✓ identical" : "! differs"}</span>
                     ) : (
                       "—"
                     )}
@@ -274,8 +231,7 @@ function DuplicateEvidenceBlock({ run }: { run: Run }) {
         </table>
       </div>
       <p className="mt-3 text-[12px] text-muted-foreground">
-        Duplicates cannot be overridden from this screen. Investigate the source of the
-        resubmission.
+        Duplicates cannot be overridden from this screen. Investigate the source of the resubmission.
       </p>
     </div>
   );
@@ -301,11 +257,9 @@ function PoCandidateBlock({ run }: { run: Run }) {
               setBusy("reject");
               setActionError(undefined);
               try {
-                await api.rejectPo(run.runId);
+                await api.reviewRun(run.runId, { action: "reject_po" });
               } catch (caught) {
-                setActionError(
-                  caught instanceof Error ? caught.message : "Could not reject the purchase order.",
-                );
+                setActionError(caught instanceof Error ? caught.message : "Could not reject the purchase order.");
               } finally {
                 setBusy(null);
               }
@@ -320,13 +274,9 @@ function PoCandidateBlock({ run }: { run: Run }) {
               setBusy("confirm");
               setActionError(undefined);
               try {
-                await api.confirmPo(run.runId, c.poNumber);
+                await api.reviewRun(run.runId, { action: "confirm_po", poNumber: c.poNumber });
               } catch (caught) {
-                setActionError(
-                  caught instanceof Error
-                    ? caught.message
-                    : "Could not confirm the purchase order.",
-                );
+                setActionError(caught instanceof Error ? caught.message : "Could not confirm the purchase order.");
               } finally {
                 setBusy(null);
               }
@@ -373,8 +323,7 @@ function PoCandidateBlock({ run }: { run: Run }) {
                 <td className="px-3 py-2 text-right tabular">{money(l.invoiceUnitPrice)}</td>
                 <td className="px-3 py-2 text-right tabular">{money(l.poUnitPrice)}</td>
                 <td className="px-3 py-2 text-right tabular">
-                  {money(l.amountDifference)}{" "}
-                  <span className="text-muted-foreground">({l.priceVariancePct}%)</span>
+                  {money(l.amountDifference)} <span className="text-muted-foreground">({l.priceVariancePct}%)</span>
                 </td>
               </tr>
             ))}
@@ -398,8 +347,7 @@ function BundleCandidateBlock({ run }: { run: Run }) {
             <span className="font-semibold">{b.invoiceItemDescription}</span>
           </p>
           <p className="mt-1 text-[12px] text-muted-foreground">
-            Suggested because the invoice item's description, quantity, and total align with these
-            PO components.
+            Suggested because the invoice item's description, quantity, and total align with these PO components.
           </p>
         </div>
         <div className="flex gap-2">
@@ -409,11 +357,9 @@ function BundleCandidateBlock({ run }: { run: Run }) {
               setBusy("reject");
               setActionError(undefined);
               try {
-                await api.rejectBundle(run.runId);
+                await api.reviewRun(run.runId, { action: "reject_bundle" });
               } catch (caught) {
-                setActionError(
-                  caught instanceof Error ? caught.message : "Could not reject the decomposition.",
-                );
+                setActionError(caught instanceof Error ? caught.message : "Could not reject the decomposition.");
               } finally {
                 setBusy(null);
               }
@@ -428,11 +374,9 @@ function BundleCandidateBlock({ run }: { run: Run }) {
               setBusy("confirm");
               setActionError(undefined);
               try {
-                await api.confirmBundle(run.runId, b.candidateId);
+                await api.reviewRun(run.runId, { action: "confirm_bundle", candidateId: b.candidateId });
               } catch (caught) {
-                setActionError(
-                  caught instanceof Error ? caught.message : "Could not confirm the decomposition.",
-                );
+                setActionError(caught instanceof Error ? caught.message : "Could not confirm the decomposition.");
               } finally {
                 setBusy(null);
               }
@@ -477,9 +421,7 @@ function BundleCandidateBlock({ run }: { run: Run }) {
               <td className="px-3 py-2 font-medium" colSpan={4}>
                 Total PO basis
               </td>
-              <td className="px-3 py-2 text-right font-semibold tabular">
-                {money(b.totalPoBasis)}
-              </td>
+              <td className="px-3 py-2 text-right font-semibold tabular">{money(b.totalPoBasis)}</td>
               <td />
             </tr>
           </tbody>
@@ -506,30 +448,23 @@ function IndependentIssues({ run }: { run: Run }) {
   return (
     <div className="space-y-2">
       {capacityIssues.map((issue, index) => (
-        <ReviewIssueCard
-          key={`${issue.poNumber}-${issue.sku}-${index}`}
-          title="Quantity exceeds received goods"
-        >
+        <ReviewIssueCard key={`${issue.poNumber}-${issue.sku}-${index}`} title="Quantity exceeds received goods">
           <p>
-            <span className="font-mono text-[11px]">{issue.poNumber}</span> ·{" "}
-            <span className="font-mono text-[11px]">{issue.sku}</span> · {issue.description}
+            <span className="font-mono text-[11px]">{issue.poNumber}</span> · <span className="font-mono text-[11px]">{issue.sku}</span> ·{" "}
+            {issue.description}
           </p>
           <p className="mt-1 font-mono text-[11px]">
-            available {qty(issue.receivedAvailable, issue.uom)} · this invoice{" "}
-            {qty(issue.requested, issue.uom)} · shortfall {qty(issue.shortfall, issue.uom)}
+            available {qty(issue.receivedAvailable, issue.uom)} · this invoice {qty(issue.requested, issue.uom)} · shortfall{" "}
+            {qty(issue.shortfall, issue.uom)}
           </p>
         </ReviewIssueCard>
       ))}
       {failures.map((check) => (
-        <ReviewIssueCard
-          key={`${check.code}-${check.explanation}`}
-          title={controlTitle(check.code, check.name)}
-        >
+        <ReviewIssueCard key={`${check.code}-${check.explanation}`} title={controlTitle(check.code, check.name)}>
           <p>{check.explanation}</p>
           {check.calculation?.kind === "PRICE_VARIANCE" && (
             <p className="mt-1 font-mono text-[11px]">
-              invoice {money(check.calculation.invoiceUnitPrice)} · PO{" "}
-              {money(check.calculation.poUnitPrice)}
+              invoice {money(check.calculation.invoiceUnitPrice)} · PO {money(check.calculation.poUnitPrice)}
               {` · ${money(check.calculation.varianceAmount)} total variance (${check.calculation.variancePercent}% vs ${check.calculation.tolerancePercent}% tolerance)`}
             </p>
           )}
@@ -548,21 +483,12 @@ function IndependentIssues({ run }: { run: Run }) {
 
 function ReviewIssueCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <details
-      data-review-issue
-      open
-      className="overflow-hidden rounded-md border border-border bg-surface"
-    >
+    <details data-review-issue open className="overflow-hidden rounded-md border border-border bg-surface">
       <summary className="cursor-pointer list-none bg-surface-muted px-3 py-2.5 text-[12.5px] font-semibold text-foreground marker:content-none">
-        <span
-          aria-hidden
-          className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/70 align-middle"
-        />
+        <span aria-hidden className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/70 align-middle" />
         {title}
       </summary>
-      <div className="border-t border-border px-3 py-2.5 text-[12px] text-muted-foreground">
-        {children}
-      </div>
+      <div className="border-t border-border px-3 py-2.5 text-[12px] text-muted-foreground">{children}</div>
     </details>
   );
 }
@@ -596,13 +522,9 @@ function TaxNormalizationBlock({ run }: { run: Run }) {
         <p className="mt-1 text-[12px] text-muted-foreground">{inv.taxNote}</p>
         <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[12.5px]">
           <dt className="text-muted-foreground">Gross unit price</dt>
-          <dd className="tabular">
-            {money(inv.lines[0]?.observedUnitPrice ?? inv.lines[0]?.unitPrice, inv.currency)}
-          </dd>
+          <dd className="tabular">{money(inv.lines[0]?.observedUnitPrice ?? inv.lines[0]?.unitPrice, inv.currency)}</dd>
           <dt className="text-muted-foreground">Gross amount</dt>
-          <dd className="tabular">
-            {money(inv.lines[0]?.observedAmount ?? inv.lines[0]?.amount, inv.currency)}
-          </dd>
+          <dd className="tabular">{money(inv.lines[0]?.observedAmount ?? inv.lines[0]?.amount, inv.currency)}</dd>
           <dt className="text-muted-foreground">Document total</dt>
           <dd className="tabular">{money(inv.observedTotal, inv.currency)}</dd>
         </dl>
@@ -620,8 +542,8 @@ function TaxNormalizationBlock({ run }: { run: Run }) {
           <dd className="tabular">{money(inv.normalizedTotal, inv.currency)}</dd>
         </dl>
         <p className="mt-2 border-t border-border pt-2 text-[11.5px] text-muted-foreground">
-          Calculation: {money(inv.observedTotal)} ÷ 1.18 = {money(inv.normalizedSubtotal)};{" "}
-          {money(inv.observedTotal)} − {money(inv.normalizedSubtotal)} = {money(inv.normalizedTax)}.
+          Calculation: {money(inv.observedTotal)} ÷ 1.18 = {money(inv.normalizedSubtotal)}; {money(inv.observedTotal)} −{" "}
+          {money(inv.normalizedSubtotal)} = {money(inv.normalizedTax)}.
         </p>
       </div>
     </div>
@@ -641,9 +563,7 @@ function MatchEvidenceTable({ run }: { run: Run }) {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div>
             <div className="eyebrow">Matching method</div>
-            <div className="mt-0.5 text-[13.5px] font-semibold text-foreground">
-              {methodLabel[a.method]}
-            </div>
+            <div className="mt-0.5 text-[13.5px] font-semibold text-foreground">{methodLabel[a.method]}</div>
           </div>
         </div>
         <p className="mt-1 text-[12.5px] text-muted-foreground">{a.explanation}</p>

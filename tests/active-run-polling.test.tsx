@@ -10,17 +10,13 @@ import * as api from "../client/src/lib/api";
 
 vi.mock("../client/src/lib/api", () => ({
   getRun: vi.fn(),
-  processRun: vi.fn(),
   resetWorkspace: vi.fn(),
   documentUrl: vi.fn(() => "/document.pdf"),
 }));
 
-vi.mock(
-  "../client/src/components/DocumentPreview",
-  () => ({
-    DocumentPreview: () => <div>Source document</div>,
-  }),
-);
+vi.mock("../client/src/components/DocumentPreview", () => ({
+  DocumentPreview: () => <div>Source document</div>,
+}));
 
 const run = {
   runId: "11111111-1111-4111-8111-111111111111",
@@ -67,17 +63,15 @@ describe("active run polling", () => {
     store.upsertRun(run);
     window.history.replaceState({}, "", `/runs/${run.runId}`);
     vi.mocked(api.getRun).mockResolvedValue(run);
-    vi.mocked(api.processRun).mockResolvedValue(run);
   });
 
   afterEach(() => {
     store.clearRuns();
   });
 
-  it("starts processing once and polls server stages while the run is active", async () => {
+  it("polls server stages while the run is active", async () => {
     render(<RouterProvider router={getRouter()} />);
 
-    await waitFor(() => expect(api.processRun).toHaveBeenCalledWith(run.runId));
     await waitFor(() => expect(api.getRun).toHaveBeenCalledTimes(2), {
       timeout: 1_000,
     });
@@ -90,8 +84,6 @@ describe("active run polling", () => {
 
     render(<RouterProvider router={getRouter()} />);
 
-    await waitFor(() =>
-      expect(screen.getByLabelText("Decision evidence")).toBeVisible(),
-    );
+    await waitFor(() => expect(screen.getByLabelText("Decision evidence")).toBeVisible());
   });
 });

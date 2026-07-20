@@ -11,13 +11,13 @@ Build a polished public web demo that accepts an invoice PDF, extracts evidence,
 
 The primary audience is a non-technical AP buyer. The application must make the workflow, evidence, controls, decision, and accounting effects easy to understand without exposing raw provider payloads or requiring the user to inspect JSON.
 
-The application is an evaluation demo, not a production accounting system. It remains single-user, resettable, synchronous, USD-only, and intentionally narrow.
+The application is an evaluation demo, not a production accounting system. It remains single-user, resettable, in-process, USD-only, and intentionally narrow.
 
 ### Committed scope
 
 - React user interface with responsive, accessible, company-facing presentation.
 - Express REST API written in TypeScript.
-- One synchronous PDF-to-decision workflow.
+- One in-process PDF-to-decision workflow started automatically at run creation.
 - PDF input up to 10 MiB and 10 pages.
 - Digital and high-quality scanned invoice PDFs.
 - One Azure Document Intelligence extraction call per processing attempt.
@@ -102,58 +102,58 @@ The following newest mutually compatible stable versions were verified from the 
 
 Runtime dependencies:
 
-| Package | Version |
-|---|---:|
-| `react` | `19.2.7` |
-| `react-dom` | `19.2.7` |
-| `react-router-dom` | `7.18.1` |
-| `@tanstack/react-query` | `5.101.2` |
-| `express` | `5.2.1` |
-| `zod` | `4.4.3` |
-| `multer` | `2.2.0` |
-| `decimal.js` | `10.6.0` |
-| `better-sqlite3` | `12.11.1` |
-| `@azure-rest/ai-document-intelligence` | `1.1.0` |
-| `@azure/core-auth` | `1.10.1` |
-| `openai` | `6.46.0` |
-| `pdf-lib` | `1.17.1` |
-| `react-pdf` | `10.4.1` |
-| `helmet` | `8.2.0` |
-| `express-rate-limit` | `8.5.2` |
-| `cors` | `2.8.6` |
-| `dotenv` | `17.4.2` |
+| Package                                |   Version |
+| -------------------------------------- | --------: |
+| `react`                                |  `19.2.7` |
+| `react-dom`                            |  `19.2.7` |
+| `react-router-dom`                     |  `7.18.1` |
+| `@tanstack/react-query`                | `5.101.2` |
+| `express`                              |   `5.2.1` |
+| `zod`                                  |   `4.4.3` |
+| `multer`                               |   `2.2.0` |
+| `decimal.js`                           |  `10.6.0` |
+| `better-sqlite3`                       | `12.11.1` |
+| `@azure-rest/ai-document-intelligence` |   `1.1.0` |
+| `@azure/core-auth`                     |  `1.10.1` |
+| `openai`                               |  `6.46.0` |
+| `pdf-lib`                              |  `1.17.1` |
+| `react-pdf`                            |  `10.4.1` |
+| `helmet`                               |   `8.2.0` |
+| `express-rate-limit`                   |   `8.5.2` |
+| `cors`                                 |   `2.8.6` |
+| `dotenv`                               |  `17.4.2` |
 
 Development dependencies:
 
-| Package | Version |
-|---|---:|
-| `typescript` | `6.0.3` |
-| `vite` | `8.1.4` |
-| `@vitejs/plugin-react` | `6.0.3` |
-| `tailwindcss` | `4.3.2` |
-| `@tailwindcss/vite` | `4.3.2` |
-| `tsx` | `4.23.0` |
-| `vitest` | `4.1.10` |
-| `@vitest/coverage-v8` | `4.1.10` |
-| `jsdom` | `29.1.1` |
-| `@testing-library/react` | `16.3.2` |
-| `@testing-library/dom` | `10.4.1` |
-| `@testing-library/jest-dom` | `6.9.1` |
-| `supertest` | `7.2.2` |
-| `eslint` | `10.7.0` |
-| `@eslint/js` | `10.0.1` |
-| `typescript-eslint` | `8.63.0` |
-| `eslint-plugin-react-hooks` | `7.1.1` |
-| `eslint-plugin-react-refresh` | `0.5.3` |
-| `prettier` | `3.9.5` |
-| `@types/node` | `24.13.3` |
-| `@types/react` | `19.2.17` |
-| `@types/react-dom` | `19.2.3` |
-| `@types/express` | `5.0.6` |
-| `@types/multer` | `2.2.0` |
-| `@types/better-sqlite3` | `7.6.13` |
-| `@types/cors` | `2.8.19` |
-| `@types/supertest` | `7.2.0` |
+| Package                       |   Version |
+| ----------------------------- | --------: |
+| `typescript`                  |   `6.0.3` |
+| `vite`                        |   `8.1.4` |
+| `@vitejs/plugin-react`        |   `6.0.3` |
+| `tailwindcss`                 |   `4.3.2` |
+| `@tailwindcss/vite`           |   `4.3.2` |
+| `tsx`                         |  `4.23.0` |
+| `vitest`                      |  `4.1.10` |
+| `@vitest/coverage-v8`         |  `4.1.10` |
+| `jsdom`                       |  `29.1.1` |
+| `@testing-library/react`      |  `16.3.2` |
+| `@testing-library/dom`        |  `10.4.1` |
+| `@testing-library/jest-dom`   |   `6.9.1` |
+| `supertest`                   |   `7.2.2` |
+| `eslint`                      |  `10.7.0` |
+| `@eslint/js`                  |  `10.0.1` |
+| `typescript-eslint`           |  `8.63.0` |
+| `eslint-plugin-react-hooks`   |   `7.1.1` |
+| `eslint-plugin-react-refresh` |   `0.5.3` |
+| `prettier`                    |   `3.9.5` |
+| `@types/node`                 | `24.13.3` |
+| `@types/react`                | `19.2.17` |
+| `@types/react-dom`            |  `19.2.3` |
+| `@types/express`              |   `5.0.6` |
+| `@types/multer`               |   `2.2.0` |
+| `@types/better-sqlite3`       |  `7.6.13` |
+| `@types/cors`                 |  `2.8.19` |
+| `@types/supertest`            |   `7.2.0` |
 
 “Latest” means the latest stable version at the recorded baseline, not an unbounded install instruction. Upgrade intentionally with a separate dependency change that runs type checking, tests, linting, and the production build before updating the lockfile.
 
@@ -232,8 +232,7 @@ Upload PDF
   -> POST /api/runs
   -> validate request and PDF
   -> store PDF and create PROCESSING run
-  -> return run identity
-  -> POST /api/runs/:runId/process
+  -> start background processing and return run identity
   -> execute Azure extraction
   -> build evidence catalogue
   -> execute OpenAI source mapping
@@ -247,9 +246,9 @@ Upload PDF
   -> persist final result
 ```
 
-After run creation, the client starts `POST /api/runs/:runId/process` and polls `GET /api/runs/:runId` while that processing request is active. The process endpoint performs the workflow synchronously; polling uses separate HTTP requests and reads its persisted stages. Polling is preferred over WebSockets or SSE for this single-user demo. Stop polling when the run reaches `POSTED`, `AWAITING_PO_CONFIRMATION`, `AWAITING_BUNDLE_CONFIRMATION`, or `NEEDS_REVIEW`.
+`POST /api/runs` starts the workflow in the same Node process and returns immediately with the persisted `PROCESSING` run. The client polls `GET /api/runs/:runId` while processing is active, then stops at `POSTED`, `AWAITING_PO_CONFIRMATION`, `AWAITING_BUNDLE_CONFIRMATION`, or `NEEDS_REVIEW`. Polling is preferred over WebSockets or SSE for this single-user demo.
 
-The persisted run is the source of truth. The client must tolerate a lost process response by refetching the run, and it may safely retry the idempotent process endpoint. Do not introduce a queue solely to make processing asynchronous.
+The persisted run is the source of truth. A retry with the same idempotency key returns the original run and relaunches only an unguarded `PROCESSING` run. The active-run guard prevents duplicate provider or ledger work, clears on completion, and blocks reset while background work is active. Unexpected background failures are persisted as `NEEDS_REVIEW / PROCESSING_ERROR`; no queue is introduced.
 
 ### API conventions
 
@@ -283,12 +282,10 @@ type ApiError = {
 
 ```text
 POST   /api/runs
-POST   /api/runs/:runId/process
-GET    /api/runs?state=&limit=&cursor=
+GET    /api/runs
 GET    /api/runs/:runId
 GET    /api/runs/:runId/document
-POST   /api/runs/:runId/confirm-po
-POST   /api/runs/:runId/confirm-bundle
+POST   /api/runs/:runId/review
 POST   /api/reset
 GET    /api/health
 ```
@@ -298,22 +295,13 @@ GET    /api/health
 - Accept one `invoice` PDF part or a committed `fixtureId`, never both.
 - Apply upload size and MIME checks before pipeline execution.
 - Validate and store the PDF, then create and persist the `PROCESSING` run before any provider call.
-- Return `201` with the canonical run representation and `Location: /api/runs/:runId`.
-- If the client retries with the same optional `Idempotency-Key`, return the original run rather than creating another processing attempt.
-
-`POST /api/runs/:runId/process`
-
-- Accept no request body.
-- Execute the provider and deterministic workflow synchronously for the stored PDF.
-- Return the final canonical run representation.
-- Permit only a newly created `PROCESSING` run that has not completed provider work.
-- A retry after completion returns the existing result. Concurrent processing attempts for the same run return `409` or join the existing attempt; they must never duplicate provider calls or posting.
+- Register and launch the run in the same Node process, then return `201` with the canonical `PROCESSING` representation and `Location: /api/runs/:runId`.
+- If the client retries with the same optional `Idempotency-Key`, return the original run and safely relaunch it only when it remains `PROCESSING` and unguarded.
 
 `GET /api/runs`
 
 - Return newest-first run summaries.
-- Support state filtering and bounded cursor pagination.
-- Default and maximum page size are 25 and 100.
+- Return exactly `{ "items": [...] }`; query parameters are rejected.
 
 `GET /api/runs/:runId`
 
@@ -326,23 +314,14 @@ GET    /api/health
 - Set `Content-Type: application/pdf`, `Content-Disposition: inline`, and `X-Content-Type-Options: nosniff`.
 - Never construct the path from user input; resolve it from the persisted run ID.
 
-`POST /api/runs/:runId/confirm-po`
+`POST /api/runs/:runId/review`
 
 ```json
-{ "poNumber": "PO-1002" }
+{ "action": "confirm_po", "poNumber": "PO-1002" }
 ```
 
-- Accept only a PO candidate stored on the same awaiting run.
-- Resume the same run, rerun every required PO-dependent and mutable control, and post at most once.
-
-`POST /api/runs/:runId/confirm-bundle`
-
-```json
-{ "candidateId": "opaque-id" }
-```
-
-- Accept only a bundle candidate stored on the same awaiting run.
-- Resume the same run, revalidate against current state, and post at most once.
+- Accept exactly one strict discriminated action: `confirm_po` with `poNumber`, `reject_po`, `confirm_bundle` with `candidateId`, or `reject_bundle`.
+- Keep PO and bundle candidate validation, rechecks, invalid-state handling, and at-most-once posting on the same run.
 
 `POST /api/reset`
 
@@ -497,9 +476,9 @@ Use route parameters for durable identity and query parameters for shareable fil
 ### Dashboard and run detail
 
 - Total runs, posted count, review count, and demo auto-clear rate.
-- Newest-first history with state filter and pagination.
+- Newest-first history; the client applies its existing filters and pagination after fetching all summaries.
 - Persisted stage timeline and evidence.
-- Mutually exclusive PO or bundle confirmation control when allowed by run state.
+- Mutually exclusive PO or bundle review action when allowed by run state.
 - Confirmation buttons disable while submitting and cannot produce duplicate actions.
 - After mutation, invalidate and refetch the canonical run query.
 

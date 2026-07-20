@@ -25,4 +25,4 @@ Verified on 2026-07-12 with Azure Document Intelligence and the configured OpenA
 
 During diagnosis, low-confidence structured Azure fields were safely replaced only when an exact, unique, higher-confidence table or key-value equivalent existed. The remaining failure is a required value that does not satisfy deterministic parsing. Field-specific parser diagnostics are now implemented so the next intentionally paid run will identify the exact field. Further paid retries were stopped to avoid unnecessary provider spend.
 
-Recorded-mode acceptance for the scanned fixture remains passing. Do not describe the scanned live path as accepted until the live command completes successfully.
+Automated acceptance uses a test-only deterministic extractor. Do not describe the scanned live path as accepted until the live command completes successfully.

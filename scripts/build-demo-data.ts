@@ -29,31 +29,26 @@ type Fixture = {
 
 const root = process.cwd();
 const output = path.resolve(process.argv[2] ?? "tmp/demo-data");
-const cases = JSON.parse(
-  await readFile(path.join(root, "data/cases.json"), "utf8"),
-) as { fixtures: Record<string, Fixture>; [key: string]: unknown };
+const cases = JSON.parse(await readFile(path.join(root, "data/cases.json"), "utf8")) as {
+  fixtures: Record<string, Fixture>;
+  [key: string]: unknown;
+};
 
 await mkdir(path.join(output, "fixtures"), { recursive: true });
 await cp(path.join(root, "data/seed.sqlite"), path.join(output, "seed.sqlite"));
-await cp(path.join(root, "data/recordings"), path.join(output, "recordings"), {
+await cp(path.join(root, "tests/fixtures/recordings"), path.join(output, "recordings"), {
   recursive: true,
 });
 
 for (const [fixtureId, fixture] of Object.entries(cases.fixtures)) {
-  const bytes =
-    fixtureId === "happy_layout_c_scanned"
-      ? await readFile(path.join(root, fixture.file))
-      : await buildPdf(fixtureId, fixture);
+  const bytes = fixtureId === "happy_layout_c_scanned" ? await readFile(path.join(root, fixture.file)) : await buildPdf(fixtureId, fixture);
   const filename = path.basename(fixture.file);
   await writeFile(path.join(output, "fixtures", filename), bytes);
   fixture.file = `data/fixtures/${filename}`;
   fixture.pdf_sha256 = createHash("sha256").update(bytes).digest("hex");
 }
 
-await writeFile(
-  path.join(output, "cases.json"),
-  `${JSON.stringify(cases, null, 2)}\n`,
-);
+await writeFile(path.join(output, "cases.json"), `${JSON.stringify(cases, null, 2)}\n`);
 console.log(`Deterministic demo data written to ${output}`);
 
 async function buildPdf(fixtureId: string, fixture: Fixture) {
@@ -88,10 +83,7 @@ async function buildPdf(fixtureId: string, fixture: Fixture) {
   draw("Currency", fixture.input.currency);
   y -= 10;
   fixture.input.lines.forEach((line, index) => {
-    draw(
-      `Line ${index + 1}`,
-      `${line.sku} | ${line.description} | ${line.quantity} ${line.uom} x $${line.unit_price} = $${line.amount}`,
-    );
+    draw(`Line ${index + 1}`, `${line.sku} | ${line.description} | ${line.quantity} ${line.uom} x $${line.unit_price} = $${line.amount}`);
   });
   y -= 10;
   if (fixture.input.subtotal) draw("Subtotal", `$${fixture.input.subtotal}`);

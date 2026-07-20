@@ -3,21 +3,11 @@ import { toUiRun, toUiSummary } from "./api-adapter";
 import * as store from "./store";
 import type { Run } from "./types";
 
-export const sampleInvoices = [
-  { id: "happy", label: "Happy", hint: "Direct PO match, auto-posted" },
-  { id: "happy_layout_b", label: "Happy layout B", hint: "Different layout, same result" },
-  { id: "happy_layout_c_scanned", label: "Scanned invoice", hint: "OCR extraction and review" },
-  { id: "duplicate", label: "Duplicate", hint: "Already posted to ledger" },
-  { id: "missing_po", label: "Missing PO", hint: "No PO on invoice, suggested match" },
-  { id: "missing_po_bundle", label: "Missing PO bundle", hint: "Confirm PO, then validate bundle" },
-  { id: "receipt_capacity", label: "Receipt capacity", hint: "Requested exceeds received" },
-  { id: "multiple_issues", label: "Multiple issues", hint: "Price variance and receipt shortfall" },
-  { id: "bundle_known", label: "Known bundle", hint: "Trusted bundle definition" },
-  { id: "bundle_unknown", label: "Unknown bundle", hint: "Reviewer confirmation needed" },
-  { id: "tax_inclusive", label: "Tax inclusive", hint: "Prices include tax, normalized" },
-] as const;
-
-export type SampleInvoiceId = (typeof sampleInvoices)[number]["id"];
+export type ReviewAction =
+  | { action: "confirm_po"; poNumber: string }
+  | { action: "reject_po" }
+  | { action: "confirm_bundle"; candidateId: string }
+  | { action: "reject_bundle" };
 
 async function requestRun(url: string, init?: RequestInit): Promise<Run> {
   const response = await fetch(url, init);
@@ -30,18 +20,14 @@ async function requestRun(url: string, init?: RequestInit): Promise<Run> {
   return run;
 }
 
-export async function createRun(input: { file?: File; fixtureId?: SampleInvoiceId }): Promise<Run> {
-  if (Boolean(input.file) === Boolean(input.fixtureId))
-    throw new Error("Choose an invoice PDF or a prepared invoice.");
+export async function createRun(file: File): Promise<Run> {
   const body = new FormData();
-  if (input.file) body.append("invoice", input.file);
-  else body.append("fixtureId", input.fixtureId!);
+  body.append("invoice", file);
   const run = await requestRun("/api/runs", {
     method: "POST",
     headers: { "Idempotency-Key": crypto.randomUUID() },
     body,
   });
-  void processRun(run.runId);
   return run;
 }
 
@@ -61,32 +47,12 @@ export async function getRun(runId: string): Promise<Run | undefined> {
   }
 }
 
-export function processRun(runId: string) {
-  return requestRun(`/api/runs/${runId}/process`, { method: "POST" });
-}
-
-export function confirmPo(runId: string, poNumber: string) {
-  return requestRun(`/api/runs/${runId}/confirm-po`, {
+export function reviewRun(runId: string, action: ReviewAction) {
+  return requestRun(`/api/runs/${runId}/review`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ poNumber }),
+    body: JSON.stringify(action),
   });
-}
-
-export function rejectPo(runId: string) {
-  return requestRun(`/api/runs/${runId}/reject-po`, { method: "POST" });
-}
-
-export function confirmBundle(runId: string, candidateId: string) {
-  return requestRun(`/api/runs/${runId}/confirm-bundle`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ candidateId }),
-  });
-}
-
-export function rejectBundle(runId: string) {
-  return requestRun(`/api/runs/${runId}/reject-bundle`, { method: "POST" });
 }
 
 export async function resetWorkspace(): Promise<void> {

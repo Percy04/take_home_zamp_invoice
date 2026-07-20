@@ -1,23 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import * as api from "@/lib/api";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-export function InvoiceUploadDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+export function InvoiceUploadDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -44,7 +32,7 @@ export function InvoiceUploadDialog({
     setBusy(true);
     setError(null);
     try {
-      const run = await api.createRun({ file });
+      const run = await api.createRun(file);
       onOpenChange(false);
       await navigate({ to: "/runs/$runId", params: { runId: run.runId } });
     } catch (cause) {
@@ -59,9 +47,7 @@ export function InvoiceUploadDialog({
       <DialogContent className="max-w-xl gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-5 py-4 pr-12">
           <DialogTitle className="font-serif text-xl">Upload an invoice</DialogTitle>
-          <DialogDescription>
-            Add a PDF to extract, match and run through accounting controls.
-          </DialogDescription>
+          <DialogDescription>Add a PDF to extract, match and run through accounting controls.</DialogDescription>
         </DialogHeader>
 
         <div className="p-5">
@@ -79,10 +65,7 @@ export function InvoiceUploadDialog({
             }}
             className={`rounded-md border border-dashed px-5 py-8 text-center transition-colors ${dragging ? "border-primary bg-primary-soft" : "border-border bg-surface-muted/50"}`}
           >
-            <div
-              aria-hidden
-              className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-primary-soft text-primary"
-            >
+            <div aria-hidden className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-primary-soft text-primary">
               <svg
                 width="18"
                 height="18"
@@ -121,9 +104,7 @@ export function InvoiceUploadDialog({
             <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
               <div className="min-w-0">
                 <div className="truncate text-[13px] font-medium">{file.name}</div>
-                <div className="font-mono text-[11px] text-muted-foreground">
-                  {(file.size / 1024).toFixed(0)} KB
-                </div>
+                <div className="font-mono text-[11px] text-muted-foreground">{(file.size / 1024).toFixed(0)} KB</div>
               </div>
               <button
                 type="button"

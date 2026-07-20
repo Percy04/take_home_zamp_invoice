@@ -1,12 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getRouter } from "../client/src/router";
@@ -16,9 +10,7 @@ import type { Run } from "../client/src/lib/types";
 
 vi.mock("react-pdf", () => ({
   pdfjs: { GlobalWorkerOptions: {} },
-  Document: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
+  Document: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Page: () => <div>PDF page</div>,
 }));
 
@@ -61,24 +53,16 @@ describe("active activity layout", () => {
     expect(screen.queryByText("Activity")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add invoice" }));
     expect(screen.getByRole("dialog")).toBeVisible();
-    expect(
-      screen.getByRole("heading", { name: "Upload an invoice" }),
-    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Upload an invoice" })).toBeVisible();
 
     fireEvent.change(screen.getByLabelText("Invoice PDF"), {
       target: {
-        files: [
-          new File(["invoice"], "invoice.pdf", { type: "application/pdf" }),
-        ],
+        files: [new File(["invoice"], "invoice.pdf", { type: "application/pdf" })],
       },
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload and process" }));
 
-    await waitFor(() =>
-      expect(router.state.location.pathname).toBe(
-        "/runs/11111111-1111-4111-8111-111111111111",
-      ),
-    );
+    await waitFor(() => expect(router.state.location.pathname).toBe("/runs/11111111-1111-4111-8111-111111111111"));
     expect(screen.queryByText("Loading invoices…")).not.toBeInTheDocument();
   });
 
@@ -121,26 +105,14 @@ describe("active activity layout", () => {
 
     render(<RouterProvider router={getRouter()} />);
 
-    expect(
-      await screen.findByRole("heading", { name: "Recent invoice runs" }),
-    ).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Recent invoice runs" })).toBeVisible();
     expect(screen.getByText("Requires attention")).toBeVisible();
-    expect(
-      screen.getByRole("button", { name: /Needs review 1/ }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("columnheader", { name: "Vendor · invoice" }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("columnheader", { name: "Received" }),
-    ).toBeVisible();
+    expect(screen.getByRole("button", { name: /Needs review 1/ })).toBeVisible();
+    expect(screen.getByRole("columnheader", { name: "Vendor · invoice" })).toBeVisible();
+    expect(screen.getByRole("columnheader", { name: "Received" })).toBeVisible();
     expect(screen.getByText("Delta Components Ltd")).toBeVisible();
-    expect(
-      screen.getByRole("link", { name: "AP Resolution dashboard" }),
-    ).toHaveAttribute("href", "/dashboard");
-    expect(
-      screen.getByRole("link", { name: "Delta Components Ltd" }),
-    ).toHaveClass("after:absolute");
+    expect(screen.getByRole("link", { name: "AP Resolution dashboard" })).toHaveAttribute("href", "/dashboard");
+    expect(screen.getByRole("link", { name: "Delta Components Ltd" })).toHaveClass("after:absolute");
     expect(screen.queryByText(/demo/i)).not.toBeInTheDocument();
   });
 });

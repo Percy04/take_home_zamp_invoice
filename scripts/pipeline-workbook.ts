@@ -17,17 +17,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  ControlError,
-  evaluateHappyPath,
-  normalizeInvoice,
-} from "../server/src/controls.js";
-import { extractAndMap } from "../server/src/providers.js";
-import {
-  confirmBundle,
-  confirmPo,
-  processInvoice,
-} from "../server/src/pipeline.js";
+import { ControlError, evaluateInvoice } from "../server/src/controls.js";
+import { normalizeInvoice } from "../server/src/invoice-normalization.js";
+import { extractAndMapLive } from "../server/src/providers.js";
+import { confirmBundle, confirmPo, processInvoice } from "../server/src/pipeline.js";
 import { Storage } from "../server/src/storage.js";
 
 const fixture = argument("--fixture");
@@ -42,10 +35,9 @@ if (!new Set(["extract", "normalize", "controls", "run", "all"]).has(step)) {
 }
 
 const pdf = await readFile(fixturePath);
-const extracted = step === "run" ? null : await extractAndMap(pdf);
+const extracted = step === "run" ? null : await extractAndMapLive(pdf);
 
-if (extracted && (step === "extract" || step === "all"))
-  print("1. extraction + mapping", extracted);
+if (extracted && (step === "extract" || step === "all")) print("1. extraction + mapping", extracted);
 
 let invoice;
 try {
@@ -61,7 +53,7 @@ try {
 if (invoice && (step === "controls" || step === "all")) {
   const storage = new Storage(path.resolve("tmp/pipeline-workbook/controls"));
   try {
-    print("3. controls", evaluateHappyPath(invoice, storage.getHappyContext()));
+    print("3. controls", evaluateInvoice(invoice, storage.getControlContext()));
   } catch (error) {
     print("3. controls failed", error);
     process.exitCode = 1;
@@ -72,9 +64,7 @@ if (invoice && (step === "controls" || step === "all")) {
 
 if (step === "run" || step === "all") {
   const runId = randomUUID();
-  const storage = new Storage(
-    path.resolve(`tmp/pipeline-workbook/run-${runId}`),
-  );
+  const storage = new Storage(path.resolve(`tmp/pipeline-workbook/run-${runId}`));
   storage.createRun({
     id: runId,
     filename: path.basename(fixturePath),
@@ -82,7 +72,7 @@ if (step === "run" || step === "all") {
     pdfPath: fixturePath,
   });
   try {
-    let result = await processInvoice(runId, storage);
+    let result = await processInvoice(runId, storage, extractAndMapLive);
     print("4. stateful pipeline", result);
     if (confirmation && result.state === "AWAITING_PO_CONFIRMATION") {
       result = confirmPo(runId, storage, confirmation);
